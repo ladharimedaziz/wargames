@@ -1,10 +1,9 @@
 // Computer-run countries: rule-based behaviour for every country the Zeus has not given to a delegate.
 import { SEA_ZONES } from '../data/places.js';
 import { zonesTouching } from '../geo.js';
-import { rand, chance, newId, atWar, enemiesOf, sameSide, relation, unitsOf, unitsAt, isActive } from './core.js';
+import { rand, chance, newId, atWar, enemiesOf, sameSide, relation, unitsOf, unitsAt, isActive, boundAllies } from './core.js';
 import { autoUnits, validateOrder } from './orders.js';
 
-const BINDING = ['NATO', 'CSTO', 'GCC', 'USPAC'];
 
 export function planAI(state, ctx) {
   const turn = state.meta.turn;
@@ -42,7 +41,7 @@ export function planAI(state, ctx) {
     for (const friend of Object.values(state.countries)) {
       if (joined) break;
       if (friend.id === c.id || !isActive(friend)) continue;
-      const treaty = c.alliances.some(a => BINDING.includes(a) && friend.alliances.includes(a));
+      const treaty = !!boundAllies(state, c.id, friend.id);
       const bloc = c.bloc !== 'N' && c.bloc === friend.bloc;
       if (!treaty && !bloc) continue;
       for (const foe of enemiesOf(state, friend.id)) {

@@ -94,7 +94,7 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
 
 function TopBar({ conn, user, state, logout, onBack, pending, unread, openDm, committee }) {
   const [status, setStatus] = useState(conn.status);
-  useEffect(() => conn.on('status', setStatus), [conn]);
+  useEffect(() => { setStatus(conn.status); return conn.on('status', setStatus); }, [conn]);
   const t = state.global.tension, lvl = tensionLevel(t);
   const now = useNow(conn, 500);
   const rem = timerRemaining(state.timer, now);

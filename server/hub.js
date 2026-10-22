@@ -203,6 +203,16 @@ export function createHub(server, store, geo) {
         sendSnapshots(m.committee);
         return ack(true);
       }
+      case 'resetAll': {
+        // Every committee starts over in its current mode and name. Each one keeps a "Before reset" save point.
+        for (const id of COMMITTEE_IDS) {
+          store.reset(id, store.get(id).mode === 'court' ? 'court' : 'world', user.username);
+          broadcastState(id, { rewound: true });
+          sendSnapshots(id);
+        }
+        scheduleOverview();
+        return ack(true);
+      }
       case 'accounts': return send(c, { t: 'accounts', list: accounts().map(a => ({ ...a, password: passwordFor(a.username), committeeName: a.committee ? store.get(a.committee).name : null, online: [...clients].some(x => x.user.username === a.username) })) });
       case 'rotate': {
         const pw = rotatePassword(m.username);

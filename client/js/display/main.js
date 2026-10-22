@@ -94,7 +94,7 @@ function StageMap({ state, lang, relations }) {
   const ref = useRef(), map = useRef();
   const stRef = useRef(state); stRef.current = state;
   useEffect(() => {
-    const m = new WorldMap(ref.current, { cinematic: true, lang });
+    const m = new WorldMap(ref.current, { cinematic: true, lang, onNukeLaunch: () => sfx.alarm(), onNukeImpact: () => sfx.boom(2) });
     map.current = m; window.__map = m;
     m.ready.then(() => m.setState(stRef.current, { layers: { ...stRef.current.settings.layers, wars: true } }));
     return () => m.destroy();
@@ -116,7 +116,6 @@ function Sounds({ state }) {
       sfx.whoosh();
       const strikes = res.events.filter(e => e.kind === 'strike');
       strikes.slice(0, 10).forEach((e, i) => setTimeout(() => (e.intercepted ? sfx.tick() : sfx.impact()), 1600 + i * 180));
-      if (res.events.some(e => e.kind === 'nuke')) setTimeout(() => sfx.boom(2), 3000);
       if (res.events.some(e => e.kind === 'chokepoint' && e.status === 'closed')) setTimeout(() => sfx.alarm(), 2500);
     }
     const newAired = state.aired.filter(a => !p.aired.some(x => x.id === a.id));

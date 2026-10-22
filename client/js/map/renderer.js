@@ -121,12 +121,49 @@ export class WorldMap {
     this.dirty = true;
     const res = state.lastResolution;
     if (res && res.at !== this.lastRes) {
-      const first = !this.lastRes;
+      // Only animate resolutions that arrive while the map is open, including the very first one of a session.
+      const first = !prev || prev === state;
       this.lastRes = res.at;
-      if (!first && (!prev || prev.lastResolution?.at !== res.at)) this.playResolution(res);
+      if (!first && prev.lastResolution?.at !== res.at) this.playResolution(res);
     }
+    this.syncFronts(state, !prev);
     if (!prev || JSON.stringify(prev.display?.focus) !== JSON.stringify(state.display?.focus)) this.applyFocus();
   }
+  // Front lines ease from where they were to where the engine says they are now.
+  syncFronts(state, first) {
+    const now = performance.now(), delay = (this.frontDelay || 0) * 1000;
+    this.frontDelay = 0;
+    this.fronts ||= {};
+    for (const c of Object.values(state.countries)) {
+      const target = c.front ? c.front.pct : 0;
+      const cur = this.fronts[c.id];
+      if (!cur && !target) continue;
+      if (!cur) { this.fronts[c.id] = { a: first ? target : (c.front.prev ?? 0), b: target, start: now + (first ? 0 : delay), dur: 3.2, by: c.front.by, from: c.front.from }; continue; }
+      if (c.front) { cur.by = c.front.by; cur.from = c.front.from; }
+      if (cur.b !== target) Object.assign(cur, { a: this.frontPct(c.id, now), b: target, start: now + delay, dur: 3.2 });
+    }
+    for (const id of Object.keys(this.fronts)) if (!state.countries[id]?.front && this.fronts[id].b === 0 && now > this.fronts[id].start + this.fronts[id].dur * 1000) delete this.fronts[id];
+  }
+  frontPct(id, now) {
+    const f = this.fronts?.[id]; if (!f) return 0;
+    const u = clamp((now - f.start) / (f.dur * 1000), 0, 1);
+    return f.a + (f.b - f.a) * easeInOut(u);
+  }
+  // Geometry of a front in projected map coordinates: the attack direction and how far the line has pushed.
+  frontGeom(id, from, pct) {
+    const b = this.bounds.get(id), tc = this.centroids.get(id);
+    const fp = from && this.projection([from.lon, from.lat]);
+    if (!b || !tc || !fp) return null;
+    let dx = tc[0] - fp[0], dy = tc[1] - fp[1];
+    const len = Math.hypot(dx, dy);
+    if (len < 1) { dx = 1; dy = 0; } else { dx /= len; dy /= len; }
+    const corners = [[b[0][0], b[0][1]], [b[1][0], b[0][1]], [b[0][0], b[1][1]], [b[1][0], b[1][1]]];
+    const ts = corners.map(q => (q[0] - fp[0]) * dx + (q[1] - fp[1]) * dy);
+    const tmin = Math.min(...ts), tmax = Math.max(...ts);
+    const R = Math.hypot(b[1][0] - b[0][0], b[1][1] - b[0][1]) + 20;
+    return { fp, dx, dy, tmin, tmax, R, thr: tmin + (tmax - tmin) * pct / 100 };
+  }
+
   setLayers(l) { this.layers = { ...this.layers, ...l }; this.dirty = true; }
   setSelected(id) { this.selected = id; }
   setLang(lang) { this.opts.lang = lang; this.dirty = true; }
@@ -176,6 +213,8 @@ export class WorldMap {
         if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
         this.camTarget = this.clampView({ k: this.camTarget.k, x: drag.cx + dx, y: drag.cy + dy });
         this.cam = { ...this.cam, x: this.camTarget.x, y: this.camTarget.y, k: this.cam.k };
+        if (!this.dragging && this.hover) { this.hover = null; this.opts.onHover?.(null); }
+        this.dragging = true; this.dirty = true;
         return;
       }
       const ll = this.screenToLonLat(mx, my);
@@ -186,6 +225,7 @@ export class WorldMap {
     });
     fx.addEventListener('pointerup', e => {
       fx.style.cursor = 'grab';
+      if (this.dragging) { this.dragging = false; this.dirty = true; }
       if (drag && !moved) {
         const r = fx.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
         const zone = this.zoneAt(mx, my);
@@ -247,7 +287,9 @@ export class WorldMap {
         ctx.fillStyle = this.fillFor(id); ctx.fill(path);
         if (!c) continue;
         if (c.damage > 0.05) { ctx.fillStyle = `rgba(0,0,0,${Math.min(0.45, c.damage * 0.5)})`; ctx.fill(path); }
-        if (c.occupiedBy && s.countries[c.occupiedBy]) {
+        // While a front is still sweeping across, the front layer draws the advance and the hatch waits for it.
+        const sweeping = this.fronts?.[id] && performance.now() < this.fronts[id].start + this.fronts[id].dur * 1000;
+        if (c.occupiedBy && s.countries[c.occupiedBy] && !sweeping) {
           const oc = s.blocs[s.countries[c.occupiedBy].bloc]?.color || '#ff4d5e';
           const pat = this.pattern('occ' + oc, hexA(oc, 0.85)); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(path);
         }
@@ -315,12 +357,20 @@ export class WorldMap {
     strikes.slice(0, 80).forEach((e, i) => { add({ type: 'strike', e, dur: e.unitType === 'missile' ? 1.5 : 2.2 }, t + i * 0.09); if (e.from) pts.push(e.from); if (e.to) pts.push(e.to); });
     t += Math.min(80, strikes.length) * 0.09 + 1.6;
     for (const e of evs.filter(e => e.kind === 'battle')) { add({ type: 'battle', e, dur: 3 }, t); pts.push(e.at); }
+    for (const e of evs.filter(e => e.kind === 'front')) {
+      if (e.pct > e.prev) add({ type: 'advance', e, dur: 3.6 }, t - 0.4);
+      const c = this.state?.countries?.[e.country];
+      pts.push(e.from); if (c) pts.push({ lat: c.lat, lon: c.lon });
+    }
+    this.frontDelay = t;
     for (const e of evs.filter(e => e.kind === 'naval')) { add({ type: 'naval', e, dur: 3 }, t); pts.push(e.at); }
     for (const e of evs.filter(e => e.kind === 'unit_lost')) add({ type: 'lost', e, dur: 3.5 }, t + 0.8);
     for (const e of evs.filter(e => e.kind === 'occupation')) { add({ type: 'occupy', e, dur: 3.5 }, t + 1); }
     for (const e of evs.filter(e => e.kind === 'chokepoint')) { add({ type: 'choke', e, dur: 3.5 }, t); const z = SEA_ZONES[e.zone]; if (z) pts.push({ lat: z.lat, lon: z.lon }); }
-    for (const e of evs.filter(e => e.kind === 'nuke')) { add({ type: 'nuke', e, dur: 9 }, t + 1.5); pts.push(e.at); }
-    this.sequenceEnd = performance.now() + (t + 4) * 1000;
+    for (const e of evs.filter(e => e.kind === 'nuke')) { add({ type: 'nuke', e, dur: 11 }, t + 1.2); pts.push(e.at, e.from); t += 4.6; }
+    // Hold the shot until any front has finished sweeping across its country.
+    const hold = evs.some(e => e.kind === 'front') ? Math.max(4, this.frontDelay - t + 5.4) : 4;
+    this.sequenceEnd = performance.now() + (t + hold) * 1000;
     // On the stage display, frame the action automatically unless the Zeus has set a focus.
     if (this.opts.cinematic && pts.filter(Boolean).length && !this.state?.display?.focus) {
       const proj = pts.filter(Boolean).map(q => this.projection([q.lon, q.lat])).filter(Boolean);
@@ -328,9 +378,9 @@ export class WorldMap {
       const box = [[Math.min(...xs) - 30, Math.min(...ys) - 30], [Math.max(...xs) + 30, Math.max(...ys) + 30]];
       this.camTarget = this.viewFor({ kind: 'box', box, pad: 0.8, maxK: 4 });
       clearTimeout(this.camReturn);
-      this.camReturn = setTimeout(() => this.applyFocus(), (t + 4) * 1000);
+      this.camReturn = setTimeout(() => this.applyFocus(), (t + hold) * 1000);
     }
-    return t + 4;
+    return t + hold;
   }
 
   frame(now) {
@@ -341,7 +391,7 @@ export class WorldMap {
     const c = this.cam, tg = this.camTarget, rate = this.opts.cinematic ? 2.2 : 9;
     const f = 1 - Math.exp(-rate * dt);
     const dk = tg.k - c.k, dx = tg.x - c.x, dy = tg.y - c.y;
-    this.moving = Math.abs(dk) > 0.002 || Math.abs(dx) > 0.4 || Math.abs(dy) > 0.4;
+    this.moving = this.dragging || Math.abs(dk) > 0.002 || Math.abs(dx) > 0.4 || Math.abs(dy) > 0.4;
     if (this.moving) { c.k += dk * f; c.x += dx * f; c.y += dy * f; this.dirty = true; }
     else if (this.wasMoving) this.dirty = true; // final redraw at full resolution
     this.wasMoving = this.moving;
@@ -392,6 +442,7 @@ export class WorldMap {
       ctx.setLineDash([]);
     }
 
+    this.drawFronts(ctx, now, time, withCam);
     if (this.layers.naval !== false) this.drawShips(ctx, time);
     if (this.layers.air !== false) this.drawFlights(ctx, time);
     this.drawChokepoints(ctx, time);
@@ -401,6 +452,70 @@ export class WorldMap {
       const u = (now - this.flash.start) / (this.flash.dur * 1000);
       if (u >= 1) this.flash = null;
       else { ctx.fillStyle = `rgba(255,250,235,${(1 - u) * this.flash.alpha})`; ctx.fillRect(0, 0, this.w, this.h); }
+    }
+  }
+
+  drawFronts(ctx, now, time, withCam) {
+    const s = this.state, k = this.cam.k;
+    for (const [id, f] of Object.entries(this.fronts || {})) {
+      const c = s.countries[id], path = this.atlas.lo.paths.get(id);
+      if (!c || !path) continue;
+      const pct = this.frontPct(id, now);
+      const settled = now > f.start + f.dur * 1000;
+      if (settled && !f.drawnBase) { f.drawnBase = true; this.dirty = true; }
+      if (!settled) f.drawnBase = false;
+      if (pct < 0.5 || (c.occupiedBy && settled)) continue; // a fully occupied country is drawn by the base layer
+      const g = this.frontGeom(id, f.from, pct); if (!g) continue;
+      const by = s.countries[f.by];
+      const col = by && by.bloc !== 'N' ? s.blocs[by.bloc].color : '#ff8a3d';
+      const { fp, dx, dy, R, thr } = g, nx = -dy, ny = dx;
+      const amp = Math.max(1.1, (g.tmax - g.tmin) * 0.035), seed = Number(id) || 1;
+      const line = [];
+      for (let i = 0; i <= 32; i++) {
+        const sN = -R + (2 * R * i) / 32;
+        const w = amp * (Math.sin(sN * 0.35 + seed) * 0.6 + Math.sin(sN * 0.13 + time * 0.7 + seed) * 0.4);
+        line.push([fp[0] + dx * (thr + w) + nx * sN, fp[1] + dy * (thr + w) + ny * sN]);
+      }
+      const trace = () => { ctx.beginPath(); line.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); };
+      withCam(() => {
+        ctx.save();
+        ctx.clip(path);
+        // Ground the attacker holds: everything behind the line.
+        trace();
+        const back = R * 3, last = line[line.length - 1], first = line[0];
+        ctx.lineTo(last[0] - dx * back, last[1] - dy * back); ctx.lineTo(first[0] - dx * back, first[1] - dy * back); ctx.closePath();
+        ctx.fillStyle = 'rgba(6,8,14,0.35)'; ctx.fill();
+        ctx.fillStyle = hexA(col, 0.62); ctx.fill();
+        const pat = this.pattern('front' + col, 'rgba(255,255,255,0.22)'); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill();
+        // The front line itself: a hot glow with marching dashes.
+        trace();
+        ctx.strokeStyle = 'rgba(255,110,50,0.35)'; ctx.lineWidth = 7 / k; ctx.stroke();
+        ctx.strokeStyle = '#ffc07a'; ctx.lineWidth = 1.7 / k; ctx.setLineDash([5 / k, 3 / k]); ctx.lineDashOffset = -time * 12 / k; ctx.stroke(); ctx.setLineDash([]);
+        // Chevrons pushing forward along the line.
+        const ang = Math.atan2(dy, dx), sz = 8 / k;
+        for (let j = -3; j <= 3; j++) {
+          const sN = (j * R) / 7, v = (time * 0.6 + (j + 3) / 7) % 1;
+          const d = thr - 18 / k + v * 14 / k;
+          const q = [fp[0] + dx * d + nx * sN, fp[1] + dy * d + ny * sN];
+          ctx.save(); ctx.translate(q[0], q[1]); ctx.rotate(ang); ctx.globalAlpha = Math.sin(v * Math.PI) * 0.95;
+          ctx.beginPath(); ctx.moveTo(sz, 0); ctx.lineTo(-sz * 0.6, sz * 0.8); ctx.lineTo(-sz * 0.1, 0); ctx.lineTo(-sz * 0.6, -sz * 0.8); ctx.closePath();
+          ctx.fillStyle = '#ffe2bd'; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1 / k; ctx.stroke();
+          ctx.restore();
+        }
+        ctx.restore();
+      });
+      // Label where the line crosses the middle of the country.
+      if ((g.tmax - g.tmin) * k > 36) {
+        const wx = fp[0] + dx * thr, wy = fp[1] + dy * thr;
+        const x = wx * k + this.cam.x, y = wy * k + this.cam.y;
+        const name = by ? (this.opts.lang === 'ar' ? by.ar : by.name.toUpperCase()) : '';
+        const text = `${name} ${Math.round(pct)}%`;
+        ctx.font = this.opts.lang === 'ar' ? '700 11px Cairo, sans-serif' : '700 10px Rajdhani, Inter, sans-serif';
+        const tw = ctx.measureText(text).width + 12;
+        ctx.fillStyle = 'rgba(8,10,16,0.85)'; ctx.strokeStyle = hexA(col, 0.9); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.roundRect(x - tw / 2, y - 18, tw, 15, 7); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#ffd9b0'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(text, x, y - 10.5);
+      }
     }
   }
 
@@ -629,6 +744,25 @@ export class WorldMap {
     ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, TAU); ctx.fill();
     ctx.strokeStyle = hexA(col, 0.4); ctx.beginPath(); ctx.arc(x, y, 6 + 3 * Math.sin(u * 20), 0, TAU); ctx.stroke();
   }
+  // A thick campaign arrow from where the attack came from to the new front line.
+  fx_advance(ctx, fx, u, now, withCam) {
+    const e = fx.e, g = this.frontGeom(e.country, e.from, e.pct); if (!g) return;
+    const by = this.state.countries[e.by];
+    const col = by && by.bloc !== 'N' ? this.state.blocs[by.bloc].color : '#ff8a3d';
+    const k = this.cam.k, toS = (x, y) => [x * k + this.cam.x, y * k + this.cam.y];
+    const a = toS(g.fp[0], g.fp[1]), b = toS(g.fp[0] + g.dx * g.thr, g.fp[1] + g.dy * g.thr);
+    const v = ease(Math.min(1, u * 1.6)), fade = u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1;
+    const pts = [];
+    for (let i = 0; i <= 24; i++) pts.push(this.onCurve(a, b, (v * i) / 24, 0.12));
+    ctx.save(); ctx.globalAlpha = fade; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const [w, c] of [[11, 'rgba(0,0,0,0.45)'], [8, hexA(col, 0.9)], [2.5, 'rgba(255,255,255,0.55)']]) {
+      ctx.strokeStyle = c; ctx.lineWidth = w; ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke();
+    }
+    const h = pts[pts.length - 1];
+    ctx.translate(h[0], h[1]); ctx.rotate(h[2]); ctx.fillStyle = hexA(col, 1); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(14, 0); ctx.lineTo(-6, 11); ctx.lineTo(-2, 0); ctx.lineTo(-6, -11); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
   fx_battle(ctx, fx, u) {
     const q = this.pt(fx.e.at); if (!q) return;
     for (let i = 0; i < 3; i++) {
@@ -673,16 +807,73 @@ export class WorldMap {
     const col = fx.e.status === 'closed' ? '255,77,94' : fx.e.status === 'contested' ? '255,178,36' : '61,220,151';
     for (let i = 0; i < 3; i++) { const v = (u * 1.8 + i / 3) % 1; ctx.strokeStyle = `rgba(${col},${(1 - v) * (1 - u)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(q[0], q[1], 6 + v * 40, 0, TAU); ctx.stroke(); }
   }
+  // Nuclear strike, kept abstract: a ballistic missile track, an incoming warning, then a flash and shockwave. Nothing graphic.
   fx_nuke(ctx, fx, u) {
-    // Shown abstractly: a slow expanding light and a marker. Nothing graphic.
-    const q = this.pt(fx.e.at); if (!q) return;
-    if (!fx.flashed) { fx.flashed = true; this.flash = { start: performance.now(), dur: 3.5, alpha: 0.75 }; }
-    const r = ease(u) * Math.min(this.w, this.h) * 0.22;
-    const g = ctx.createRadialGradient(q[0], q[1], 0, q[0], q[1], r + 1);
-    g.addColorStop(0, `rgba(255,255,240,${0.55 * (1 - u)})`); g.addColorStop(0.6, `rgba(255,220,150,${0.25 * (1 - u)})`); g.addColorStop(1, 'rgba(255,200,120,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(q[0], q[1], r + 1, 0, TAU); ctx.fill();
-    ctx.strokeStyle = `rgba(255,240,210,${1 - u})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(q[0], q[1], r * 1.15, 0, TAU); ctx.stroke();
+    const e = fx.e, FLIGHT = 0.42, T = fx.dur;
+    const from = e.from || e.at, to = e.to || e.at;
+    if (!fx.track) {
+      const interp = geoInterpolate([from.lon, from.lat], [to.lon, to.lat]);
+      fx.track = Array.from({ length: 61 }, (_, i) => interp(i / 60));
+      fx.km = geoDistanceKm(from, to);
+    }
+    const proj = i => { const g = fx.track[i]; return this.p(g[0], g[1]); };
+    const a = proj(0), b = proj(60); if (!a || !b) return;
+    const loft = Math.min(0.32, 0.12 + fx.km / 40000) * Math.hypot(b[0] - a[0], b[1] - a[1]) + 18;
+    const at = i => { const q = proj(i); if (!q) return null; return [q[0], q[1] - Math.sin(Math.PI * i / 60) * loft]; };
+    if (u < FLIGHT) {
+      const v = u / FLIGHT, head = Math.max(1, Math.round(easeInOut(v) * 60));
+      if (!fx.launched) { fx.launched = true; this.opts.onNukeLaunch?.(); }
+      // Launch bloom at the silo.
+      const lb = clamp(v * 4, 0, 1);
+      ctx.strokeStyle = `rgba(255,200,120,${1 - lb})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(a[0], a[1], 4 + lb * 18, 0, TAU); ctx.stroke();
+      // Contrail.
+      ctx.lineCap = 'round';
+      for (let i = 1; i <= head; i++) {
+        const p0 = at(i - 1), p1 = at(i); if (!p0 || !p1 || Math.abs(p1[0] - p0[0]) > this.w / 3) continue;
+        const age = (head - i) / 60;
+        ctx.strokeStyle = `rgba(255,${190 - age * 120},${120 - age * 80},${Math.max(0, 0.9 - age * 1.4)})`; ctx.lineWidth = 3.2 - age * 2; ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
+      }
+      const h = at(head);
+      if (h) {
+        const g = ctx.createRadialGradient(h[0], h[1], 0, h[0], h[1], 14);
+        g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(255,190,90,0.8)'); g.addColorStop(1, 'rgba(255,120,40,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(h[0], h[1], 14, 0, TAU); ctx.fill();
+      }
+      // Incoming warning at the target.
+      const pulse = (u * T * 1.6) % 1;
+      ctx.strokeStyle = `rgba(255,60,70,${0.9 - pulse * 0.8})`; ctx.lineWidth = 1.8;
+      ctx.beginPath(); ctx.arc(b[0], b[1], 10 + pulse * 22, 0, TAU); ctx.stroke();
+      ctx.strokeStyle = 'rgba(255,80,90,0.9)'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(b[0] - 16, b[1]); ctx.lineTo(b[0] - 6, b[1]); ctx.moveTo(b[0] + 6, b[1]); ctx.lineTo(b[0] + 16, b[1]);
+      ctx.moveTo(b[0], b[1] - 16); ctx.lineTo(b[0], b[1] - 6); ctx.moveTo(b[0], b[1] + 6); ctx.lineTo(b[0], b[1] + 16); ctx.stroke();
+      return;
+    }
+    const v = (u - FLIGHT) / (1 - FLIGHT);
+    if (!fx.flashed) { fx.flashed = true; this.flash = { start: performance.now(), dur: 3.5, alpha: 0.8 }; this.opts.onNukeImpact?.(); }
+    const span = Math.min(this.w, this.h);
+    // Expanding light.
+    const r = ease(v) * span * 0.22;
+    const g = ctx.createRadialGradient(b[0], b[1], 0, b[0], b[1], r + 1);
+    g.addColorStop(0, `rgba(255,255,240,${0.6 * (1 - v)})`); g.addColorStop(0.55, `rgba(255,215,150,${0.28 * (1 - v)})`); g.addColorStop(1, 'rgba(255,200,120,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b[0], b[1], r + 1, 0, TAU); ctx.fill();
+    // Shockwave rings.
+    for (let i = 0; i < 3; i++) {
+      const w = clamp(v * 1.4 - i * 0.18, 0, 1); if (!w || w >= 1) continue;
+      ctx.strokeStyle = `rgba(255,240,210,${(1 - w) * 0.9})`; ctx.lineWidth = 2.4 - i * 0.6;
+      ctx.beginPath(); ctx.arc(b[0], b[1], ease(w) * span * (0.3 + i * 0.08), 0, TAU); ctx.stroke();
+    }
+    // A lingering marker so the place stays readable.
+    ctx.strokeStyle = `rgba(255,200,120,${0.8 * (1 - v * 0.6)})`; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(b[0], b[1], 7, 0, TAU); ctx.stroke();
+    ctx.fillStyle = `rgba(255,236,200,${0.9 * (1 - v * 0.5)})`; ctx.beginPath(); ctx.arc(b[0], b[1], 2.5, 0, TAU); ctx.fill();
   }
+}
+
+function geoDistanceKm(a, b) {
+  const R = 6371, rad = Math.PI / 180;
+  const dLat = (b.lat - a.lat) * rad, dLon = (b.lon - a.lon) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(a.lat * rad) * Math.cos(b.lat * rad) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
 }
 
 // Fast polyline sampling by index (good enough for drawing).

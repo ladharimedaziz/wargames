@@ -1,5 +1,6 @@
 // Automatic headlines in English and Arabic, generated from what happened in a turn.
 import { SEA_ZONES } from '../data/places.js';
+import { ALLIANCES } from '../data/alliances.js';
 import { UNIT_TYPES } from './core.js';
 
 const CAT_EN = { military: 'military targets', industry: 'factories', energy: 'power and oil sites', infrastructure: 'infrastructure', capital: 'the capital' };
@@ -50,7 +51,12 @@ export function headlinesFrom(state, ev) {
   for (const e of ev) {
     switch (e.kind) {
       case 'war': if (groupedWar.has(e.b)) break; push(5, `BREAKING: ${N(e.a)} declares war on ${N(e.b)}`, `عاجل: ${A(e.a)} تعلن الحرب على ${A(e.b)}`); break;
-      case 'treaty_trigger': push(4, `${e.alliance} allies called to defend ${N(e.ally)} after attack by ${N(e.attacker)}`, `حلفاء ${e.alliance} مدعوون للدفاع عن ${A(e.ally)} بعد هجوم ${A(e.attacker)}`); break;
+      case 'treaty_trigger': {
+        const al = ALLIANCES[e.alliance] || { name: 'Treaty', ar: 'المعاهدة' };
+        push(4, `${al.name} allies called to defend ${N(e.ally)} after attack by ${N(e.attacker)}`, `حلفاء ${al.ar} مدعوون للدفاع عن ${A(e.ally)} بعد هجوم ${A(e.attacker)}`); break;
+      }
+      case 'front': if (e.pct >= 100) break; push(4, e.pct > e.prev ? `${N(e.by)} forces advance deeper into ${N(e.country)}, now holding ${Math.round(e.pct)}% of its territory` : `${N(e.country)} pushes ${N(e.by)} back, retaking ground (${Math.round(e.pct)}% still held)`,
+        e.pct > e.prev ? `قوات ${A(e.by)} تتقدم داخل ${A(e.country)} وتسيطر على ${Math.round(e.pct)}% من أراضيها` : `${A(e.country)} تصد ${A(e.by)} وتستعيد أراضي (${Math.round(e.pct)}% ما زالت محتلة)`); break;
       case 'ceasefire': push(4, `${N(e.a)} and ${N(e.b)} agree to a ceasefire`, `${A(e.a)} و${A(e.b)} تتفقان على وقف إطلاق النار`); break;
       case 'peace': push(5, `Peace treaty signed between ${N(e.a)} and ${N(e.b)}`, `توقيع معاهدة سلام بين ${A(e.a)} و${A(e.b)}`); break;
       case 'alliance': push(3, `${N(e.a)} and ${N(e.b)} announce a military alliance`, `${A(e.a)} و${A(e.b)} تعلنان تحالفاً عسكرياً`); break;
@@ -61,6 +67,7 @@ export function headlinesFrom(state, ev) {
       case 'arms': push(2, `${N(e.a)} transfers a ${UNIT_TYPES[e.unitType].name.toLowerCase()} to ${N(e.b)}`, `${A(e.a)} تنقل ${UNIT_TYPES[e.unitType].ar} إلى ${A(e.b)}`); break;
       case 'overflight': push(1, `${N(e.a)} opens its airspace and bases to ${N(e.b)}`, `${A(e.a)} تفتح مجالها الجوي وقواعدها أمام ${A(e.b)}`); break;
       case 'battle':
+        if (e.result === 'won' && e.front && !e.occupied) break; // the front headline tells this story
         if (e.result === 'won') push(4, e.occupied ? `${N(e.attacker)} forces overrun ${N(e.defender)}` : `${N(e.attacker)} forces push into ${N(e.defender)}`, e.occupied ? `قوات ${A(e.attacker)} تجتاح ${A(e.defender)}` : `قوات ${A(e.attacker)} تتوغل في ${A(e.defender)}`);
         else push(4, `${N(e.defender)} repels ${N(e.attacker)} offensive`, `${A(e.defender)} تصد هجوم ${A(e.attacker)}`);
         break;

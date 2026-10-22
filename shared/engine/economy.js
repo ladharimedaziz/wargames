@@ -80,7 +80,7 @@ export function tickEconomy(state, ev, ctx) {
     }
     if (blockaded.has(c.id)) tradeFactor *= 0.75;
     const oilEffect = clamp(c.oilNet * oilShift * 0.012, -0.12, 0.25);
-    const occ = c.occupiedBy ? 0.6 : 1;
+    const occ = c.occupiedBy ? 0.6 : 1 - 0.4 * (c.front?.pct || 0) / 100;
     const warDrag = atWarNow ? 0.03 : 0;
     const targetGdp = c.base.gdp * Math.pow(c.industry, 0.5) * Math.pow(c.energy, 0.3) * tradeFactor * (1 + oilEffect) * occ * (1 - warDrag) * (1 - Math.min(0.3, Math.max(0, c.inflation - 2) / 100));
     c.gdp = Math.max(0.5, c.gdp + (targetGdp - c.gdp) * 0.4);
