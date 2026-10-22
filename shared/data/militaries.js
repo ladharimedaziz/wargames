@@ -108,3 +108,46 @@ export const AIRBORNE_KM = {
 };
 
 export const NEO_A3 = ['USA', 'GBR', 'FRA', 'CHN', 'RUS', 'IND', 'JPN', 'KOR', 'DEU', 'ITA', 'ESP', 'TUR', 'SAU', 'ARE', 'EGY', 'AUS', 'CAN', 'NLD', 'PAK', 'ISR', 'QAT', 'BRA'];
+
+// The US Navy's eleven carriers. Each American carrier group is named after one, in this order, which matches the
+// starting deployments above (George Washington is forward-deployed to Japan).
+export const US_CARRIERS = [
+  ['Gerald R. Ford', 'CVN-78'], ['Dwight D. Eisenhower', 'CVN-69'], ['Nimitz', 'CVN-68'], ['Carl Vinson', 'CVN-70'],
+  ['Abraham Lincoln', 'CVN-72'], ['Harry S. Truman', 'CVN-75'], ['Theodore Roosevelt', 'CVN-71'], ['Ronald Reagan', 'CVN-76'],
+  ['George Washington', 'CVN-73'], ['George H.W. Bush', 'CVN-77'], ['John C. Stennis', 'CVN-74'],
+];
+
+// Which numbered US fleet commands a sea zone. An American surface fleet takes the name of the fleet whose waters it is in.
+const US_FLEET_ZONES = {
+  2: ['us_east', 'north_atlantic'],
+  3: ['us_west', 'north_pacific', 'east_pacific', 'south_pacific'],
+  4: ['caribbean', 'panama', 'south_atlantic', 'west_africa', 'cape'],
+  5: ['persian_gulf', 'hormuz', 'arabian_sea', 'gulf_aden', 'bab', 'red_sea', 'mozambique'],
+  6: ['east_med', 'central_med', 'west_med', 'aegean', 'bosporus', 'black_sea', 'suez', 'gibraltar', 'atlantic_east', 'north_sea', 'danish', 'baltic', 'norwegian_sea', 'barents'],
+  7: ['philippine_sea', 'east_china', 'japan_sea', 'south_china', 'malacca', 'bay_bengal', 'indian_ocean', 'java_sea', 'coral_sea'],
+};
+const ORD = { 2: '2nd', 3: '3rd', 4: '4th', 5: '5th', 6: '6th', 7: '7th' };
+export function usFleetOf(zone) {
+  for (const [n, zs] of Object.entries(US_FLEET_ZONES)) if (zs.includes(zone)) return ORD[n];
+  return '2nd';
+}
+
+// A name for a new carrier group, if its navy names them: the first American carrier not already at sea.
+export function carrierName(units, a3) {
+  if (a3 !== 'USA') return undefined;
+  const used = new Set(Object.values(units).filter(u => u.type === 'carrier' && u.name).map(u => u.name));
+  const free = US_CARRIERS.find(([n]) => !used.has(n));
+  return free ? free[0] : undefined;
+}
+
+// How a warship group is called in the panel and on the map. Short form for map labels.
+export function navalLabel(u, a3, short = false) {
+  if (a3 === 'USA') {
+    if (u.type === 'carrier') {
+      const hull = US_CARRIERS.find(([n]) => n === u.name)?.[1];
+      return u.name ? (short ? `USS ${u.name}` : `USS ${u.name}${hull ? ` (${hull})` : ''} carrier strike group`) : (short ? 'Carrier strike group' : 'US carrier strike group');
+    }
+    if (u.type === 'fleet' && u.loc?.kind === 'sea') return short ? `${usFleetOf(u.loc.id)} Fleet` : `${usFleetOf(u.loc.id)} Fleet surface action group`;
+  }
+  return u.type === 'carrier' ? 'Carrier group' : 'Fleet';
+}

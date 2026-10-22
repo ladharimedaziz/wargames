@@ -149,7 +149,7 @@
 .insp-coat { width: 44px; height: 50px; object-fit: contain; filter: drop-shadow(0 0 6px rgba(255,255,255,.18)); background: radial-gradient(closest-side, rgba(255,255,255,.16), transparent); border-radius: 6px; }
 .insp-name { font: 700 22px/1.1 var(--font-hud); letter-spacing: .04em; }
 .tags { display: flex; flex-wrap: wrap; gap: 4px; }
-.quick-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.quick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 4px; }
 .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; }
 .stat .bar { margin-top: 4px; height: 4px; }
 .mini-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 6px; }

@@ -246,7 +246,9 @@ export function parseCommand(state, text, role = 'stage') {
     case 'fleet': case 'blockade':
       order.zone = zone; counts.n = Math.min(24, mainNum?.num || 1);
       if (unitToks.some(u => u.unit === 'carrier')) counts.type = 'carrier';
-      if (!zone) return { ok: false, error: 'Which sea? e.g. "iran blockade hormuz", "us sail to south china sea".' };
+      // "us blockade iran": a blockade of the country's coast.
+      if (!zone && target && verb === 'blockade') { order.type = 'siege'; order.target = target; delete order.zone; counts.n = Math.min(24, mainNum?.num || 2); break; }
+      if (!zone) return { ok: false, error: 'Which sea? e.g. "iran blockade hormuz", "us blockade iran", "us sail to south china sea".' };
       break;
     case 'aid': order.target = target; order.amount = mainNum?.num || 10; break;
     case 'arms': order.target = target; order.unitType = unitToks[0]?.unit || 'fighter'; break;
@@ -269,6 +271,7 @@ export function parseCommand(state, text, role = 'stage') {
 export const COMMAND_HELP = [
   ['russia strike ukraine 3 bombers energy escort 2', 'Air strike with chosen units, target type and fighter escort'],
   ['iran blockade hormuz 2', 'Blockade a sea zone with two fleets'],
+  ['us blockade iran 3', 'Blockade a country: warships close its coast'],
   ['us sail to south china sea carrier', 'Move a carrier group'],
   ['china invade taiwan 3', 'Send three army groups (needs a land border or ships nearby)'],
   ['uk sanction russia · us lift sanctions iran', 'Economic pressure'],

@@ -16,9 +16,9 @@ import { detectEndings } from './endings.js';
 import { snapshotStats } from './state.js';
 
 const PRIORITY = ['roe', 'overflight', 'war', 'alliance', 'ceasefire', 'peace', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'lift',
-  'rebase', 'cap', 'fleet', 'blockade', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'neo', 'strike', 'helistrike', 'invade', 'airdrop', 'airassault', 'nuke', 'election'];
+  'rebase', 'cap', 'fleet', 'blockade', 'siege', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'neo', 'strike', 'helistrike', 'invade', 'airdrop', 'airassault', 'nuke', 'election'];
 
-const ANIMATED = ['strike', 'battle', 'naval', 'fleet', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo', 'heli', 'civil_war', 'airdrop',
+const ANIMATED = ['strike', 'battle', 'naval', 'fleet', 'siege', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo', 'heli', 'civil_war', 'airdrop',
   'ceasefire', 'peace', 'alliance', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'overflight', 'cyber', 'intel', 'spy', 'satellite', 'propaganda', 'alert', 'lift', 'roe', 'election'];
 
 const pt = c => ({ lat: c.lat, lon: c.lon });
@@ -303,7 +303,7 @@ function resolveNaval(state, ev) {
       for (const u of lose) if (state.units[u.id]) {
         const home = zonesTouching(u.owner)[0];
         if (home && home !== zone) { const route = seaRoute(zone, home, new Set()); if (route && route[1]) u.loc = { kind: 'sea', id: route[1] }; }
-        u.blockade = false;
+        u.blockade = false; delete u.blockadeOf;
       }
       const cas = Math.round((PA + PB) * 0.3);
       state.global.casualties += cas;
@@ -317,7 +317,8 @@ function updateChokepoints(state, ev) {
   for (const [zone, cp] of Object.entries(state.global.chokepoints)) {
     if (cp.forced) continue;
     const ships = unitsAt(state, 'sea', zone);
-    const blockaders = ships.filter(u => u.blockade);
+    // A blockade of a country's coast does not close the strait it sits in; only a blockade of the zone itself does.
+    const blockaders = ships.filter(u => u.blockade && !u.blockadeOf);
     const prev = cp.status;
     if (!blockaders.length) { cp.status = 'open'; cp.by = null; }
     else {
@@ -501,8 +502,25 @@ function moveFleet(state, o, ev) {
     const steps = route.slice(0, FLEET_MOVES_PER_TURN * 2 + 1);
     ev.push({ kind: 'fleet', owner: o.country, unitType: u.type, blockade: o.type === 'blockade' && steps[steps.length - 1] === o.zone, path: steps.map(z => ({ lat: SEA_ZONES[z].lat, lon: SEA_ZONES[z].lon })) });
     u.loc = { kind: 'sea', id: steps[steps.length - 1] };
-    if (o.type === 'blockade') u.blockade = steps[steps.length - 1] === o.zone;
+    // Any new move ends a blockade the ship was holding, unless it is ordered to blockade where it arrives.
+    u.blockade = o.type === 'blockade' && steps[steps.length - 1] === o.zone; delete u.blockadeOf;
   }
+}
+
+// A naval blockade of a country: each warship sails to the nearest stretch of its coast, spreading out so that a
+// country with several coasts is closed on as many of them as there are ships.
+function siegeCoast(state, o, ev) {
+  const coast = zonesTouching(o.target), blocked = blockedFor(state, o.country), taken = new Set(), zones = [];
+  for (const id of o.units) {
+    const u = state.units[id]; if (!u || u.loc.kind !== 'sea') continue;
+    const routes = coast.map(z => seaRoute(u.loc.id, z, blocked)).filter(r => r && r.length - 1 <= FLEET_MOVES_PER_TURN * 2).sort((a, b) => a.length - b.length);
+    const route = routes.find(r => !taken.has(r[r.length - 1])) || routes[0];
+    if (!route) continue;
+    const dest = route[route.length - 1]; taken.add(dest); zones.push(dest);
+    if (route.length > 1) ev.push({ kind: 'fleet', owner: o.country, unitType: u.type, blockade: true, path: route.map(z => ({ lat: SEA_ZONES[z].lat, lon: SEA_ZONES[z].lon })) });
+    u.loc = { kind: 'sea', id: dest }; u.blockade = true; u.blockadeOf = o.target;
+  }
+  if (zones.length) ev.push({ kind: 'siege', owner: o.country, target: o.target, zones: [...new Set(zones)], coasts: coast.length });
 }
 
 function resolveCovert(state, o, ev) {
@@ -609,7 +627,8 @@ function runOrders(state, list, ctx, ev) {
       case 'airdrop': invasions.push(o); break;
       case 'rebase': for (const id of o.units) { const u = state.units[id]; if (u) { ev.push({ kind: 'move', owner: o.country, unitType: u.type, from: anchor(state, u.loc), to: pt(state.countries[o.target]) }); u.loc = { kind: 'country', id: o.target }; } } break;
       case 'fleet': case 'blockade': moveFleet(state, o, ev); break;
-      case 'lift': for (const u of unitsOf(state, o.country)) u.blockade = false; ev.push({ kind: 'lift', a: o.country }); break;
+      case 'siege': siegeCoast(state, o, ev); break;
+      case 'lift': for (const u of unitsOf(state, o.country)) { u.blockade = false; delete u.blockadeOf; } ev.push({ kind: 'lift', a: o.country }); break;
       case 'cap': for (const u of unitsOf(state, o.country, 'fighter')) if (u.loc.id === o.country) u.cap = true; break;
       case 'alert': state.countries[o.country].nuclear.alert = true; ev.push({ kind: 'alert', a: o.country }); break;
       case 'nuke': {

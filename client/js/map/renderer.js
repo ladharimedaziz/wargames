@@ -11,6 +11,7 @@ import { AirTraffic, SeaTraffic } from './traffic.js';
 import { ACT_FX } from './acts.js';
 import { AIRCRAFT_FX, DIPLO_KINDS } from './aircraft.js';
 import { ROAD_FX } from './roads.js';
+import { NAVAL_FX } from './naval.js';
 
 const TAU = Math.PI * 2;
 const withCamOn = (ctx, dpr, cam, fn) => { ctx.save(); ctx.setTransform(dpr * cam.k, 0, 0, dpr * cam.k, dpr * cam.x, dpr * cam.y); fn(); ctx.restore(); };
@@ -660,6 +661,7 @@ export class WorldMap {
     for (const e of evs.filter(e => e.kind === 'war')) { add({ type: 'war', a: e.a, b: e.b, dur: 2.4 }, 0); }
     for (const e of evs.filter(e => e.kind === 'move')) { add({ type: 'move', e, dur: 2.6 }, t); mark(6, e.from, e.to); }
     for (const e of evs.filter(e => e.kind === 'fleet')) { add({ type: 'fleet', e, dur: 3.2 }, t); mark(6, ...e.path); }
+    for (const e of evs.filter(e => e.kind === 'siege')) { add({ type: 'siege', e, dur: 4.2 }, t + 2.4); const T = this.state?.countries?.[e.target]; mark(1, T && { lat: T.lat, lon: T.lon }); }
     t += 0.6;
     strikes.slice(0, 80).forEach((e, i) => { add({ type: e.kind, e, dur: e.kind === 'scrubbed' ? 3 : e.unitType === 'missile' ? 2.4 : e.unitType === 'bomber' ? 5.2 : 3.8 }, t + i * 0.12); mark(3, e.from, e.to); });
     t += Math.min(80, strikes.length) * 0.12 + (strikes.some(e => e.unitType === 'bomber') ? 4.4 : strikes.some(e => e.unitType !== 'missile') ? 3.2 : 2.2);
@@ -1082,6 +1084,7 @@ export class WorldMap {
     this.drawFronts(ctx, now, time, withCam);
     this.drawConditions(ctx, time);
     this.drawCoat(ctx, time);
+    this.drawBlockades(ctx, time);
     this.drawBattles(ctx, time);
     this.ambientStrikes(now);
     this.drawCities(ctx, time);
@@ -1523,8 +1526,9 @@ export class WorldMap {
     const groups = new Map();
     for (const u of Object.values(s.units)) {
       if (u.strength <= 0 || !this.visibleTo(u)) continue;
-      const key = `${u.loc.kind}:${u.loc.id}:${u.owner}`;
-      if (!groups.has(key)) groups.set(key, { loc: u.loc, owner: u.owner, units: [] });
+      // At sea, fleets and carrier groups get their own markers.
+      const key = `${u.loc.kind}:${u.loc.id}:${u.owner}${u.loc.kind === 'sea' ? ':' + u.type : ''}`;
+      if (!groups.has(key)) groups.set(key, { loc: u.loc, owner: u.owner, type: u.type, units: [] });
       groups.get(key).units.push(u);
     }
     const perLoc = new Map();
@@ -1535,25 +1539,19 @@ export class WorldMap {
       if (g.loc.kind === 'sea') { const z = SEA_ZONES[g.loc.id]; base = z && this.p(z.lon, z.lat); }
       else base = this.countryPoint(g.loc.id);
       if (!base) continue;
-      const ang = i * 2.1 + 0.6, rr = i ? 11 + i * 2 : 0;
+      const ang = i * 2.1 + 0.6, rr = i ? (g.loc.kind === 'sea' ? (30 + i * 6) * Math.min(1.5, 0.85 + this.cam.k * 0.12) : 11 + i * 2) : 0;
       const q = [base[0] + Math.cos(ang) * rr, base[1] + Math.sin(ang) * rr + (g.loc.kind === 'country' ? 12 : 0)];
       const owner = s.countries[g.owner];
       const color = owner && owner.bloc !== 'N' ? s.blocs[owner.bloc].color : '#c8d2e0';
       const sea = g.loc.kind === 'sea';
-      const blockade = g.units.some(u => u.blockade);
       const count = g.units.length;
       const scale = Math.min(1.5, 0.85 + this.cam.k * 0.12);
+      if (sea) { ctx.save(); ctx.translate(q[0], q[1]); this.drawNavalGroup(ctx, g, time, color, scale); ctx.restore(); continue; }
       ctx.save(); ctx.translate(q[0], q[1]); ctx.scale(scale, scale);
       ctx.fillStyle = 'rgba(4,6,11,0.85)'; ctx.strokeStyle = color; ctx.lineWidth = 1.4;
-      if (sea) {
-        ctx.beginPath(); ctx.moveTo(-8, -2); ctx.lineTo(8, -2); ctx.lineTo(5, 4); ctx.lineTo(-5, 4); ctx.closePath(); ctx.fill(); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-1, -2); ctx.lineTo(-1, -7); ctx.lineTo(4, -4); ctx.stroke();
-        if (blockade) { ctx.strokeStyle = `rgba(255,77,94,${0.6 + 0.4 * Math.sin(time * 4)})`; ctx.beginPath(); ctx.arc(0, 0, 12, 0, TAU); ctx.stroke(); }
-      } else {
-        const air = g.units.every(u => ['fighter', 'bomber'].includes(u.type));
-        if (air) { ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(6, 5); ctx.lineTo(0, 2); ctx.lineTo(-6, 5); ctx.closePath(); ctx.fill(); ctx.stroke(); }
-        else { ctx.beginPath(); ctx.rect(-7, -5, 14, 10); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-7, -5); ctx.lineTo(7, 5); ctx.moveTo(7, -5); ctx.lineTo(-7, 5); ctx.stroke(); }
-      }
+      const air = g.units.every(u => ['fighter', 'bomber'].includes(u.type));
+      if (air) { ctx.beginPath(); ctx.moveTo(0, -6); ctx.lineTo(6, 5); ctx.lineTo(0, 2); ctx.lineTo(-6, 5); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+      else { ctx.beginPath(); ctx.rect(-7, -5, 14, 10); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(-7, -5); ctx.lineTo(7, 5); ctx.moveTo(7, -5); ctx.lineTo(-7, 5); ctx.stroke(); }
       if (count > 1) { ctx.fillStyle = color; ctx.font = '700 9px JetBrains Mono, monospace'; ctx.textAlign = 'left'; ctx.fillText(String(count), 9, -4); }
       ctx.restore();
     }
@@ -2197,7 +2195,7 @@ export class WorldMap {
   }
 }
 
-Object.assign(WorldMap.prototype, ACT_FX, AIRCRAFT_FX, ROAD_FX);
+Object.assign(WorldMap.prototype, ACT_FX, AIRCRAFT_FX, ROAD_FX, NAVAL_FX);
 
 function geoDistanceKm(a, b) {
   const R = 6371, rad = Math.PI / 180;

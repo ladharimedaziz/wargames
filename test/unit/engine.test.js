@@ -422,3 +422,22 @@ test('Zeus forces orders without ending the turn', () => {
   assert.equal(s.orders.filter(o => o.status === 'queued').length, 0);
   assert.ok(s.orders.some(o => o.type === 'strike' && o.status !== 'queued'));
 });
+
+test('US carrier groups are named, and a blockade can close a country\'s coast', () => {
+  const { s, zeus } = world();
+  const carriers = Object.values(s.units).filter(u => u.owner === US && u.type === 'carrier');
+  assert.equal(new Set(carriers.map(u => u.name)).size, carriers.length);
+  assert.ok(carriers.some(u => u.name === 'George Washington' && u.loc.id === 'japan_sea'));
+  const IR = '364';
+  command(s, zeus, 'us blockade iran 2');
+  assert.equal(parseCommand(s, 'us blockade switzerland', 'stage').order.type, 'siege');
+  assert.equal(zeus({ type: 'queueOrder', order: { country: US, type: 'siege', target: '756', counts: { n: 1 } } }).ok, false);
+  const gdp = s.countries[IR].gdp;
+  assert.ok(zeus({ type: 'resolveTurn' }).ok);
+  const on = Object.values(s.units).filter(u => u.blockadeOf === IR);
+  assert.ok(on.length >= 1);
+  assert.equal(s.global.chokepoints.hormuz.status, 'open');
+  assert.ok(s.countries[IR].gdp < gdp);
+  zeus({ type: 'queueOrder', order: { country: US, type: 'lift' }, now: true });
+  assert.equal(Object.values(s.units).filter(u => u.blockadeOf).length, 0);
+});
