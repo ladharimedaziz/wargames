@@ -110,6 +110,11 @@ export class WorldMap {
       return [c.id, b];
     }));
     this.centroids = new Map(this.atlas.lo.countries.map(c => [c.id, proj(c.centroid)]));
+    // Centre of the main landmass, so the US emblem sits on the lower 48 rather than drifting toward Alaska.
+    this.mainCentroids = new Map(this.atlas.lo.countries.map(c => {
+      const main = c.parts.reduce((a, b) => (b.area > a.area ? b : a));
+      return [c.id, geoPath(proj).centroid(main.f)];
+    }));
     this.borderCache = new Map();
   }
 
@@ -919,7 +924,7 @@ export class WorldMap {
     let img = this.coatImgs.get(id);
     if (!img) { img = new Image(); img.onload = () => { this.coatAt = performance.now(); this.dirty = true; }; img.src = `/client/img/coats/${id}.webp`; this.coatImgs.set(id, img); }
     if (!img.complete || !img.naturalWidth) return;
-    const b = this.bounds.get(id), cen = this.centroids.get(id); if (!b || !cen) return;
+    const b = this.bounds.get(id), cen = this.mainCentroids.get(id); if (!b || !cen || !Number.isFinite(cen[0])) return;
     const k = this.cam.k, toS = (x, y) => [x * k + this.cam.x, y * k + this.cam.y];
     const [x0, y0] = toS(b[0][0], b[0][1]), [x1, y1] = toS(b[1][0], b[1][1]);
     const bw = x1 - x0, bh = y1 - y0; if (bw < 8 || bh < 8) return;

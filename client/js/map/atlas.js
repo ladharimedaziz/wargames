@@ -18,7 +18,14 @@ async function load(url) {
   }
   const countries = [...byId.entries()].map(([id, fs]) => {
     const merged = { type: 'Feature', id, properties: { name: fs[0].properties.name }, geometry: { type: 'GeometryCollection', geometries: fs.map(f => f.geometry) } };
-    const parts = fs.map(f => ({ f, bbox: geoBounds(f), area: geoArea(f) }));
+    // One part per polygon, so the main landmass is found even when a feature carries overseas pieces
+    // (France with French Guiana, the US with Alaska and Hawaii).
+    const parts = fs.flatMap(f => (f.geometry?.type === 'MultiPolygon'
+      ? f.geometry.coordinates.map(coordinates => ({ type: 'Feature', properties: f.properties, geometry: { type: 'Polygon', coordinates } }))
+      : [f])).map(f => {
+      const a = geoArea(f);
+      return { f, bbox: geoBounds(f), area: a > 2 * Math.PI ? 4 * Math.PI - a : a };
+    });
     const main = parts.reduce((a, b) => (b.area > a.area ? b : a));
     return { id, feature: merged, parts, centroid: geoCentroid(main.f), area: parts.reduce((s, p) => s + p.area, 0) };
   });
