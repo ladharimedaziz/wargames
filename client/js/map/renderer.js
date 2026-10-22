@@ -907,7 +907,7 @@ export class WorldMap {
   // --- coat of arms ---
   // When the Zeus turns it on, the country in focus gets a broadcast-style plate with its coat of arms.
   drawCoat(ctx, time) {
-    const id = this.state?.display?.coat ? this.focusedCountry() : null;
+    const id = this.state?.display?.arms !== false ? this.focusedCountry() : null;
     if (id !== this.coatId) { this.coatId = id; this.coatAt = performance.now(); }
     if (!id) return;
     this.coatImgs ||= new Map();
@@ -1082,7 +1082,7 @@ export class WorldMap {
     const ar = this.opts.lang === 'ar';
     const placed = (this.labelBoxes || []).slice(), own = [];
     const minTier = k >= 8 ? 4 : k >= 5.5 ? 3 : k >= 3.6 ? 2 : 1;
-    const list = CITIES.filter(c => c.a3 === focusA3 ? k >= (c.tier === 4 ? 3 : 1.4) : c.tier <= minTier && k >= 2.6).sort((a, b) => (b.a3 === focusA3) - (a.a3 === focusA3) || a.tier - b.tier);
+    const list = CITIES.filter(c => c.a3 === focusA3 ? k >= (c.tier === 4 ? 1.8 : 1.4) : c.tier <= minTier && k >= 2.6).sort((a, b) => (b.a3 === focusA3) - (a.a3 === focusA3) || a.tier - b.tier);
     ctx.textBaseline = 'middle';
     for (const c of list) {
       const q = this.p(c.lon, c.lat); if (!q || q[0] < -20 || q[0] > this.w + 20 || q[1] < -20 || q[1] > this.h + 20) continue;

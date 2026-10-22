@@ -92,6 +92,7 @@ export function DisplayTab({ conn, state, committee }) {
       <div class="row wrap">
         <button class=${cls('btn sm', st.night && 'on')} onClick=${() => run(conn, { type: 'setSetting', key: 'night', value: !st.night })} title="Dark map with glowing city lights">☾ Night mode</button>
         <button class=${cls('btn sm', st.showStrikes !== false && 'on')} onClick=${() => run(conn, { type: 'setSetting', key: 'showStrikes', value: st.showStrikes === false })} title="Jets fly precision strikes along active fronts every few seconds, for show only">✈ Show strikes</button>
+        <button class=${cls('btn sm', d.arms !== false && 'on')} onClick=${() => run(conn, { type: 'setCoat', on: d.arms === false })} title="Show the coat of arms of a country when it is selected or zoomed to, on every map">⚜ Coats of arms</button>
       </div>
 
       <div class="sub-h">Map layers on stage</div>

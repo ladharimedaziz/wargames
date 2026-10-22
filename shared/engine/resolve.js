@@ -709,7 +709,7 @@ function publish(state, ev, ctx) {
   const turn = state.meta.turn;
   const headlines = headlinesFrom(state, ev);
   for (const h of headlines) {
-    const item = { id: newId(state, 'n'), turn, kind: 'news', status: state.settings.autoAir ? 'aired' : 'pending', priority: h.priority || 1, en: h.en, ar: h.ar, detail: h.detail || '', at: ctx.now };
+    const item = { id: newId(state, 'n'), turn, kind: 'news', status: state.settings.airMode !== 'manual' ? 'aired' : 'pending', priority: h.priority || 1, en: h.en, ar: h.ar, detail: h.detail || '', at: ctx.now };
     state.review.push(item);
     if (item.status === 'aired') state.aired.push({ ...item, airedAt: ctx.now });
   }
