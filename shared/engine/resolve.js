@@ -8,15 +8,16 @@ import {
 } from './core.js';
 import { validateOrder, blockedFor, describeOrder } from './orders.js';
 import { tickEconomy } from './economy.js';
+import { hasGeo, cellsOf, cellCenter, advance, holdings, releaseCells, occupyCells, heldCenter, behindLines, dropPocket } from './control.js';
 import { planAI } from './ai.js';
 import { headlinesFrom } from './news.js';
 import { detectEndings } from './endings.js';
 import { snapshotStats } from './state.js';
 
 const PRIORITY = ['roe', 'overflight', 'war', 'alliance', 'ceasefire', 'peace', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'lift',
-  'rebase', 'cap', 'fleet', 'blockade', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'neo', 'strike', 'invade', 'nuke', 'election'];
+  'rebase', 'cap', 'fleet', 'blockade', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'neo', 'strike', 'helistrike', 'invade', 'airassault', 'nuke', 'election'];
 
-const ANIMATED = ['strike', 'battle', 'naval', 'fleet', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo'];
+const ANIMATED = ['strike', 'battle', 'naval', 'fleet', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo', 'heli', 'civil_war'];
 
 const pt = c => ({ lat: c.lat, lon: c.lon });
 // A country's fighting quality in a domain (land, air or sea).
@@ -317,20 +318,94 @@ function frontDelta(mode, engine, push) {
   return engine;
 }
 
-// Moves a front by `delta` points. Reaching 100 occupies the country; falling to 0 ends the front.
-// Pushing back an occupied country liberates it. Returns true when the country falls this call.
+// Helicopters: attack helicopters hit forces just behind the enemy line; an air assault lands troops deeper in
+// and takes a pocket of ground. Air defences can shoot them down.
+function resolveHelicopters(state, o, ev) {
+  const T = state.countries[o.target], A = state.countries[o.country];
+  const geo = hasGeo() ? behindLines(state, o.country, o.target, o.type === 'airassault' ? 7 : 3, () => rand(state)) : null;
+  const from = geo?.from || pt(A), to = geo?.to || pt(T);
+  const lost = chance(state, clamp(T.airDefense * 0.035 / Q(state, o.country, 'air'), 0.03, 0.4));
+  if (o.type === 'helistrike') {
+    const def = unitsAt(state, 'country', o.target).filter(u => u.type === 'army' && u.owner === o.target);
+    if (!lost && def.length) damageUnit(state, def[Math.floor(rand(state) * def.length)], between(state, 8, 18) * Q(state, o.country, 'air'), ev, 'helicopter strike');
+    if (!lost && T.front?.by === o.country) moveFront(state, T, 3, ev);
+    ev.push({ kind: 'heli', mode: 'strike', owner: o.country, target: o.target, from, to, lost });
+    return;
+  }
+  // Air assault: one army group flies in. If it gets through it holds a pocket behind the line.
+  const u = state.units[o.units?.[0]];
+  let pocket = 0;
+  if (!lost && geo && u) {
+    const n = Math.round(clamp(6 + u.strength / 15, 6, 14));
+    pocket = dropPocket(state, o.country, o.target, geo.key, n).length;
+    u.loc = { kind: 'country', id: o.target };
+    syncFront(state, T, ev);
+  } else if (lost && u) damageUnit(state, u, between(state, 25, 45), ev, 'helicopters shot down');
+  ev.push({ kind: 'heli', mode: 'assault', owner: o.country, target: o.target, from, to, lost, pocket });
+}
+
+// A push is measured against the country, but capped at the size of a large theatre, so "+10" in Russia takes
+// about as much ground as "+10" in Ukraine rather than a tenth of Siberia.
+const FRONT_CAP = 1100;
+
+// Moves a front by `delta` points: the attacker takes cells along the line (or, going back, the defender retakes
+// its own). Holding all of it occupies the country; losing all of it ends the front. Returns true when the
+// country falls this call.
 export function moveFront(state, T, delta, ev) {
   const f = T.front; if (!f || !delta) { if (f) f.turn = state.meta.turn; return false; }
-  const prev = f.pct;
-  f.prev = prev; f.pct = clamp(prev + delta, 0, 100); f.turn = state.meta.turn;
-  ev.push({ kind: 'front', by: f.by, country: T.id, from: f.from, prev, pct: f.pct });
-  if (f.pct >= 100 && prev < 100) { occupy(state, T, f.by, ev); return true; }
-  if (f.pct < 100 && T.occupiedBy) {
-    ev.push({ kind: 'liberation', country: T.id, from: T.occupiedBy });
-    T.occupiedBy = null;
+  if (!hasGeo()) {
+    const prev = f.pct;
+    f.prev = prev; f.pct = clamp(prev + delta, 0, 100); f.turn = state.meta.turn;
+    ev.push({ kind: 'front', by: f.by, country: T.id, from: f.from, prev, pct: f.pct });
+    if (f.pct >= 100 && prev < 100) { occupy(state, T, f.by, ev); return true; }
+    if (f.pct < 100 && T.occupiedBy) { ev.push({ kind: 'liberation', country: T.id, from: T.occupiedBy }); T.occupiedBy = null; }
+    if (f.pct <= 0) T.front = null;
+    return false;
   }
-  if (f.pct <= 0) T.front = null;
-  return false;
+  const total = cellsOf(T.id).length;
+  const n = Math.max(1, Math.round(Math.abs(delta) / 100 * Math.min(total, FRONT_CAP)));
+  const wasOccupied = !!T.occupiedBy;
+  if (delta > 0) {
+    const took = advance(state, f.by, T.id, n, { target: T.id, from: f.from, toward: pt(T) });
+    if (took.length) { const [lon, lat] = cellCenter(took[took.length - 1]); f.from = { lat, lon }; }
+  } else {
+    if (T.occupiedBy && total > 5000 && !holdings(state, T.id).held[f.by]) occupyCells(state, T.id, f.by);
+    advance(state, T.id, f.by, n, { liberateOnly: true, from: pt(T), toward: pt(state.countries[f.by]) });
+  }
+  return syncFront(state, T, ev) === 'occupied' && !wasOccupied;
+}
+
+// Rebuilds a country's front summary from the cells: who holds the most of it and what share.
+export function syncFront(state, T, ev) {
+  if (!hasGeo()) return null;
+  const { total, held } = holdings(state, T.id);
+  const owners = Object.entries(held).sort((a, b) => b[1] - a[1]);
+  const f = T.front;
+  if (!owners.length) {
+    if (T.occupiedBy) return null; // a huge country held without listing every cell
+    if (f) { ev.push({ kind: 'front', by: f.by, country: T.id, from: f.from, prev: f.pct, pct: 0 }); T.front = null; }
+    return null;
+  }
+  const [by, n] = owners[0];
+  const pct = total ? Math.min(100, Math.round((1000 * n) / total) / 10) : 0;
+  const same = f && f.by === by;
+  const prev = same ? f.pct : 0;
+  T.front = { by, pct, prev, from: (same && f.from) || heldCenter(state, T.id, by) || { lat: T.lat, lon: T.lon }, turn: state.meta.turn, mode: f?.mode || 'auto' };
+  if (pct !== prev) ev.push({ kind: 'front', by, country: T.id, from: T.front.from, prev, pct });
+  if (pct >= 97 && !T.occupiedBy) {
+    if (total <= 5000) occupyCells(state, T.id, by); else releaseCells(state, T.id, by);
+    T.front.pct = 100;
+    occupy(state, T, by, ev);
+    return 'occupied';
+  }
+  if (pct < 97 && T.occupiedBy) { ev.push({ kind: 'liberation', country: T.id, from: T.occupiedBy }); T.occupiedBy = null; }
+  return null;
+}
+
+// Clears a front and gives the ground back (peace, or a war that ended without a ceasefire line).
+export function clearFront(state, T, by) {
+  if (hasGeo()) releaseCells(state, T.id, by ?? T.front?.by);
+  T.front = null;
 }
 
 function occupy(state, T, by, ev) {
@@ -351,7 +426,7 @@ function updateFronts(state, ev) {
     if (f.turn === turn) continue;
     if (!atWar(state, f.by, T.id)) {
       const frozen = state.treaties.some(t => t.type === 'ceasefire' && t.parties.includes(f.by) && t.parties.includes(T.id));
-      if (!frozen && !T.occupiedBy) T.front = null;
+      if (!frozen && !T.occupiedBy) clearFront(state, T, f.by);
       continue;
     }
     const held = unitsAt(state, 'country', T.id).filter(u => u.type === 'army' && (u.owner === T.id || sameSide(state, u.owner, T.id))).reduce((t, u) => t + u.strength, 0);
@@ -377,8 +452,7 @@ export function pushFrontNow(state, countryId, by, delta, ctx) {
   }
   const ev = [];
   moveFront(state, T, delta, ev);
-  state.lastResolution = { turn: state.meta.turn, at: ctx.now, instant: true, events: ev.filter(e => ANIMATED.includes(e.kind)) };
-  publish(state, ev, ctx);
+  publishInstant(state, ev, ctx);
   return null;
 }
 
@@ -447,7 +521,7 @@ function resolveDiplomacy(state, o, ev) {
         const t = o.terms || {};
         for (const [x, y] of [[a, b], [b, a]]) {
           const X = state.countries[x];
-          if (t.returnTerritory !== false && (X.occupiedBy === y || X.front?.by === y)) { X.occupiedBy = null; X.front = null; }
+          if (t.returnTerritory !== false && (X.occupiedBy === y || X.front?.by === y)) { X.occupiedBy = null; clearFront(state, X, y); }
         }
         if (t.reparations > 0 && t.payer && t.payee) { state.countries[t.payer].treasury -= t.reparations; state.countries[t.payee].treasury += t.reparations; }
         if (t.demilitarize) for (const u of Object.values(state.units)) if ((u.owner === a && u.loc.id === b) || (u.owner === b && u.loc.id === a)) u.loc = { kind: u.loc.kind, id: u.loc.kind === 'country' ? u.owner : u.loc.id };
@@ -512,6 +586,7 @@ function runOrders(state, list, ctx, ev) {
       }
       case 'cyber': case 'intel': case 'spy': case 'satellite': case 'propaganda': resolveCovert(state, o, ev); break;
       case 'neo': resolveEvacuation(state, o, ev); break;
+      case 'helistrike': case 'airassault': resolveHelicopters(state, o, ev); break;
       default: resolveDiplomacy(state, o, ev);
     }
   }
@@ -585,6 +660,12 @@ export function resolveTurn(state, ctx) {
 }
 
 // Sends headlines and ending suggestions to the review queue.
+// An instant change outside the turn (a Zeus moving a front, painting ground): animate it and write the news.
+export function publishInstant(state, ev, ctx) {
+  state.lastResolution = { turn: state.meta.turn, at: ctx.now, instant: true, events: ev.filter(e => ANIMATED.includes(e.kind)) };
+  publish(state, ev, ctx);
+}
+
 function publish(state, ev, ctx) {
   const turn = state.meta.turn;
   const headlines = headlinesFrom(state, ev);

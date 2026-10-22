@@ -10,6 +10,8 @@ const VERBS = [
   ['war', ['declare war', 'declares war', 'declares war on', 'declare war on', 'war on', 'war']],
   ['nuke', ['nuke', 'nukes', 'nuclear strike', 'nuclear launch', 'launch nuclear']],
   ['alert', ['nuclear alert', 'alert']],
+  ['helistrike', ['helicopter strike', 'helicopter strikes', 'helicopters strike', 'heli strike', 'helicopter attack', 'helicopters attack', 'gunship strike', 'gunships strike', 'gunships']],
+  ['airassault', ['air assault', 'air assaults', 'airborne assault', 'airborne landing', 'heliborne assault', 'drop troops behind', 'drops troops behind', 'land troops behind', 'lands troops behind', 'paratroopers into', 'paratroopers', 'airdrop', 'airdrops']],
   ['strike', ['strike', 'strikes', 'bomb', 'bombs', 'attack', 'attacks', 'hit', 'hits', 'airstrike', 'airstrikes', 'shell', 'shells']],
   ['neo', ['evacuate citizens from', 'evacuates citizens from', 'evacuate from', 'evacuates from', 'evacuate', 'evacuates', 'evacuation', 'evac', 'neo']],
   ['invade', ['invade', 'invades', 'invasion of', 'invasion', 'march into', 'marches into', 'push into', 'pushes into', 'send troops to', 'sends troops to', 'move troops to', 'moves troops to']],
@@ -144,6 +146,24 @@ function system(state, raw, role) {
       const sc = { map: 'map', disguise: 'disguise', fisheries: 'disguise', intro: 'intro', reveal: 'reveal', report: 'report', blank: 'blank', black: 'blank', pause: 'pause', prayer: 'pause', vote: 'vote', treaty: 'treaty', polls: 'polls', web: 'web', relations: 'web' }[(rest[0] || '').toLowerCase()];
       return sc ? { actions: [{ type: 'setScene', scene: sc }], preview: `Switch the display to ${sc}` } : { error: 'Scenes: map, disguise, intro, reveal, report, pause, vote, treaty, polls, web, blank.' };
     }
+    case 'civil': case 'civilwar': case 'rebellion': case 'uprising': {
+      // "civil war syria 40 Free Syrian Army": who splits, what share rises, and optionally the rebels' name.
+      const words = h === 'civil' ? rest.slice(rest[0]?.toLowerCase() === 'war' ? 1 : 0) : rest;
+      const toks = tokenize(state, words.join(' '));
+      const id = toks.find(x => x.country)?.country; if (!id) return { error: 'Try "civil war syria 40 Free Army".' };
+      const share = toks.find(x => x.num)?.num || 30;
+      const cname = toks.filter(x => !x.country && !x.num && !['in', 'of', 'war', 'percent', '%'].includes(x.word)).map(x => x.word).join(' ');
+      const nm = cname ? cname.replace(/\b\w/g, ch => ch.toUpperCase()) : '';
+      return { actions: [{ type: 'civilWar', country: id, share, name: nm }], preview: `Civil war in ${name(id)}: ${nm || 'rebels'} rise with ${share}% of the country` };
+    }
+    case 'tension': case 'defcon': {
+      // "tension 7", "tension up", "tension down 2"
+      const cur = state.global.tension, n = parseFloat(rest.find(w => /^\d+(\.\d+)?$/.test(w)));
+      const v = /^(up|raise|\+)/i.test(tail) ? cur + (Number.isFinite(n) ? n : 1) : /^(down|lower|-)/i.test(tail) ? cur - (Number.isFinite(n) ? n : 1) : n;
+      if (!Number.isFinite(v)) return { error: 'Try "tension 7", "tension up" or "tension down 2".' };
+      const to = Math.max(0, Math.min(10, Math.round(v * 2) / 2));
+      return { actions: [{ type: 'setTension', value: to }], preview: `Set world tension from ${cur} to ${to}` };
+    }
     case 'intro': return { actions: [{ type: 'setScene', scene: 'intro' }], preview: 'Play the cinematic intro' };
     case 'reveal': return { actions: [{ type: 'setScene', scene: 'reveal' }], preview: 'Drop the disguise and reveal the crisis' };
     case 'pause': case 'humanitarian': {
@@ -227,6 +247,7 @@ export function parseCommand(state, text, role = 'stage') {
     case 'spy': order.target = target; order.kind = ['steal', 'sabotage', 'defector'].includes(kind) ? kind : (verbTok.word.startsWith('sabot') ? 'sabotage' : verbTok.word.startsWith('steal') ? 'steal' : 'sabotage'); break;
     case 'roe': order.kind = ['defensive', 'firm', 'forward'].includes(kind) ? kind : null; if (!order.kind) return { ok: false, error: 'ROE is defensive, firm or forward.' }; break;
     case 'propaganda': order.target = target; break;
+    case 'helistrike': case 'airassault': order.target = target; if (!target) return { ok: false, error: 'Against whom? e.g. "russia helicopter strike ukraine" or "russia air assault ukraine".' }; break;
     case 'neo': order.target = target; if (!target) return { ok: false, error: 'Evacuate from where? e.g. "us evacuate sudan".' }; break;
     default: order.target = target;
   }
@@ -252,5 +273,8 @@ export const COMMAND_HELP = [
   ['news Oil tankers turn back · breaking Embassy stormed', 'Queue or instantly air a headline'],
   ['player saudi uae qatar · ai russia', 'Hand countries to delegates or the computer'],
   ['bloc A usa uk · focus iran · resolve', 'Blocs, zoom the display, resolve the turn'],
+  ['tension 7 · tension up · tension down 2', 'Set world tension'],
+  ['civil war syria 40 Free Army', 'A rebel faction takes 40% of the country'],
+  ['us helicopter strike iraq · russia air assault ukraine', 'Gunship strike, or troops dropped behind the frontline'],
 ];
 export { UNIT_TYPES };

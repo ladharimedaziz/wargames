@@ -32,6 +32,9 @@
 .tension-mini i.on { background: hsl(calc(140 - var(--i) * 14), 85%, 55%); box-shadow: 0 0 6px hsla(calc(140 - var(--i) * 14), 85%, 55%, .5); }
 .tension-mini i.half { background: linear-gradient(90deg, hsl(calc(140 - var(--i) * 14), 85%, 55%) 50%, var(--bg-4) 50%); }
 .tb-tension b { font-size: 12px; }
+.tb-tension { position: relative; padding-right: 24px; }
+.tension-step { position: absolute; right: 0; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 1px; }
+.tension-step .btn { padding: 0 4px; min-height: 0; height: 15px; line-height: 13px; font-size: 8px; }
 .t-0 { color: var(--green); } .t-1 { color: #9be37a; } .t-2 { color: var(--gold); } .t-3 { color: #ff7a45; } .t-4 { color: var(--red); }
 .tb-timer { padding: 4px 10px; border-radius: 8px; background: var(--bg-2); border: 1px solid var(--line-2); }
 .tb-timer b { font-size: 16px; }
@@ -181,6 +184,8 @@
 .tip-grid { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin-top: 6px; }
 .tip-grid span { color: var(--text-3); }
 .tip-pick { margin-top: 6px; color: var(--accent); font-weight: 600; }
+.draw-bar { position: absolute; top: 46px; left: 50%; transform: translateX(-50%); z-index: 6; width: min(760px, calc(100% - 20px)); padding: 8px 12px; border-radius: 12px; background: rgba(10, 13, 20, .9); border: 1px solid var(--gold, #ffd678); display: flex; gap: 10px; align-items: center; flex-wrap: wrap; backdrop-filter: blur(6px); animation: drop-in .3s var(--ease-out); }
+.civil-box { margin-top: 6px; padding: 8px; border-radius: 8px; border: 1px dashed rgba(255, 179, 107, .5); }
 .pick-banner { position: absolute; top: 50px; left: 50%; transform: translateX(-50%); z-index: 6; padding: 8px 14px; border-radius: 99px; background: rgba(54, 226, 255, .14); border: 1px solid var(--accent); color: var(--accent); font-weight: 600; display: flex; gap: 10px; align-items: center; backdrop-filter: blur(6px); animation: drop-in .3s var(--ease-out); }
 
 /* Command bar */

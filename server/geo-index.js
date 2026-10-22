@@ -88,3 +88,20 @@ export function anchorOf(id) {
 }
 
 export const geo = { countryAt, neighborsOf, anchorOf };
+
+// Territory cells for war fronts: the coarse atlas rasterised onto the 0.3° grid (the browsers build the same one).
+import { buildCellRaster, cellAt } from '../shared/engine/control.js';
+const lo = JSON.parse(readFileSync(require.resolve('world-atlas/countries-110m.json'), 'utf8'));
+const raster = buildCellRaster(feature(lo, lo.objects.countries).features.map(f => ({ id: featureCountryId(f), geometry: f.geometry })));
+const tinyCells = new Map();
+export function homeOf(key) { return raster.homeOf(key) || tinyCells.get(key) || null; }
+export function cellsOf(id) {
+  const list = raster.cellsOf(id);
+  if (list.length || !byCountry.has(id)) return list;
+  // Countries smaller than a cell still get the cell at their centre.
+  const a = anchorOf(id), k = cellAt(a.lon, a.lat);
+  if (!raster.homeOf(k)) tinyCells.set(k, id);
+  return [k];
+}
+geo.homeOf = homeOf;
+geo.cellsOf = cellsOf;

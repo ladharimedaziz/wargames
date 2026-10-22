@@ -27,7 +27,7 @@ const VENDOR = {
   '/vendor/world-50m.json': 'world-atlas/countries-50m.json',
   '/vendor/world-110m.json': 'world-atlas/countries-110m.json',
 };
-const VENDOR_DIRS = { '/vendor/d3-geo/': 'd3-geo/src/', '/vendor/d3-array/': 'd3-array/src/', '/vendor/internmap/': 'internmap/src/', '/vendor/topojson-client/': 'topojson-client/src/' };
+const VENDOR_DIRS = { '/vendor/d3-geo/': 'd3-geo/src/', '/vendor/d3-array/': 'd3-array/src/', '/vendor/d3-contour/': 'd3-contour/src/', '/vendor/internmap/': 'internmap/src/', '/vendor/topojson-client/': 'topojson-client/src/' };
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon', '.woff2': 'font/woff2', '.txt': 'text/plain; charset=utf-8' };
 
 const cache = new Map(); // path -> { body, gz, etag, type, mtime }

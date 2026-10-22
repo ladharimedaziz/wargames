@@ -58,6 +58,9 @@ Kronos can rename committees, reset any committee as a world or court committee,
 | `news Oil tankers turn back` · `breaking Embassy stormed` | Queue a headline, or air one now |
 | `player saudi uae qatar` · `ai russia` | Hand countries to delegates or to the computer |
 | `bloc A usa uk` · `focus iran` · `resolve` | Blocs, zoom the display, resolve the turn |
+| `us helicopter strike iraq` · `russia air assault ukraine` | Gunships hit forces behind the front, or troops land behind it |
+| `civil war syria 40 Free Army` | A rebel faction takes 40% of the country, with defecting troops |
+| `tension 7` · `tension up` · `tension down 2` | Set world tension (the display plays the tension meter) |
 
 The bar shows what it understood before you press Enter. Orders wait in the queue until **Resolve turn**. Then the engine runs strikes, interceptions, invasions, the economy and the AI countries, and the display animates the result.
 
@@ -65,7 +68,15 @@ The engine writes the news. Headlines wait in the **News desk** until a Zeus air
 
 Countries start in their real-world alliances (NATO, the GCC, CSTO, the Saudi–Pakistan pact, US treaty partners and more), with real rivalries reflected in starting relations. Militaries match reality as closely as the game allows: real force sizes, plus a quality multiplier for land, air and sea, so the US Navy (eleven supercarriers, forward-deployed fleets) is in a class of its own. Economies start from real figures too: each country has its own inflation, public approval, stability, industry, energy security, reserves and growth rate, and recovers toward its own normal rather than a universal 100%.
 
-**War fronts.** When neighbours are at war their shared border glows with shelling, and once ground is taken the real border bends: the attacker's territory grows out of the border, unevenly, with salients and pockets, and the percentage is the share of the defender's land held. Invasions from further away sweep in from the landing point. In the country card, a Zeus chooses how each front behaves: **Battle decides** (the engine), **Advance**, **Hold** or **Fall back**, and can move it right now by ±10 or ±25. Pushing an occupied country's front back liberates it. Countries with landing fleets (the US, China, Russia, the UK, France, Japan and others, or anyone with a carrier) can invade across the sea; the display shows the landing craft hitting the beach.
+**War fronts.** Ground is held cell by cell on a fine grid (about 30 km squares), so a front is a real, fluid line: it grows out of the shared border with salients and pockets, both sides push the same line, and a counter-attack retakes the defender's own land first. The percentage is the share of the defender's land held. Invasions from further away sweep in from the landing point. In the country card, a Zeus chooses how each front behaves: **Battle decides** (the engine), **Advance**, **Hold** or **Fall back**, and can move it right now by ±10 or ±25. Pushing an occupied country's front back liberates it.
+
+**Drawing ground.** Under *War fronts*, **✎ Draw** opens a brush on the map: paint the ground a side takes (only inside countries it is at war with), or switch to **Give back** to hand painted ground back to its country. Pick the brush size; scroll to zoom and right-drag to pan while drawing.
+
+**Helicopters.** A **Heli strike** sends gunships against forces just behind the front and nudges the line forward; an **Air assault** lands troops behind the enemy's lines, opening a pocket. Either can lose a helicopter to air defences.
+
+**Civil war.** **✊ Start a civil war** in the country card (or the command bar) splits a country: a rebel faction with its own name rises far from the capital, holds the share you chose, and takes part of the army and air force with it.
+
+**Look of the map.** In *Stage*, **☾ Night mode** turns the map dark with glowing city lights that fade with blackouts, damage and occupation. **✈ Show strikes** has jets fly precision strikes along active fronts every few seconds, purely for the audience. A city close to enemy-held ground flickers with muzzle flashes, shell bursts and tracers, and a capital under attack gets a "Battle for…" tag. *Stage* also has the **World tension** slider (the ▲▼ arrows in the top bar do the same). Countries with landing fleets (the US, China, Russia, the UK, France, Japan and others, or anyone with a carrier) can invade across the sea; the display shows the landing craft hitting the beach.
 
 Nuclear weapons only work at tension 10. The nuclear ending is a quiet black screen, with nothing graphic.
 
@@ -92,7 +103,7 @@ The court panel runs phases, seats, a speaking queue, a speech clock, objections
 
 Kronos's home shows every committee live. From there Kronos can:
 
-- **Enter** any committee with full Zeus powers, plus the **Sandbox**: tension and oil dials, any country's stats, spawn or remove forces, force wars or peace, hold chokepoints open or closed, close airspace, weather, disasters, smite, and change the clock.
+- **Enter** any committee with full Zeus powers, plus the **Sandbox**: tension and oil dials, any country's stats, spawn or remove forces, force wars or peace, hold chokepoints open or closed, close airspace, weather, disasters, smite, and change the clock. Sandbox powers animate on every map: each act of god has its own look (an earthquake shakes the screen with seismic rings and a seismograph, floods spread water under rain, an outbreak jumps city to city, a blackout puts the lights out, a coup closes on the capital, an oil discovery erupts), spawned forces land in a column of light, the unstoppable strike falls from the sky, storms bring lightning, and ending a war shows a ceasefire.
 - **Eye**: shows the small "KRONOS IS WATCHING..." eye on every screen of that committee.
 - **Freeze**: locks the Zeus panels.
 - **Pause every stage display** (for prayer, with a timer) and **Broadcast** a message to every Zeus and display.

@@ -117,6 +117,12 @@ function Sounds({ state }) {
       const strikes = res.events.filter(e => e.kind === 'strike');
       strikes.slice(0, 10).forEach((e, i) => setTimeout(() => (e.intercepted ? sfx.tick() : sfx.impact()), 1600 + i * 180));
       if (res.events.some(e => e.kind === 'chokepoint' && e.status === 'closed')) setTimeout(() => sfx.alarm(), 2500);
+      for (const e of res.events) {
+        if (e.kind === 'act') ({ earthquake: () => sfx.boom(1.5), flood: () => sfx.whoosh(), pandemic: () => sfx.heartbeat(), blackout: () => sfx.glitch(), coup: () => sfx.alarm(), discovery: () => sfx.chime(), storm: () => sfx.boom(0.6) })[e.act]?.();
+        if (e.kind === 'spawn') sfx.ping();
+        if (e.kind === 'strike' && e.divine) setTimeout(() => sfx.boom(1.2), 1100);
+        if (e.kind === 'peace') sfx.chime();
+      }
     }
     const newAired = state.aired.filter(a => !p.aired.some(x => x.id === a.id));
     if (newAired.some(a => a.priority >= 6)) sfx.breaking(); else if (newAired.length) sfx.news();

@@ -6,7 +6,7 @@ import { SEA_ZONES } from '/shared/data/places.js';
 import { tensionLevel, ENDINGS } from '/shared/engine/core.js';
 import { parseCommand, COMMAND_HELP } from '/shared/engine/command.js';
 import { validateOrder, autoUnits, describeOrder } from '/shared/engine/orders.js';
-import { ReviewTab, OrdersTab, CountriesTab, LogTab, SavesTab } from './tabs.js';
+import { ReviewTab, OrdersTab, CountriesTab, LogTab, SavesTab, CountrySelect } from './tabs.js';
 import { DiplomacyTab } from './diplomacy.js';
 import { DisplayTab } from './display-tab.js';
 import { Inspector } from './inspector.js';
@@ -32,6 +32,7 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
   const [draft, setDraft] = useState(null); // order being composed
   const [picking, setPicking] = useState(null); // 'target' | 'zone' while choosing on the map
   const [dmOpen, setDmOpen] = useState(false);
+  const [brush, setBrush] = useState(null); // { owner, mode: 'take' | 'restore', r } while drawing ground on the map
   const [layers, setLayers] = useState({ air: true, naval: true, units: true, relations: false, labels: true, wars: true });
   const pending = state.review.filter(r => r.status === 'pending').length;
   const unread = useUnread(conn, committee, dmOpen, kronos);
@@ -51,7 +52,7 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
     const onKey = e => {
       if (e.target.closest('input, textarea, select')) return;
       if (e.key === '/' || (e.key === 'k' && (e.metaKey || e.ctrlKey))) { e.preventDefault(); document.querySelector('.cmd-input')?.focus(); }
-      if (e.key === 'Escape') { setPicking(null); setSelected(null); setSelZone(null); }
+      if (e.key === 'Escape') { setPicking(null); setSelected(null); setSelZone(null); setBrush(null); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -78,12 +79,13 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
           ${tab === 'sandbox' && html`<${SandboxTab} conn=${conn} state=${state} selected=${selected} selZone=${selZone} />`}
         </aside>
         <main class="mid">
-          <${MapView} state=${state} selected=${selected} onSelect=${onMapSelect} layers=${layers} picking=${picking} draft=${draft} />
+          <${MapView} conn=${conn} state=${state} selected=${selected} onSelect=${onMapSelect} layers=${layers} picking=${picking} draft=${draft} brush=${brush} />
           <${MapOverlay} state=${state} conn=${conn} layers=${layers} setLayers=${setLayers} picking=${picking} cancelPick=${() => setPicking(null)} />
+          ${brush && html`<${DrawBar} state=${state} brush=${brush} setBrush=${setBrush} />`}
           <${CommandBar} conn=${conn} state=${state} role=${user.role} />
         </main>
         <aside class="right">
-          <${Inspector} conn=${conn} state=${state} selected=${selected} selZone=${selZone} setSelected=${setSelected} startOrder=${startOrder} kronos=${kronos} />
+          <${Inspector} conn=${conn} state=${state} selected=${selected} selZone=${selZone} setSelected=${setSelected} startOrder=${startOrder} kronos=${kronos} setBrush=${setBrush} />
         </aside>
       </div>
       ${state.kronos.locked && !kronos && html`<div class="lock-veil"><div class="lock-card"><div class="lock-ico">⌛</div><h2>Kronos has frozen this panel</h2><p>You can still watch, but nothing can be changed until Kronos unlocks it.</p></div></div>`}
@@ -117,6 +119,10 @@ function TopBar({ conn, user, state, logout, onBack, pending, unread, openDm, co
         <span class="dim up">Tension</span>
         <div class="tension-mini">${Array.from({ length: 10 }, (_, i) => html`<i class=${cls(i < Math.floor(t) && 'on', i === Math.floor(t) && t % 1 && 'half')} style=${`--i:${i}`}></i>`)}</div>
         <b class=${`t-${Math.min(4, Math.floor(t / 2.01))}`}>${t} · ${lvl.name}</b>
+        <span class="tension-step">
+          <button class="btn xs ghost" title="Raise world tension by one" disabled=${t >= 10} onClick=${() => run(conn, { type: 'setTension', value: Math.min(10, t + 1) })}>▲</button>
+          <button class="btn xs ghost" title="Lower world tension by one" disabled=${t <= 0} onClick=${() => run(conn, { type: 'setTension', value: Math.max(0, t - 1) })}>▼</button>
+        </span>
       </div>
       <div class="tb-stat"><span class="dim up">Oil</span><b class="mono">$${Math.round(state.global.oilPrice)}</b></div>
       ${(state.timer.running || rem > 0) && html`<div class=${cls('tb-timer', state.timer.running && 'run', rem < 30 && state.timer.running && 'low')}><span class="dim up">${state.timer.label || 'Timer'}</span><b class="mono">${fmt.clock(rem)}</b></div>`}
@@ -129,13 +135,16 @@ function TopBar({ conn, user, state, logout, onBack, pending, unread, openDm, co
     </header>`;
 }
 
-function MapView({ state, selected, onSelect, layers, picking }) {
+function MapView({ conn, state, selected, onSelect, layers, picking, brush }) {
   const ref = useRef(), mapRef = useRef(), tipRef = useRef();
   const [tip, setTip] = useState(null);
   const onSelectRef = useRef(onSelect); onSelectRef.current = onSelect;
   const stateRef = useRef(state); stateRef.current = state;
+  // Painted cells go to the server in one action; the map keeps the preview until the new state lands.
+  const onPaint = (keys, b) => run(conn, { type: 'paintControl', owner: b.owner, keys, mode: b.mode });
+  const onPaintRef = useRef(onPaint); onPaintRef.current = onPaint;
   useEffect(() => {
-    const m = new WorldMap(ref.current, { interactive: true, onSelect: (...a) => onSelectRef.current(...a), onHover: (h, x, y) => setTip(h ? { ...h, x, y } : null) });
+    const m = new WorldMap(ref.current, { interactive: true, onSelect: (...a) => onSelectRef.current(...a), onHover: (h, x, y) => setTip(h ? { ...h, x, y } : null), onPaint: (...a) => onPaintRef.current(...a) });
     mapRef.current = m;
     m.ready.then(() => m.setState(stateRef.current, { layers }));
     window.__map = m;
@@ -144,6 +153,7 @@ function MapView({ state, selected, onSelect, layers, picking }) {
   useEffect(() => { mapRef.current?.setState(state); }, [state]);
   useEffect(() => { mapRef.current?.setSelected(selected); }, [selected]);
   useEffect(() => { mapRef.current?.setLayers(layers); }, [layers]);
+  useEffect(() => { mapRef.current?.ready.then(() => mapRef.current?.setBrush(brush)); }, [brush]);
   const c = tip?.id && state.countries[tip.id];
   const z = tip?.zone && SEA_ZONES[tip.zone];
   return html`
@@ -165,6 +175,24 @@ function MapView({ state, selected, onSelect, layers, picking }) {
         ${z.choke && html`<div class="tip-grid"><span>Chokepoint</span><b class=${state.global.chokepoints[tip.zone]?.status !== 'open' ? 'neg' : 'pos'}>${state.global.chokepoints[tip.zone]?.status}</b><span>Oil impact</span><b>+$${z.oil}/bbl if closed</b></div>`}`}
       ${picking && html`<div class="tip-pick">Click to choose as ${picking}</div>`}
     </div>`}`;
+}
+
+// Drawing ground by hand: pick the side, take or give back, brush size.
+function DrawBar({ state, brush, setBrush }) {
+  const set = patch => setBrush(b => ({ ...b, ...patch }));
+  const owner = state.countries[brush.owner];
+  const enemies = owner ? state.wars.filter(w => w.a === owner.id || w.b === owner.id).map(w => state.countries[w.a === owner.id ? w.b : w.a]?.name).filter(Boolean) : [];
+  return html`<div class="draw-bar">
+    <b class="gold-t">✎ Draw ground</b>
+    <div class="seg sm">
+      <button class=${brush.mode === 'take' ? 'on' : ''} onClick=${() => set({ mode: 'take' })} title="Hand the ground you paint to this side">Take</button>
+      <button class=${brush.mode === 'restore' ? 'on' : ''} onClick=${() => set({ mode: 'restore' })} title="Give painted ground back to the country it belongs to">Give back</button>
+    </div>
+    ${brush.mode === 'take' && html`<div style="width:170px"><${CountrySelect} sm state=${state} value=${brush.owner} onChange=${v => set({ owner: v })} placeholder="Which side takes it" /></div>`}
+    <div class="seg sm">${[['S', 10], ['M', 20], ['L', 36]].map(([l, r]) => html`<button class=${brush.r === r ? 'on' : ''} onClick=${() => set({ r })}>${l}</button>`)}</div>
+    <span class="dim small grow">${brush.mode === 'take' ? (enemies.length ? `Paint inside ${enemies.slice(0, 3).join(', ')}${enemies.length > 3 ? '…' : ''}.` : `${owner?.name || 'This side'} is at war with nobody yet.`) : 'Paint over held ground to hand it back.'} Scroll to zoom, right-drag to pan.</span>
+    <button class="btn sm primary" onClick=${() => setBrush(null)}>Done</button>
+  </div>`;
 }
 
 function MapOverlay({ state, conn, layers, setLayers, picking, cancelPick }) {
