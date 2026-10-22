@@ -1,0 +1,23 @@
+# Render Blueprint for The World Engine (free web service).
+# New > Blueprint in the Render dashboard, point it at this repository, and Render reads this file.
+services:
+  - type: web
+    name: world-engine
+    runtime: node
+    plan: free
+    region: frankfurt
+    buildCommand: npm install --omit=dev
+    startCommand: npm start
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: NODE_VERSION
+        value: "22"
+      # Every Zeus password is derived from this secret, so keep it unchanged between deploys.
+      - key: SESSION_SECRET
+        generateValue: true
+      # Optional: pick your own Kronos password. Without it, Kronos gets a generated one (see the logs).
+      - key: KRONOS_PASSWORD
+        sync: false
+      - key: DATA_DIR
+        value: /opt/render/project/src/data
