@@ -71,6 +71,12 @@ export function SandboxTab({ conn, state, selected, selZone }) {
 
         <div class="sub-h">Acts of god</div>
         <div class="row wrap">${EVENTS.map(([e, l]) => html`<button class="btn xs" onClick=${() => k({ type: 'disaster', country: cid, kind: e }, `${l} in ${c.name}`)}>${l}</button>`)}</div>
+        ${c.outbreak && html`<div class="row" style="margin-top:6px"><span class="chip" style="color:#b8ff6a">Outbreak ${c.outbreak.level}%</span>
+          <button class="btn xs" title="Worse" onClick=${() => k({ type: 'outbreak', country: cid, op: 'up' })}>▲</button>
+          <button class="btn xs" title="Ease" onClick=${() => k({ type: 'outbreak', country: cid, op: 'down' })}>▼</button>
+          <button class="btn xs danger" title="Spread to every neighbour" onClick=${() => k({ type: 'outbreak', country: cid, op: 'spread' })}>Spread</button>
+          <button class="btn xs good" onClick=${() => k({ type: 'outbreak', country: cid, op: 'end' })}>End</button></div>`}
+        ${c.blackout && html`<div class="row" style="margin-top:6px"><span class="chip">Blackout</span><button class="btn xs good" onClick=${() => k({ type: 'restorePower', country: cid })}>Restore power</button></div>`}
 
         <div class="sub-h">Between ${c.name} and…</div>
         <${CountrySelect} state=${state} value=${other} onChange=${setOther} placeholder="Another country" sm />

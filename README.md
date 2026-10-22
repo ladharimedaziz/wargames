@@ -61,6 +61,8 @@ Kronos can rename committees, reset any committee as a world or court committee,
 | `us helicopter strike iraq` · `russia air assault ukraine` | Gunships hit forces behind the front, or troops land behind it |
 | `civil war syria 40 Free Army` | A rebel faction takes 40% of the country, with defecting troops |
 | `tension 7` · `tension up` · `tension down 2` | Set world tension (the display plays the tension meter) |
+| `us paratroopers afghanistan` · `us invade afghanistan` | Paratroop drop. An invasion with no land border falls back to sailing the nearest fleet in, or to an airborne drop for countries with strategic airlift |
+| `us b-2 strike iran` · `us b2 moab afghanistan` · `us strike iran with 2 f-117` · `us b-52 strike iran 3` · `us b-1b iran energy` | Named US aircraft, each with its own model and run. The B-2 and F-117 are stealthy precision strikes; only the B-2 can carry the MOAB |
 
 The bar shows what it understood before you press Enter. Orders wait in the queue until **Resolve turn**. Then the engine runs strikes, interceptions, invasions, the economy and the AI countries, and the display animates the result.
 
@@ -70,13 +72,23 @@ Countries start in their real-world alliances (NATO, the GCC, CSTO, the Saudi–
 
 **War fronts.** Ground is held cell by cell on a fine grid (about 30 km squares), so a front is a real, fluid line: it grows out of the shared border with salients and pockets, both sides push the same line, and a counter-attack retakes the defender's own land first. The percentage is the share of the defender's land held. Invasions from further away sweep in from the landing point. In the country card, a Zeus chooses how each front behaves: **Battle decides** (the engine), **Advance**, **Hold** or **Fall back**, and can move it right now by ±10 or ±25. Pushing an occupied country's front back liberates it.
 
-**Drawing ground.** Under *War fronts*, **✎ Draw** opens a brush on the map: paint the ground a side takes (only inside countries it is at war with), or switch to **Give back** to hand painted ground back to its country. Pick the brush size; scroll to zoom and right-drag to pan while drawing.
+**Drawing ground.** Under *War fronts*, **✎ Draw** opens a brush on the map: paint the ground a side takes (only inside countries it is at war with), or switch to **Give back** to hand painted ground back to its country. Pick the brush size, from XS (a single cell) to XL; strokes follow the pointer smoothly. Scroll to zoom and right-drag to pan while drawing.
 
-**Helicopters.** A **Heli strike** sends gunships against forces just behind the front and nudges the line forward; an **Air assault** lands troops behind the enemy's lines, opening a pocket. Either can lose a helicopter to air defences.
+**Helicopters.** A **Heli strike** sends gunships against forces just behind the front and nudges the line forward; an **Air assault** lands troops behind the enemy's lines, opening a pocket. Either can lose a helicopter to air defences. Helicopters fly from bases in a friendly neighbour, or off a carrier or assault ship offshore. US strikes use AH-64 Apaches; insertions use CH-47 Chinooks.
 
 **Civil war.** **✊ Start a civil war** in the country card (or the command bar) splits a country: a rebel faction with its own name rises far from the capital, holds the share you chose, and takes part of the army and air force with it.
 
 **Look of the map.** In *Stage*, **☾ Night mode** turns the map dark with glowing city lights that fade with blackouts, damage and occupation. **✈ Show strikes** has jets fly precision strikes along active fronts every few seconds, purely for the audience. A city close to enemy-held ground flickers with muzzle flashes, shell bursts and tracers, and a capital under attack gets a "Battle for…" tag. *Stage* also has the **World tension** slider (the ▲▼ arrows in the top bar do the same). Countries with landing fleets (the US, China, Russia, the UK, France, Japan and others, or anyone with a carrier) can invade across the sea; the display shows the landing craft hitting the beach.
+
+**US reach.** The US starts with its real overseas air bases (UK, Germany, Italy, Turkey, the Gulf, Japan, Korea and more, with bomber bases in the UK and Australia), so it can bomb any country. **Airspace** only closes in wars both sides can fight in the air, and only over a country the enemy can actually reach: a war in Afghanistan leaves civilian flights alone.
+
+**Joining wars.** Computer-run countries no longer jump into wars on their own: a request to join a friend's war lands in the **News desk** marked *Needs approval*, and the Zeus approves or declines it.
+
+**Coat of arms.** Every country card shows the country's coat of arms (a few countries the source set leaves out, such as Iran and Turkey, show their flag on a shield). **⚜ Arms** puts it on the stage, beside the country in focus.
+
+**Saves.** Press **Ctrl+S** anywhere in the panel, or name a save under *Saves*. Manual saves are kept until you delete them; the automatic rewind point before each turn can be switched off.
+
+**Map detail.** Zooming in reveals towns and bases, then roads and highways between them (they stop at the edge of each city).
 
 Nuclear weapons only work at tension 10. The nuclear ending is a quiet black screen, with nothing graphic.
 

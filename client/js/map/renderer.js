@@ -9,6 +9,8 @@ import { contours as d3contours } from 'd3-contour';
 import { CELL, cellKey, cellIJ, cellCenter, neighbors as cellNeighbors } from '/shared/engine/control.js';
 import { AirTraffic, SeaTraffic } from './traffic.js';
 import { ACT_FX } from './acts.js';
+import { AIRCRAFT_FX, DIPLO_KINDS } from './aircraft.js';
+import { ROAD_FX } from './roads.js';
 
 const TAU = Math.PI * 2;
 const withCamOn = (ctx, dpr, cam, fn) => { ctx.save(); ctx.setTransform(dpr * cam.k, 0, 0, dpr * cam.k, dpr * cam.x, dpr * cam.y); fn(); ctx.restore(); };
@@ -58,7 +60,8 @@ export class WorldMap {
     this.atlas = { lo, hi };
     this.countryAt = makeCountryAt(lo);
     this.air = new AirTraffic(this.countryAt);
-    this.sea = new SeaTraffic(makeLandAt(hi));
+    this.landAt = makeLandAt(hi);
+    this.sea = new SeaTraffic(this.landAt);
     this.patterns = {};
     this.resize();
     this.ro = new ResizeObserver(() => this.resize());
@@ -216,16 +219,27 @@ export class WorldMap {
     }
     const seed = (Number(String(g.owner).replace(/\D/g, '')) || 3) * 0.37;
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (v[i] > 0.15 && v[i] < 0.85) v[i] += 0.045 * Math.sin(time * 0.9 + x * 0.8 + seed) * Math.cos(time * 0.6 + y * 0.7); }
-    const mp = d3contours().size([W, H]).thresholds([0.5])(Array.from(v))[0];
+    // Contour a field upsampled 2x (bilinear) so the line follows curves finer than a cell.
+    const W2 = W * 2 - 1, H2 = H * 2 - 1, v2 = new Array(W2 * H2);
+    for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
+      const x0 = x >> 1, y0 = y >> 1, x1 = Math.min(W - 1, x0 + (x & 1)), y1 = Math.min(H - 1, y0 + (y & 1));
+      v2[y * W2 + x] = (v[y0 * W + x0] + v[y0 * W + x1] + v[y1 * W + x0] + v[y1 * W + x1]) / 4;
+    }
+    const mp = d3contours().size([W2, H2]).thresholds([0.5])(v2)[0];
     const proj = (gx, gy) => this.projection([-180 + (i0 + gx) * CELL, 90 - (j0 + gy) * CELL]);
     const path = new Path2D(), rings = [];
-    for (const poly of mp.coordinates) for (const ring of poly) {
-      // One round of Chaikin smoothing takes the last corners off the grid.
-      const sm = [];
+    const chaikin = ring => {
+      const out = [];
       for (let a = 0; a < ring.length - 1; a++) {
         const p = ring[a], q = ring[a + 1];
-        sm.push([p[0] * 0.75 + q[0] * 0.25, p[1] * 0.75 + q[1] * 0.25], [p[0] * 0.25 + q[0] * 0.75, p[1] * 0.25 + q[1] * 0.75]);
+        out.push([p[0] * 0.75 + q[0] * 0.25, p[1] * 0.75 + q[1] * 0.25], [p[0] * 0.25 + q[0] * 0.75, p[1] * 0.25 + q[1] * 0.75]);
       }
+      out.push(out[0]);
+      return out;
+    };
+    for (const poly of mp.coordinates) for (const ring of poly) {
+      // Two rounds of Chaikin smoothing take the last corners off the grid.
+      const sm = chaikin(chaikin(ring.map(([x, y]) => [x / 2, y / 2]))).slice(0, -1);
       const pts = sm.map(([gx, gy]) => { const q = proj(gx, gy); return q && [q[0], q[1], gx, gy]; }).filter(Boolean);
       if (pts.length < 3) continue;
       pts.forEach((q, i) => (i ? path.lineTo(q[0], q[1]) : path.moveTo(q[0], q[1]))); path.closePath();
@@ -235,7 +249,7 @@ export class WorldMap {
     // held side and check that ground belongs to the country being fought over.
     const cells = this.atlas.lo.cells, front = [];
     const at = (x, y) => v[clamp(Math.round(y), 0, H - 1) * W + clamp(Math.round(x), 0, W - 1)];
-    for (const r of rings) for (let a = 0; a < r.length; a += 2) {
+    for (const r of rings) for (let a = 0; a < r.length; a += 8) {
       const [, , gx, gy] = r[a];
       let nx = at(gx + 1, gy) - at(gx - 1, gy), ny = at(gx, gy + 1) - at(gx, gy - 1); const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
       const kIn = cellKey(Math.floor(i0 + gx + nx * 1.2), clamp(Math.floor(j0 + gy + ny * 1.2), 0, 599));
@@ -394,13 +408,18 @@ export class WorldMap {
       // With a brush, the left button paints; any other button still pans the map.
       if (this.brush && e.button === 0) {
         const r = fx.getBoundingClientRect();
-        this.painting = true; this.paint = new Set(); this.paintAt(e.clientX - r.left, e.clientY - r.top); fx.setPointerCapture(e.pointerId); return;
+        this.painting = true; this.paint = new Set(); this.stroke = []; this.paintTo(e.clientX - r.left, e.clientY - r.top); fx.setPointerCapture(e.pointerId); return;
       }
       drag = { x: e.clientX, y: e.clientY, cx: this.camTarget.x, cy: this.camTarget.y }; moved = false; fx.setPointerCapture(e.pointerId); fx.style.cursor = 'grabbing';
     });
     fx.addEventListener('pointermove', e => {
       const r = fx.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
-      if (this.brush && !drag) { this.brushPos = [mx, my]; if (this.painting) this.paintAt(mx, my); return; }
+      if (this.brush && !drag) {
+        this.brushPos = [mx, my]; this.dirty = true;
+        // Coalesced events catch every point of a fast stroke, not just one per frame.
+        if (this.painting) for (const ev of e.getCoalescedEvents?.() || [e]) this.paintTo(ev.clientX - r.left, ev.clientY - r.top);
+        return;
+      }
       if (drag) {
         const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
         if (Math.abs(dx) + Math.abs(dy) > 3) moved = true;
@@ -421,7 +440,7 @@ export class WorldMap {
       if (this.brush && this.painting) {
         this.painting = false;
         if (this.paint?.size) this.opts.onPaint?.([...this.paint], this.brush);
-        setTimeout(() => { this.paint = null; }, 600); // keep the preview until the server's answer lands
+        setTimeout(() => { this.paint = null; this.stroke = null; }, 600); // keep the preview until the server's answer lands
         return;
       }
       fx.style.cursor = this.brush ? 'crosshair' : 'grab';
@@ -476,7 +495,7 @@ export class WorldMap {
     const countryOf = this.countryAt;
     const put = (lon, lat, b, a3) => { const q = this.projection([lon, lat]); if (!q) return; xs.push(q[0]); ys.push(q[1]); br.push(b); owner.push(a3); };
     for (const c of CITIES) {
-      const n = c.tier === 1 ? 260 : c.tier === 2 ? 110 : 40, sig = c.tier === 1 ? 0.5 : c.tier === 2 ? 0.3 : 0.17;
+      const n = c.tier === 1 ? 260 : c.tier === 2 ? 110 : c.tier === 3 ? 40 : 16, sig = c.tier === 1 ? 0.5 : c.tier === 2 ? 0.3 : c.tier === 3 ? 0.17 : 0.09;
       for (let i = 0; i < n; i++) {
         const r = Math.abs(gauss()), a = rnd() * TAU, d = r * sig * (0.6 + rnd() * 0.5);
         put(c.lon + Math.cos(a) * d / Math.cos(c.lat * Math.PI / 180), c.lat + Math.sin(a) * d * 0.9, Math.exp(-r * 0.9) * (c.tier === 1 ? 1 : 0.8), c.a3);
@@ -500,7 +519,7 @@ export class WorldMap {
     // Power cuts, damage and blackouts dim a country's lights.
     const dim = {};
     for (const c of Object.values(s?.countries || {})) {
-      const blackout = (c.cyber?.grid || 0) >= (s.meta?.turn || 0);
+      const blackout = (c.cyber?.grid || 0) >= (s.meta?.turn || 0) || !!c.blackout;
       dim[c.a3] = clamp(c.energy, 0.15, 1.15) * (1 - c.damage * 0.8) * (blackout ? 0.25 : 1) * (c.occupiedBy ? 0.7 : 1);
     }
     ctx.save();
@@ -645,6 +664,13 @@ export class WorldMap {
     for (const e of evs.filter(e => e.kind === 'landing')) { add({ type: 'landing', e, dur: 4.6 }, t - 1.2); mark(1, e.from, e.to); }
     for (const e of evs.filter(e => e.kind === 'naval')) { add({ type: 'naval', e, dur: 5 }, t); mark(2, e.at); }
     for (const e of evs.filter(e => e.kind === 'heli')) { add({ type: 'heli', e, dur: e.mode === 'assault' ? 7.5 : 6 }, t); mark(2, e.from, e.to); }
+    for (const e of evs.filter(e => e.kind === 'airdrop')) { add({ type: 'airdrop', e, dur: 6.5 }, t - 0.6); mark(1, e.from, e.to); }
+    // Diplomatic and covert orders each get a short flourish, staggered so a busy turn stays readable.
+    evs.filter(e => DIPLO_KINDS.includes(e.kind) && e.kind !== 'peace').slice(0, 24).forEach((e, i) => {
+      add({ type: 'diplo', e, dur: 3.6 }, d0 + i * 0.35);
+      const a = this.state?.countries?.[e.a || e.owner], b = this.state?.countries?.[e.b || e.target];
+      mark(3, a && { lat: a.lat, lon: a.lon }, b && { lat: b.lat, lon: b.lon });
+    });
     for (const e of evs.filter(e => e.kind === 'civil_war')) { const c = this.state?.countries?.[e.country]; if (c) { add({ type: 'civil', e, dur: 4 }, 0.2); mark(1, { lat: c.lat, lon: c.lon }); } }
     for (const e of evs.filter(e => e.kind === 'neo')) { add({ type: 'neo', e, dur: 7 }, t); mark(1, e.from, e.sea || e.to); }
     for (const e of evs.filter(e => e.kind === 'unit_lost')) add({ type: 'lost', e, dur: 3.5 }, t + 0.8);
@@ -807,6 +833,17 @@ export class WorldMap {
     const col = owner && owner.bloc !== 'N' ? this.state.blocs[owner.bloc].color : '#c8d2e0';
     const assault = e.mode === 'assault';
     const n = assault ? 3 : 3, T1 = assault ? 0.4 : 0.35, T2 = assault ? 0.68 : 0.62;
+    const us = owner?.a3 === 'USA';
+    if (e.sea) {
+      // Flying off a carrier or assault ship: draw the deck they lift from.
+      const ang0 = Math.atan2(dy, dx);
+      ctx.save(); ctx.translate(start[0], start[1]); ctx.rotate(ang0);
+      ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(-11 * sc, -2.2 * sc, 22 * sc, 5.4 * sc);
+      ctx.fillStyle = '#8a929c'; ctx.beginPath(); ctx.moveTo(12 * sc, 0); ctx.lineTo(7 * sc, -3 * sc); ctx.lineTo(-11 * sc, -3 * sc); ctx.lineTo(-11 * sc, 3 * sc); ctx.lineTo(7 * sc, 3 * sc); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = 0.6; ctx.setLineDash([2, 2]); ctx.beginPath(); ctx.moveTo(-9 * sc, 0); ctx.lineTo(8 * sc, 0); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = '#5b636d'; ctx.fillRect(-2 * sc, 1.6 * sc, 3 * sc, 1.6 * sc);
+      ctx.restore();
+    }
     const hover = assault ? b : [b[0] - dx * 16 * sc, b[1] - dy * 16 * sc];
     for (let i = 0; i < n; i++) {
       const off = (i - (n - 1) / 2) * 9 * sc, lag = i * 0.025;
@@ -824,14 +861,23 @@ export class WorldMap {
       else { const t = easeInOut((v - T2) / (1 - T2)); x = p1[0] + (p0[0] - p1[0]) * t; y = p1[1] + (p0[1] - p1[1]) * t; ang += Math.PI * Math.min(1, t * 3); alpha = v > 0.9 ? (1 - v) / 0.1 : 1; }
       if (e.lost && i > 0 && v > T1) { /* the rest abort and turn back */ }
       ctx.globalAlpha = alpha;
-      this.drawHeli(ctx, x, y, ang, (assault ? 4.2 : 3.6) * sc, assault ? '#c9d3dc' : col, now, assault);
+      if (assault) this.drawChinook(ctx, x, y, ang, 4 * sc, now);
+      else if (us) this.drawApache(ctx, x, y, ang, 4 * sc, now);
+      else this.drawHeli(ctx, x, y, ang, 3.6 * sc, col, now, false);
       ctx.globalAlpha = 1;
       if (!assault && !e.lost && v > T1 && v < T2) {
         // Rocket pods: streaks from the helicopter onto positions around the target.
         for (let r = 0; r < 3; r++) {
           const rt = ((v - T1) / (T2 - T1) * 3 + r * 0.33 + i * 0.21) % 1;
           const tx = b[0] + Math.sin(i * 3.1 + r * 2.3) * 10 * sc, ty = b[1] + Math.cos(i * 1.7 + r * 1.9) * 7 * sc;
-          if (rt < 0.35) { const f = rt / 0.35; ctx.strokeStyle = 'rgba(255,220,150,0.9)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + (tx - x) * Math.max(0, f - 0.25), y + (ty - y) * Math.max(0, f - 0.25)); ctx.lineTo(x + (tx - x) * f, y + (ty - y) * f); ctx.stroke(); }
+          if (rt < 0.35) {
+            const f = rt / 0.35;
+            if (us && r === 0) {
+              // Hellfire: a bright motor with a grey smoke trail behind it.
+              ctx.strokeStyle = 'rgba(190,190,195,0.55)'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + (tx - x) * f, y + (ty - y) * f); ctx.stroke();
+              ctx.fillStyle = '#fff2c0'; ctx.beginPath(); ctx.arc(x + (tx - x) * f, y + (ty - y) * f, 1.4, 0, TAU); ctx.fill();
+            } else { ctx.strokeStyle = 'rgba(255,220,150,0.9)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x + (tx - x) * Math.max(0, f - 0.25), y + (ty - y) * Math.max(0, f - 0.25)); ctx.lineTo(x + (tx - x) * f, y + (ty - y) * f); ctx.stroke(); }
+          }
           else this.boom(ctx, tx, ty, 6 * sc, (rt - 0.35) / 0.65);
         }
       }
@@ -844,9 +890,9 @@ export class WorldMap {
         const an = i / 12 * TAU + 0.3, d = ease(clamp((u - T1 - 0.04) / 0.4, 0, 1)) * (8 + (i % 3) * 5) * sc;
         ctx.fillStyle = col; ctx.beginPath(); ctx.arc(b[0] + Math.cos(an) * d, b[1] + Math.sin(an) * d * 0.8, 1.6, 0, TAU); ctx.fill();
       }
-      this.tag(ctx, b[0], b[1] - 18 * sc, 'AIR ASSAULT', '#9fe0ff');
+      this.tag(ctx, b[0], b[1] - 18 * sc, us ? 'AIR ASSAULT · CH-47 CHINOOK' : 'AIR ASSAULT', '#9fe0ff');
     }
-    if (!assault && u > T1 && u < T2 + 0.05) this.tag(ctx, b[0], b[1] - 18 * sc, 'HELICOPTER STRIKE', '#ffd27a');
+    if (!assault && u > T1 && u < T2 + 0.05) this.tag(ctx, b[0], b[1] - 18 * sc, us ? 'AH-64 APACHE STRIKE' : 'HELICOPTER STRIKE', '#ffd27a');
     if (e.lost && u > T1 && u < T2 + 0.1) this.tag(ctx, b[0], b[1] - 30 * sc, 'HELICOPTER DOWN', '#ff7a6b');
   }
   fx_civil(ctx, fx, u) {
@@ -858,8 +904,53 @@ export class WorldMap {
     ctx.globalAlpha = 1;
   }
 
+  // --- coat of arms ---
+  // When the Zeus turns it on, the country in focus gets a broadcast-style plate with its coat of arms.
+  drawCoat(ctx, time) {
+    const id = this.state?.display?.coat ? this.focusedCountry() : null;
+    if (id !== this.coatId) { this.coatId = id; this.coatAt = performance.now(); }
+    if (!id) return;
+    this.coatImgs ||= new Map();
+    let img = this.coatImgs.get(id);
+    if (!img) { img = new Image(); img.onload = () => { this.dirty = true; }; img.src = `/client/img/coats/${id}.webp`; this.coatImgs.set(id, img); }
+    if (!img.complete || !img.naturalWidth) return;
+    const c = this.state.countries[id], ar = this.opts.lang === 'ar';
+    const t = clamp((performance.now() - this.coatAt) / 900, 0, 1), e = ease(t);
+    const H = this.opts.cinematic ? Math.min(230, this.h * 0.28) : Math.min(120, this.h * 0.16), W = H * (img.naturalWidth / img.naturalHeight);
+    const x = (this.opts.cinematic ? 60 : 24) + W / 2, y = (this.opts.cinematic ? this.h * 0.5 : this.h * 0.36) - (1 - e) * 20;
+    ctx.save(); ctx.globalAlpha = e;
+    // A soft light behind the arms so dark emblems still read on the night map.
+    const g = ctx.createRadialGradient(x, y, 0, x, y, H * 0.85);
+    g.addColorStop(0, 'rgba(255,240,200,0.26)'); g.addColorStop(0.6, 'rgba(255,230,180,0.08)'); g.addColorStop(1, 'rgba(255,230,180,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, H * 0.85, 0, TAU); ctx.fill();
+    ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 18;
+    ctx.drawImage(img, x - W / 2, y - H / 2, W, H);
+    ctx.shadowBlur = 0;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    const fs = this.opts.cinematic ? 20 : 14;
+    ctx.font = ar ? `700 ${fs + 2}px Cairo, sans-serif` : `700 ${fs}px Rajdhani, Inter, sans-serif`;
+    const name = ar ? c.ar : c.name.toUpperCase();
+    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(4,7,12,0.85)'; ctx.strokeText(name, x, y + H / 2 + 12);
+    ctx.fillStyle = '#f3e3b0'; ctx.fillText(name, x, y + H / 2 + 12);
+    ctx.strokeStyle = `rgba(243,220,142,${0.6 * e})`; ctx.lineWidth = 1;
+    const lw = Math.min(W, 160) * e; ctx.beginPath(); ctx.moveTo(x - lw / 2, y + H / 2 + 6); ctx.lineTo(x + lw / 2, y + H / 2 + 6); ctx.stroke();
+    ctx.restore();
+    if (t < 1) this.dirty = true;
+  }
+
   // --- painting ground by hand (Zeus panel) ---
   setBrush(brush) { this.brush = brush || null; this.paint = null; if (this.fx) this.fx.style.cursor = brush ? 'crosshair' : 'grab'; }
+  // Paint along the pointer's path in small steps, so a quick stroke leaves no gaps.
+  paintTo(mx, my) {
+    const last = this.stroke?.[this.stroke.length - 1];
+    const r = this.brush.r || 18, step = Math.max(1.5, r * 0.4);
+    if (last) {
+      const d = Math.hypot(mx - last[0], my - last[1]); if (d < 1) return;
+      for (let t = step; t < d; t += step) this.paintAt(last[0] + (mx - last[0]) * t / d, last[1] + (my - last[1]) * t / d);
+    }
+    this.paintAt(mx, my);
+    this.stroke?.push([mx, my]);
+  }
   paintAt(mx, my) {
     const cells = this.atlas?.lo?.cells; if (!cells || !this.paint) return;
     const r = this.brush.r || 18;
@@ -877,11 +968,19 @@ export class WorldMap {
     if (!this.brush) return;
     const col = this.brush.mode === 'restore' ? '#e6edf7' : (this.state?.countries?.[this.brush.owner] && this.state.blocs[this.state.countries[this.brush.owner].bloc]?.color) || '#ff8a3d';
     if (this.paint?.size) {
-      ctx.fillStyle = hexA(col, 0.45);
+      // The cells that will change, faintly, under a smooth stroke that follows the pointer.
+      ctx.fillStyle = hexA(col, 0.22);
       for (const k of this.paint) {
         const [lon, lat] = cellCenter(k), a = this.p(lon - CELL / 2, lat + CELL / 2), b = this.p(lon + CELL / 2, lat - CELL / 2);
         if (a && b) ctx.fillRect(a[0], a[1], b[0] - a[0] + 0.5, b[1] - a[1] + 0.5);
       }
+    }
+    if (this.stroke?.length) {
+      const r = this.brush.r || 18;
+      ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = hexA(col, 0.4); ctx.lineWidth = r * 2;
+      ctx.beginPath(); this.stroke.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])));
+      if (this.stroke.length === 1) ctx.lineTo(this.stroke[0][0] + 0.1, this.stroke[0][1]);
+      ctx.stroke(); ctx.restore();
     }
     if (this.brushPos) {
       ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
@@ -949,7 +1048,9 @@ export class WorldMap {
       ctx.setLineDash([]);
     }
 
+    this.drawRoads(ctx);
     this.drawFronts(ctx, now, time, withCam);
+    this.drawConditions(ctx, time);
     this.drawBattles(ctx, time);
     this.ambientStrikes(now);
     this.drawCities(ctx, time);
@@ -957,6 +1058,7 @@ export class WorldMap {
     if (this.layers.air !== false) this.drawFlights(ctx, time);
     this.drawChokepoints(ctx, time);
     if (this.layers.units !== false) this.drawUnits(ctx, time);
+    this.drawCoat(ctx, time);
     this.drawEffects(ctx, now, withCam);
     this.drawBrush(ctx);
     if (this.night) {
@@ -979,13 +1081,13 @@ export class WorldMap {
     if (k < 2.6 && !focusA3) return;
     const ar = this.opts.lang === 'ar';
     const placed = (this.labelBoxes || []).slice(), own = [];
-    const minTier = k >= 5.5 ? 3 : k >= 3.6 ? 2 : 1;
-    const list = CITIES.filter(c => c.a3 === focusA3 ? k >= 1.4 : c.tier <= minTier && k >= 2.6).sort((a, b) => (b.a3 === focusA3) - (a.a3 === focusA3) || a.tier - b.tier);
+    const minTier = k >= 8 ? 4 : k >= 5.5 ? 3 : k >= 3.6 ? 2 : 1;
+    const list = CITIES.filter(c => c.a3 === focusA3 ? k >= (c.tier === 4 ? 3 : 1.4) : c.tier <= minTier && k >= 2.6).sort((a, b) => (b.a3 === focusA3) - (a.a3 === focusA3) || a.tier - b.tier);
     ctx.textBaseline = 'middle';
     for (const c of list) {
       const q = this.p(c.lon, c.lat); if (!q || q[0] < -20 || q[0] > this.w + 20 || q[1] < -20 || q[1] > this.h + 20) continue;
       const mine = c.a3 === focusA3, capital = c.tier === 1;
-      const size = mine ? (capital ? 13 : c.tier === 2 ? 11.5 : 10.5) : capital ? 11 : 10;
+      const size = (mine ? (capital ? 13 : c.tier === 2 ? 11.5 : 10.5) : capital ? 11 : 10) - (c.tier === 4 ? 1 : 0);
       ctx.font = ar ? `600 ${size + 1}px Cairo, sans-serif` : `600 ${size}px Inter, sans-serif`;
       const text = ar ? c.ar : c.name;
       const tw = ctx.measureText(text).width;
@@ -1454,6 +1556,7 @@ export class WorldMap {
   fx_strike(ctx, fx, u, now) {
     const t = fx.e.unitType;
     if (t === 'missile') return this.strikeMissiles(ctx, fx, u);
+    if (fx.e.model === 'b2' || fx.e.model === 'f117') return this.strikeStealth(ctx, fx, u, now);
     if (t === 'bomber') return this.strikeBomber(ctx, fx, u, now);
     return this.strikeJets(ctx, fx, u, now);
   }
@@ -1639,16 +1742,21 @@ export class WorldMap {
     const col = owner && owner.bloc !== 'N' ? this.state.blocs[owner.bloc].color : '#ffd27a';
     if (downed) {
       const hitPt = this.pathPoint(route, easeInOut(meet / T1));
-      if (u < meet) { this.drawBomber(ctx, pos[0], pos[1], ang, 8 * sc, '#e8eef8'); this.escorts(ctx, e, pos, ang, sc, col); }
+      if (u < meet) { this.drawModel(ctx, e.model || 'bomber', pos[0], pos[1], ang, 8 * sc, '#e8eef8'); this.escorts(ctx, e, pos, ang, sc, col); }
       else this.escorts(ctx, e, this.pathPoint([hitPt, a], ease((u - meet) / (1 - meet))), ang + Math.PI, sc, col);
       this.shootDown(ctx, this.pt(e.at) || b, hitPt, (u - 0.22) / (meet - 0.22), (u - meet) / 0.35);
       return;
     }
     const fade = u > 0.9 ? (1 - u) / 0.1 : 1;
     ctx.globalAlpha = fade;
-    this.drawBomber(ctx, pos[0], pos[1], ang, 8 * sc, '#e8eef8');
+    if (e.model === 'b1b' && u < T1) {
+      // The Lancer goes in low and fast: afterburner plumes off the tail.
+      for (const side of [-1, 1]) { ctx.fillStyle = `rgba(255,170,80,${0.5 + 0.3 * Math.sin(now / 40 + side)})`; ctx.beginPath(); ctx.arc(pos[0] - Math.cos(ang) * 9 * sc + nx * side * 1.6 * sc, pos[1] - Math.sin(ang) * 9 * sc + ny * side * 1.6 * sc, 1.6 * sc, 0, TAU); ctx.fill(); }
+    }
+    this.drawModel(ctx, e.model || 'bomber', pos[0], pos[1], ang, 8 * sc, '#e8eef8');
     this.escorts(ctx, e, pos, ang, sc, col);
     ctx.globalAlpha = 1;
+    if (e.model && u > T1 - 0.05 && u < T2 + 0.08) this.tag(ctx, b[0], b[1] - 24 * sc, e.model === 'b52' ? 'B-52 · CARPET BOMBING' : 'B-1B LANCER · LOW-LEVEL RUN', '#ffd27a');
     // Bombs fall behind the aircraft and burst one after another along the line.
     for (const sp of fx.parts) {
       const rel = T1 + sp.f * (T2 - T1), fallT = 0.035;
@@ -1755,6 +1863,13 @@ export class WorldMap {
     const x = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * w, y = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * w;
     ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, TAU); ctx.fill();
     ctx.strokeStyle = hexA(col, 0.4); ctx.beginPath(); ctx.arc(x, y, 6 + 3 * Math.sin(u * 20), 0, TAU); ctx.stroke();
+    if (fx.e.blockade && u > 0.6) {
+      // On station: a dashed cordon closes around the fleet.
+      const t = ease((u - 0.6) / 0.25), end = pts[pts.length - 1];
+      ctx.strokeStyle = `rgba(255,120,90,${0.8 * (1 - Math.max(0, u - 0.9) / 0.1)})`; ctx.lineWidth = 1.6; ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.arc(end[0], end[1], 16, -Math.PI / 2, -Math.PI / 2 + TAU * t); ctx.stroke(); ctx.setLineDash([]);
+      this.tag(ctx, end[0], end[1] - 26, this.opts.lang === 'ar' ? 'حصار' : 'BLOCKADE', '#ff8a6b');
+    }
   }
   // A thick campaign arrow from where the attack came from to the new front line.
   fx_advance(ctx, fx, u, now, withCam) {
@@ -2052,7 +2167,7 @@ export class WorldMap {
   }
 }
 
-Object.assign(WorldMap.prototype, ACT_FX);
+Object.assign(WorldMap.prototype, ACT_FX, AIRCRAFT_FX, ROAD_FX);
 
 function geoDistanceKm(a, b) {
   const R = 6371, rad = Math.PI / 180;

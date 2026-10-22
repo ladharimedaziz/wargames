@@ -1,7 +1,7 @@
 // Builds fresh committee states for world (map) mode and court mode.
 import { COUNTRIES, minorCountry } from '../data/countries.js';
 import { alliancesOf, defaultBloc } from '../data/alliances.js';
-import { MILITARIES, DEPLOYMENTS } from '../data/militaries.js';
+import { MILITARIES, DEPLOYMENTS, AIR_BASES } from '../data/militaries.js';
 import { ECONOMIES, ECONOMY_DEFAULT } from '../data/economies.js';
 import { SEA_ZONES } from '../data/places.js';
 import { zonesTouching } from '../geo.js';
@@ -17,7 +17,7 @@ function baseState({ id, name, mode, seed }) {
       scene: mode === 'court' ? 'court' : 'map',
       introAt: 0, revealAt: 0, endingAt: 0, ending: null, reportAt: 0,
       disguise: { title: 'Global Fisheries Summit', subtitle: 'Sustainable quotas for a shared ocean', agenda: ['Opening remarks', 'Quota allocation for the Indian Ocean', 'Coffee break', 'Coastal livelihoods panel'] },
-      banner: null, focus: null,
+      banner: null, focus: null, coat: false,
     },
     timer: { label: '', duration: 0, endsAt: 0, remaining: 0, running: false },
     kronos: { eye: false, eyeAt: 0, locked: false, note: '' },
@@ -49,9 +49,14 @@ export function createWorldState(opts, geoInfo) {
   }
   s.units = {};
   const place = (owner, type, loc) => { const uid = newId(s, 'u'); s.units[uid] = { id: uid, type, owner, loc, strength: 100, blockade: false, cap: false }; };
+  const byA3 = Object.fromEntries(Object.values(s.countries).map(c => [c.a3, c.id]));
   for (const c of Object.values(s.countries)) {
     const f = c.forces0; delete c.forces0;
-    for (const type of ['army', 'fighter', 'bomber', 'missile']) for (let i = 0; i < f[type]; i++) place(c.id, type, { kind: 'country', id: c.id });
+    const bases = AIR_BASES[c.a3] || {};
+    for (const type of ['army', 'fighter', 'bomber', 'missile']) for (let i = 0; i < f[type]; i++) {
+      const host = bases[type]?.[i] && byA3[bases[type][i]];
+      place(c.id, type, { kind: 'country', id: host || c.id });
+    }
     const zones = zonesTouching(c.id), dep = DEPLOYMENTS[c.a3] || {};
     if (zones.length || dep.fleet) {
       const at = (type, i, shift) => dep[type]?.[i] && SEA_ZONES[dep[type][i]] ? dep[type][i] : zones[(i + shift) % zones.length];

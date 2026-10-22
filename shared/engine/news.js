@@ -75,7 +75,9 @@ export function headlinesFrom(state, ev) {
         e.contested ? `قوات ${A(e.owner)} تقتحم شواطئ ${A(e.country)} تحت نيران بحريتها` : `${A(e.owner)} تشن إنزالاً برمائياً على ${A(e.country)}`); break;
       case 'neo': push(e.danger ? 4 : 2, `${N(e.owner)} evacuates ${e.evacuees.toLocaleString('en-US')} citizens from ${N(e.country)}${e.zone ? ' by sea' : ''}`,
         `${A(e.owner)} تجلي ${e.evacuees.toLocaleString('en-US')} من مواطنيها من ${A(e.country)}${e.zone ? ' بحراً' : ''}`); break;
-      case 'heli': if (e.mode === 'assault') push(4, e.lost ? `${N(e.target)} shoots down ${N(e.owner)} helicopters carrying troops behind its lines` : `${N(e.owner)} lands troops by helicopter deep behind ${N(e.target)}'s front`,
+      case 'airdrop': push(5, `${N(e.owner)} paratroopers drop into ${N(e.country)}${e.lost ? `; ${e.lost} transport${e.lost > 1 ? 's' : ''} shot down on the way in` : ''}`,
+        `مظليو ${A(e.owner)} يهبطون في ${A(e.country)}${e.lost ? ' وسط خسائر في طائرات النقل' : ''}`); break;
+      case 'heli': if (e.mode === 'assault') push(4, e.lost ? `${N(e.target)} shoots down ${N(e.owner)} helicopters carrying troops behind its lines` : e.sea ? `${N(e.owner)} flies troops ashore in ${N(e.target)} by helicopter from its ships` : `${N(e.owner)} lands troops by helicopter deep behind ${N(e.target)}'s front`,
           e.lost ? `${A(e.target)} تسقط مروحيات ${A(e.owner)} المحملة بالجنود خلف خطوطها` : `${A(e.owner)} تنزل قوات بالمروحيات خلف خطوط ${A(e.target)}`);
         else push(e.lost ? 3 : 2, e.lost ? `${N(e.target)} downs ${N(e.owner)} attack helicopters` : `${N(e.owner)} attack helicopters hit ${N(e.target)} positions behind the front`,
           e.lost ? `${A(e.target)} تسقط مروحيات هجومية لـ${A(e.owner)}` : `مروحيات ${A(e.owner)} الهجومية تضرب مواقع ${A(e.target)} خلف الجبهة`); break;

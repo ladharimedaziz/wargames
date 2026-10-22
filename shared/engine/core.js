@@ -1,6 +1,8 @@
 // Shared constants and small helpers for the simulation engine.
 import { SEA_ZONES } from '../data/places.js';
 import { MISSILE_RANGE_KM } from '../data/countries.js';
+import { distanceKm } from '../geo.js';
+import { CITIES } from '../data/cities.js';
 import { ALLIANCES, sharedAlliances, BASE_RELATIONS } from '../data/alliances.js';
 
 export const UNIT_TYPES = {
@@ -75,6 +77,43 @@ export function boundAllies(state, a, b) {
 export function atWar(state, a, b) {
   return state.wars.some(w => (w.a === a && w.b === b) || (w.a === b && w.b === a));
 }
+// How much a country can fight in the air: its jets and bombers, weighted by training, plus ground air defences.
+export function airPower(state, id) {
+  const c = state.countries[id]; if (!c) return 0;
+  let p = (c.airDefense || 0) * 3;
+  for (const u of Object.values(state.units)) if (u.owner === id && u.strength > 0 && (u.type === 'fighter' || u.type === 'bomber' || u.type === 'carrier')) p += (u.strength / 100) * 10 * (c.quality?.air ?? 1);
+  return p;
+}
+// A war only shuts the skies when both sides can fight for them: a great power fighting a force with no air
+// force or air defences to speak of (NATO in Afghanistan) leaves civilian airspace open.
+export function airContested(state, a, b) {
+  const pa = airPower(state, a), pb = airPower(state, b);
+  const lo = Math.min(pa, pb);
+  return lo >= 8 && (lo >= 20 || lo >= Math.max(pa, pb) * 0.12);
+}
+// Whether `by` can actually bring air power over `over`: a neighbour, or aircraft and missiles within range.
+// A war with a distant regional power doesn't empty the skies over the far side of the world.
+export function threatensAir(state, by, over) {
+  if (state.adjacency?.[over]?.includes(by)) return true;
+  const T = state.countries[over]; if (!T) return false;
+  // Its centre and its larger cities, so a big country is in reach when its coast is.
+  const pts = [T, ...CITIES.filter(c => c.a3 === T.a3 && c.tier <= 2)];
+  for (const u of Object.values(state.units)) {
+    if (u.owner !== by || u.strength <= 0 || !['fighter', 'bomber', 'missile', 'carrier'].includes(u.type)) continue;
+    const at = anchor(state, u.loc), r = unitRange(state, u);
+    if (at && pts.some(p => distanceKm(at, p) <= r)) return true;
+  }
+  return false;
+}
+// The countries whose airspace a war between a and b shuts.
+export function warClosures(state, a, b) {
+  if (!airContested(state, a, b)) return [];
+  return [[a, b], [b, a]].filter(([x, y]) => threatensAir(state, y, x)).map(([x]) => x);
+}
+export function closesAirspace(state, id) {
+  return state.wars.some(w => (w.a === id || w.b === id) && warClosures(state, w.a, w.b).includes(id));
+}
+
 export function enemiesOf(state, id) {
   return state.wars.flatMap(w => (w.a === id ? [w.b] : w.b === id ? [w.a] : []));
 }
@@ -113,6 +152,8 @@ export function anchor(state, loc) {
 
 export function unitRange(state, unit) {
   if (unit.type === 'missile') return MISSILE_RANGE_KM[unit.owner] || 1000;
+  // With its tanker fleet the US bomber force can reach any country on Earth.
+  if (unit.type === 'bomber' && state.countries[unit.owner]?.a3 === 'USA') return 20000;
   return UNIT_TYPES[unit.type].range || 0;
 }
 

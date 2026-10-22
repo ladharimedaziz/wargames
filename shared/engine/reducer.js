@@ -3,7 +3,7 @@
 import { SEA_ZONES } from '../data/places.js';
 import { zonesTouching } from '../geo.js';
 import {
-  UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive,
+  UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures,
 } from './core.js';
 import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.js';
 import { resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
@@ -186,6 +186,18 @@ const WORLD = {
   airItem: { perm: 'zeus', run(s, a, ctx) {
     const r = s.review.find(x => x.id === a.id && x.status === 'pending'); if (!r) return err('Already handled.');
     if (r.kind === 'ending') { r.status = 'aired'; return WORLD.playEnding.run(s, { ending: r.ending }, ctx); }
+    if (r.kind === 'join') {
+      // Approved: the country enters the war and the headline airs.
+      r.status = 'approved';
+      const A = C(s, r.country), B = C(s, r.target); if (!A || !B) return err('Those countries are gone.');
+      if (atWar(s, A.id, B.id)) return ok();
+      const ev = []; declareWar(s, A.id, B.id, ev, 'alliance');
+      for (const id of warClosures(s, A.id, B.id)) s.global.closedAirspace[id] ||= { turn: s.meta.turn, at: ctx.now, war: true };
+      sandboxFx(s, ctx, ev.filter(e => e.kind === 'war'));
+      air(s, news(s, ctx, `BREAKING: ${A.name} joins the war against ${B.name}`, `عاجل: ${A.ar} تدخل الحرب ضد ${B.ar}`, 6), ctx);
+      log(s, ctx, `Approved: ${A.name} joins the war against ${B.name}`);
+      return ok({ broadcastAnim: true });
+    }
     air(s, r, ctx); return ok();
   } },
   killItem: { perm: 'zeus', run(s, a) { const r = s.review.find(x => x.id === a.id && x.status === 'pending'); if (!r) return err('Already handled.'); r.status = 'killed'; return ok(); } },
@@ -234,6 +246,8 @@ const WORLD = {
     else s.display.focus = null;
     return ok();
   } },
+  // Show the focused country's coat of arms on the stage.
+  setCoat: { perm: 'zeus', run(s, a) { s.display.coat = !!a.on; return ok(); } },
   playEnding: { perm: 'zeus', run(s, a, ctx) {
     if (!ENDINGS[a.ending]) return err('Unknown ending.');
     s.display.ending = { type: a.ending, title: String(a.title || ENDINGS[a.ending].title).slice(0, 80), line: String(a.line || ENDINGS[a.ending].line).slice(0, 400), ar: a.ar || ENDINGS[a.ending].ar };
@@ -244,7 +258,7 @@ const WORLD = {
   setSetting: { perm: 'zeus', run(s, a) {
     const st = s.settings;
     if (a.key === 'lang' && ['en', 'ar', 'both'].includes(a.value)) st.lang = a.value;
-    else if (['sfx', 'autoAir', 'night', 'showStrikes'].includes(a.key)) st[a.key] = !!a.value;
+    else if (['sfx', 'autoAir', 'night', 'showStrikes', 'autoSnap'].includes(a.key)) st[a.key] = !!a.value;
     else if (a.key === 'layer' && a.layer in st.layers) st.layers[a.layer] = !!a.value;
     else if (a.key === 'fog') st.fog = a.value === 'public' || a.value === 'all' || C(s, a.value) ? a.value : 'public';
     else if (a.key === 'volume') st.volume = clamp(Number(a.value) || 0, 0, 1);
@@ -395,7 +409,7 @@ const WORLD = {
   forceWar: { perm: 'kronos', run(s, a, ctx) {
     if (!C(s, a.a) || !C(s, a.b)) return err('Pick two countries.');
     const ev = []; declareWar(s, a.a, a.b, ev, 'declared');
-    for (const id of [a.a, a.b]) s.global.closedAirspace[id] ||= { turn: s.meta.turn, at: ctx.now };
+    for (const id of warClosures(s, a.a, a.b)) s.global.closedAirspace[id] ||= { turn: s.meta.turn, at: ctx.now, war: true };
     news(s, ctx, `BREAKING: ${C(s, a.a).name} declares war on ${C(s, a.b).name}`, `عاجل: ${C(s, a.a).ar} تعلن الحرب على ${C(s, a.b).ar}`, 6);
     sandboxFx(s, ctx, ev.filter(e => e.kind === 'war').length ? ev.filter(e => e.kind === 'war') : [{ kind: 'war', a: a.a, b: a.b }]);
     return ok({ broadcastAnim: true });
@@ -469,7 +483,7 @@ const WORLD = {
     s.wars.push({ a: id, b: P.id, since: s.meta.turn, civil: true });
     shiftRelation(s, id, P.id, -100);
     P.stability = clamp(P.stability - 25, 0, 100); P.support = clamp(P.support - 10, 0, 100);
-    s.global.closedAirspace[P.id] ||= { turn: s.meta.turn, at: ctx.now };
+    if (warClosures(s, id, P.id).includes(P.id)) s.global.closedAirspace[P.id] ||= { turn: s.meta.turn, at: ctx.now, war: true };
     const ev = [{ kind: 'civil_war', country: P.id, rebels: id }];
     // The rebels rise far from the capital, or where the Zeus clicked.
     if (hasGeo()) {
@@ -523,6 +537,9 @@ const WORLD = {
     if (d.stability) c.stability = clamp(c.stability - d.stability, 0, 100);
     if (a.kind === 'coup') { c.roe = 'forward'; c.support = 35; }
     if (a.kind === 'discovery') c.oilNet = round1((c.oilNet || 0) + 2);
+    // Blackouts and outbreaks stay until Kronos ends them.
+    if (a.kind === 'blackout') c.blackout = { since: s.meta.turn };
+    if (a.kind === 'pandemic') c.outbreak = { level: Math.max(c.outbreak?.level || 0, 30), since: c.outbreak?.since ?? s.meta.turn };
     const mag = a.kind === 'earthquake' ? round1(6.6 + Math.random() * 1.6) : null;
     const en = mag ? `A magnitude ${mag} earthquake strikes` : d.en, ar = mag ? `زلزال بقوة ${mag} درجات يضرب` : d.ar;
     news(s, ctx, `${en} ${c.name}`, `${ar} ${c.ar}`, 5);
@@ -531,6 +548,31 @@ const WORLD = {
     const where = ['earthquake', 'flood', 'discovery'].includes(a.kind) ? spotIn(s, c) : at(c);
     sandboxFx(s, ctx, [{ kind: 'act', act: a.kind, country: c.id, at: where, mag }]);
     return ok({ broadcastAnim: true });
+  } },
+  // Running an outbreak: make it worse, ease it, spread it to every neighbour, or end it.
+  outbreak: { perm: 'kronos', run(s, a, ctx) {
+    const c = C(s, a.country); if (!c) return err('Pick a country.');
+    const lvl = c.outbreak?.level || 0;
+    if (a.op === 'up') { c.outbreak = { level: clamp(lvl + 20, 10, 100), since: c.outbreak?.since ?? s.meta.turn }; }
+    else if (a.op === 'down') { const v = lvl - 20; c.outbreak = v > 0 ? { ...c.outbreak, level: v } : null; }
+    else if (a.op === 'end') c.outbreak = null;
+    else if (a.op === 'spread') {
+      if (!lvl) return err(`There is no outbreak in ${c.name} to spread.`);
+      const to = (s.adjacency[c.id] || []).map(id => C(s, id)).filter(n => n && !n.rebelOf && (n.outbreak?.level || 0) < lvl * 0.6);
+      if (!to.length) return err('Every neighbour already has it.');
+      for (const n of to) { n.outbreak = { level: Math.round(Math.max(n.outbreak?.level || 0, lvl * 0.6)), since: n.outbreak?.since ?? s.meta.turn }; n.support = clamp(n.support - 3, 0, 100); }
+      news(s, ctx, `The outbreak spreads from ${c.name} to ${to.map(n => n.name).join(', ')}`, `الوباء ينتشر من ${c.ar} إلى ${to.map(n => n.ar).join('، ')}`, 5);
+      sandboxFx(s, ctx, to.map(n => ({ kind: 'act', act: 'pandemic', country: n.id, at: at(n), from: at(c) })));
+      return ok({ broadcastAnim: true });
+    } else return err('Up, down, spread or end.');
+    if (a.op === 'end' || !c.outbreak) news(s, ctx, `The outbreak in ${c.name} is declared over`, `إعلان انتهاء الوباء في ${c.ar}`, 3);
+    log(s, ctx, `Kronos set the outbreak in ${c.name} to ${c.outbreak?.level || 0}%`);
+    return ok();
+  } },
+  restorePower: { perm: 'kronos', run(s, a, ctx) {
+    const c = C(s, a.country); if (!c?.blackout) return err('No blackout there.');
+    c.blackout = null; news(s, ctx, `Power is restored across ${c.name}`, `عودة التيار الكهربائي في ${c.ar}`, 3);
+    return ok();
   } },
   smite: { perm: 'kronos', run(s, a, ctx) {
     // A strike with no units behind it: for when the story needs something to happen now.

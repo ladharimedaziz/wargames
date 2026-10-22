@@ -6,6 +6,23 @@ import { autoUnits, validateOrder } from './orders.js';
 import { norms } from './economy.js';
 
 
+// The computer never drags a country into a war on its own: it asks, and a Zeus approves or declines on the news desk.
+// A declined request is not asked again for three turns.
+function proposeJoin(state, ctx, c, friend, foe, treaty) {
+  const turn = state.meta.turn;
+  const same = r => r.kind === 'join' && r.country === c.id && r.target === foe;
+  if (state.review.some(r => same(r) && (r.status === 'pending' || (r.status === 'killed' && turn - r.turn < 3)))) return true;
+  const F = state.countries[foe];
+  state.review.push({
+    id: newId(state, 'j'), turn, kind: 'join', status: 'pending', priority: 6, at: ctx.now,
+    country: c.id, target: foe, friend: friend.id,
+    en: `${c.name} wants to join the war on ${friend.name}'s side against ${F.name}${treaty ? ' (treaty obligation)' : ''}`,
+    ar: `${c.ar} تريد الانضمام إلى الحرب إلى جانب ${friend.ar} ضد ${F.ar}`,
+    detail: 'Approve to declare war, or decline to keep it out.',
+  });
+  return true;
+}
+
 export function planAI(state, ctx) {
   const turn = state.meta.turn;
   const out = [];
@@ -52,7 +69,7 @@ export function planAI(state, ctx) {
         let p = defending ? (treaty ? 0.5 : 0.35) : (bloc ? 0.12 : 0);
         p *= c.roe === 'defensive' ? 0.4 : c.roe === 'forward' ? 1.3 : 1;
         p *= state.countries[foe].major ? 1 : 0.5;
-        if (relation(state, c.id, foe) < 10 && chance(state, p)) { joined = add(c.id, 'war', { target: foe }); break; }
+        if (relation(state, c.id, foe) < 10 && chance(state, p)) { joined = proposeJoin(state, ctx, c, friend, foe, treaty); break; }
       }
     }
 

@@ -31,10 +31,13 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
   return html`
     <div class="pane inspector">
       <div class="insp-head" style=${`--bloc:${state.blocs[c.bloc].color}`}>
+        <img class="insp-coat" src=${`/client/img/coats/${id}.webp`} alt="" onError=${e => { e.target.style.display = 'none'; }} />
         <div class="grow">
           <div class="insp-name">${c.name}</div>
           <div class="ar dim" dir="rtl">${c.ar}</div>
         </div>
+        <button class=${cls('btn xs', state.display.coat && state.display.focus?.id === id ? 'on' : 'ghost')} title="Show this country's coat of arms on the stage"
+          onClick=${() => { const on = !(state.display.coat && state.display.focus?.id === id); run(conn, { type: 'setCoat', on }); if (on && state.display.focus?.id !== id) run(conn, { type: 'setFocus', country: id }); }}>⚜ Arms</button>
         <button class="btn xs ghost" onClick=${() => setSelected(null)}>✕</button>
       </div>
       <div class="row wrap" style="margin:8px 0">
@@ -52,6 +55,8 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
         ${c.capitulated && html`<span class="chip red">Capitulated</span>`}
         ${state.global.closedAirspace[id] && html`<span class="chip red">Airspace closed</span>`}
         ${c.bankrupt && html`<span class="chip red">Bankrupt</span>`}
+        ${c.blackout && html`<span class="chip">Blackout</span>`}
+        ${c.outbreak && html`<span class="chip" style="color:#b8ff6a">Outbreak ${c.outbreak.level}%</span>`}
       </div>
 
       <${Fronts} conn=${conn} state=${state} id=${id} enemies=${enemies} setSelected=${setSelected} setBrush=${setBrush} />
@@ -59,8 +64,11 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
 
       <div class="sub-h">Quick orders</div>
       <div class="quick-grid">
-        ${[['strike', '✦ Strike'], ['invade', '➤ Invade'], ['fleet', '⛴ Fleet'], ['blockade', '⛓ Blockade'], ['war', '⚔ War'], ['ceasefire', '✋ Ceasefire'], ['peace', '☮ Peace'], ['sanction', '$ Sanction'], ['aid', '+ Aid'], ['arms', '⇄ Arms'], ['cyber', '⌁ Cyber'], ['spy', '◐ Spy'], ['neo', '✈ Evacuate'], ['helistrike', '🚁 Heli strike'], ['airassault', '⇣ Air assault']].map(([t, l]) => html`<button class="btn xs" onClick=${() => startOrder(t)}>${l}</button>`)}
+        ${[['strike', '✦ Strike'], ['invade', '➤ Invade'], ['fleet', '⛴ Fleet'], ['blockade', '⛓ Blockade'], ['war', '⚔ War'], ['ceasefire', '✋ Ceasefire'], ['peace', '☮ Peace'], ['sanction', '$ Sanction'], ['aid', '+ Aid'], ['arms', '⇄ Arms'], ['cyber', '⌁ Cyber'], ['spy', '◐ Spy'], ['neo', '✈ Evacuate'], ['helistrike', '🚁 Heli strike'], ['airassault', '⇣ Air assault'], ['airdrop', '☂ Paratroops']].map(([t, l]) => html`<button class="btn xs" onClick=${() => startOrder(t)}>${l}</button>`)}
       </div>
+      ${c.a3 === 'USA' && html`<div class="quick-grid" style="margin-top:6px">
+        ${[['b2', 'B-2 strike'], ['b2moab', 'B-2 MOAB'], ['f117', 'F-117 strike'], ['b52', 'B-52 run'], ['b1b', 'B-1B run']].map(([k, l]) => html`<button class="btn xs" onClick=${() => startOrder('strike', { counts: k === 'b2moab' ? { aircraft: 'b2', payload: 'moab' } : { aircraft: k } })}>✈ ${l}</button>`)}
+      </div>`}
       <div class="row" style="margin-top:6px"><span class="dim small">Posture</span><div class="seg sm">${ROE.map(r => html`<button class=${c.roe === r ? 'on' : ''} onClick=${() => run(conn, { type: 'setRoe', country: id, roe: r })}>${r}</button>`)}</div></div>
 
       <div class="sub-h">Economy</div>
@@ -197,7 +205,7 @@ function Fronts({ conn, state, id, enemies, setSelected, setBrush }) {
   // Enemies that could open a front inside this country.
   const invaders = c.front ? [] : enemies;
   if (!c.front && !mine.length && !open.length && !enemies.length) return null;
-  const draw = owner => setBrush?.({ owner, mode: 'take', r: 20 });
+  const draw = owner => setBrush?.({ owner, mode: 'take', r: 9 });
   return html`<div class="sub-h">War fronts</div>
     ${c.front && html`<${FrontRow} conn=${conn} state=${state} c=${c} setSelected=${setSelected} />`}
     ${mine.map(o => html`<${FrontRow} conn=${conn} state=${state} c=${o} setSelected=${setSelected} named />`)}
@@ -206,7 +214,7 @@ function Fronts({ conn, state, id, enemies, setSelected, setBrush }) {
     ${setBrush && enemies.length > 0 && html`<div class="row wrap small" style="gap:6px;margin-top:6px"><span class="dim">Draw on the map</span>
       <button class="btn xs gold" title=${`Paint ground ${c.name} takes`} onClick=${() => draw(id)}>✎ ${c.name}</button>
       ${enemies.slice(0, 4).map(e => html`<button class="btn xs" title=${`Paint ground ${state.countries[e].name} takes`} onClick=${() => draw(e)}>✎ ${state.countries[e].name}</button>`)}
-      <button class="btn xs ghost" title="Paint over held ground to give it back" onClick=${() => setBrush({ owner: id, mode: 'restore', r: 20 })}>⌫ Give back</button>
+      <button class="btn xs ghost" title="Paint over held ground to give it back" onClick=${() => setBrush({ owner: id, mode: 'restore', r: 9 })}>⌫ Give back</button>
     </div>`}`;
 }
 

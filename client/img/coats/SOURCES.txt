@@ -1,0 +1,5 @@
+Coats of arms, named by ISO numeric country id (Kosovo: XKX).
+Rendered to WebP from the SVGs in the npm package "coat-of-arms" 6.4.0 (MIT licence).
+Countries that package leaves out (Iran, Turkey, Syria, Cuba, Taiwan, Singapore, Laos, Moldova, North Macedonia,
+Tanzania, Palestine, Vatican, Gambia, Micronesia, Central African Republic, Congo, DR Congo) show their flag on a
+shield, drawn from the npm package "country-flag-icons" (MIT licence).
