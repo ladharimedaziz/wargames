@@ -89,13 +89,16 @@ test('nuclear orders are refused below tension 10', () => {
   assert.ok(p2.ok, p2.error);
 });
 
-test('resolving a turn advances the clock and queues headlines for review', () => {
+test('resolving a turn advances the clock and airs headlines (or queues them in review mode)', () => {
   const { s, zeus } = world();
   command(s, zeus, 'russia declares war on ukraine');
-  command(s, zeus, 'russia invade ukraine 3');
   const turn = s.meta.turn;
   assert.ok(zeus({ type: 'resolveTurn' }).ok);
   assert.equal(s.meta.turn, turn + 1);
+  assert.ok(s.aired.some(a => /declares war/i.test(a.en)), 'headlines air automatically by default');
+  assert.ok(zeus({ type: 'setSetting', key: 'autoAir', value: false }).ok);
+  command(s, zeus, 'russia invade ukraine 3');
+  assert.ok(zeus({ type: 'resolveTurn' }).ok);
   assert.ok(s.lastResolution && s.lastResolution.events.length > 0);
   assert.ok(s.review.some(r => r.status === 'pending'));
 });
@@ -388,8 +391,9 @@ test('US strike aircraft: the B-2 can carry the MOAB, nobody else can', () => {
 
 test('the Zeus can show a coat of arms on the stage', () => {
   const { s, zeus } = world();
-  assert.ok(zeus({ type: 'setCoat', on: true }).ok);
-  assert.equal(s.display.coat, true);
+  assert.equal(s.display.arms, true);
+  assert.ok(zeus({ type: 'setCoat', on: false }).ok);
+  assert.equal(s.display.arms, false);
   assert.ok(zeus({ type: 'setSetting', key: 'autoSnap', value: false }).ok);
   assert.equal(s.settings.autoSnap, false);
 });

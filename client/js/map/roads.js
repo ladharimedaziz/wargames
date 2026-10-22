@@ -49,7 +49,7 @@ function buildNetwork(landAt) {
         const f = t0 + (t1 - t0) * (i / N), w = Math.sin(f * Math.PI) * (0.05 * Math.sin(f * 5 + seed) + 0.025 * Math.sin(f * 13 + seed * 2));
         pts.push([a.lon + (b.lon - a.lon) * f + nx * w, a.lat + (b.lat - a.lat) * f + ny * w]);
       }
-      roads.push({ highway, pts });
+      roads.push({ highway, pts, a3: [a.a3, b.a3] });
     }
   }
   return roads;
@@ -58,11 +58,14 @@ function buildNetwork(landAt) {
 export const ROAD_FX = {
   drawRoads(ctx) {
     const k = this.cam.k;
-    if (k < 3 || this.layers?.roads === false) return;
+    // The country in focus (on the stage, or selected in the panel) shows its roads as soon as the camera moves in.
+    const fid = this.focusedCountry?.(), fa3 = fid && this.state?.countries?.[fid]?.a3;
+    if ((k < 3 && !(fa3 && k >= 1.3)) || this.layers?.roads === false) return;
     if (!this.roads) this.roads = buildNetwork(this.landAt);
     const sizeKey = `${this.w}x${this.h}`;
-    if (this.roadsKey !== sizeKey) { this.roadsKey = sizeKey; this.roadProj = this.roads.map(r => ({ highway: r.highway, pts: r.pts.map(q => this.projection(q)).filter(Boolean) })); }
+    if (this.roadsKey !== sizeKey) { this.roadsKey = sizeKey; this.roadProj = this.roads.map(r => ({ highway: r.highway, a3: r.a3, pts: r.pts.map(q => this.projection(q)).filter(Boolean) })); }
     const fadeIn = clamp((k - 3) / 1.6, 0, 1), night = this.night;
+    const mine = r => fa3 && r.a3.includes(fa3), focusIn = clamp((k - 1.3) / 0.8, 0, 1);
     const cx = this.cam.x, cy = this.cam.y, W = this.w, H = this.h;
     ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
     const pass = (filter, width, style) => {
@@ -77,10 +80,13 @@ export const ROAD_FX = {
       ctx.stroke();
     };
     // Local roads appear a little later than highways.
-    const local = clamp((k - 4.2) / 1.6, 0, 1);
-    if (local > 0) pass(r => !r.highway, 1, night ? `rgba(255,190,120,${0.22 * local})` : `rgba(205,214,228,${0.28 * local})`);
-    pass(r => r.highway, 3.2, `rgba(5,8,14,${0.55 * fadeIn})`);
-    pass(r => r.highway, 1.8, night ? `rgba(255,170,80,${0.75 * fadeIn})` : `rgba(245,205,125,${0.7 * fadeIn})`);
+    const local = clamp((k - 4.2) / 1.6, 0, 1), localMine = clamp((k - 1.8) / 1, 0, 1);
+    const roadCol = a => (night ? `rgba(255,190,120,${0.22 * a})` : `rgba(205,214,228,${0.28 * a})`);
+    const hwCol = a => (night ? `rgba(255,170,80,${0.75 * a})` : `rgba(245,205,125,${0.7 * a})`);
+    if (local > 0) pass(r => !r.highway && !mine(r), 1, roadCol(local));
+    if (fa3 && localMine > 0) pass(r => !r.highway && mine(r), 1, roadCol(Math.max(local, localMine)));
+    if (fadeIn > 0) { pass(r => r.highway && !mine(r), 3.2, `rgba(5,8,14,${0.55 * fadeIn})`); pass(r => r.highway && !mine(r), 1.8, hwCol(fadeIn)); }
+    if (fa3) { const a = Math.max(fadeIn, focusIn); pass(r => r.highway && mine(r), 3.2, `rgba(5,8,14,${0.55 * a})`); pass(r => r.highway && mine(r), 1.8, hwCol(a)); }
     ctx.restore();
   },
 };

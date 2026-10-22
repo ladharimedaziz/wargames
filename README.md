@@ -66,7 +66,7 @@ Kronos can rename committees, reset any committee as a world or court committee,
 
 The bar shows what it understood before you press Enter. Orders wait in the queue until **Resolve turn**. Then the engine runs strikes, interceptions, invasions, the economy and the AI countries, and the display animates the result.
 
-The engine writes the news. Headlines wait in the **News desk** until a Zeus airs them, unless auto-air is on. Endings are suggested there too, and the Zeus decides whether to play one.
+The engine writes the news and airs it on the stage straight away. Untick **Auto-air** in the News desk to review headlines before they air. Endings are suggested there too, and the Zeus decides whether to play one.
 
 Countries start in their real-world alliances (NATO, the GCC, CSTO, the Saudi–Pakistan pact, US treaty partners and more), with real rivalries reflected in starting relations. Militaries match reality as closely as the game allows: real force sizes, plus a quality multiplier for land, air and sea, so the US Navy (eleven supercarriers, forward-deployed fleets) is in a class of its own. Economies start from real figures too: each country has its own inflation, public approval, stability, industry, energy security, reserves and growth rate, and recovers toward its own normal rather than a universal 100%.
 
@@ -84,11 +84,11 @@ Countries start in their real-world alliances (NATO, the GCC, CSTO, the Saudi–
 
 **Joining wars.** Computer-run countries no longer jump into wars on their own: a request to join a friend's war lands in the **News desk** marked *Needs approval*, and the Zeus approves or declines it.
 
-**Coat of arms.** Every country card shows the country's coat of arms (a few countries the source set leaves out, such as Iran and Turkey, show their flag on a shield). **⚜ Arms** puts it on the stage, beside the country in focus.
+**Coat of arms.** When a country is selected or zoomed to, on any map (including a click on the stage display), its coat of arms appears beside it. A few countries the source set leaves out, such as Iran and Turkey, show their flag on a shield. Turn it off or on from the Zeus panel only: **⚜ Arms** in a country card, or **⚜ Coats of arms** in *Stage*.
 
 **Saves.** Press **Ctrl+S** anywhere in the panel, or name a save under *Saves*. Manual saves are kept until you delete them; the automatic rewind point before each turn can be switched off.
 
-**Map detail.** Zooming in reveals towns and bases, then roads and highways between them (they stop at the edge of each city).
+**Map detail.** Zooming in reveals towns and bases, then roads and highways between them (they stop at the edge of each city). The country in focus shows its towns and roads as soon as the camera moves in. Blackouts and outbreaks stay visible on the map with a label until Kronos ends them.
 
 Nuclear weapons only work at tension 10. The nuclear ending is a quiet black screen, with nothing graphic.
 

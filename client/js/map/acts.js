@@ -83,22 +83,40 @@ export const ACT_FX = {
   // an outbreak tints the country and pulses over its cities, stronger the worse it is.
   drawConditions(ctx, time) {
     const s = this.state; if (!s?.countries) return;
+    const ar = this.opts.lang === 'ar', tags = [];
     for (const c of Object.values(s.countries)) {
-      if (c.blackout) this.clipTo(ctx, c.id, () => { ctx.fillStyle = `rgba(0,2,10,${this.night ? 0.6 : 0.42})`; ctx.fillRect(0, 0, this.w, this.h); });
+      if (c.blackout) {
+        // The grid is down: the country goes dark, with the odd flicker as backup power cuts in and out.
+        const flick = Math.sin(time * 7.3 + c.lon) > 0.97 ? 0.12 : 0;
+        this.clipTo(ctx, c.id, () => { ctx.fillStyle = `rgba(0,2,10,${(this.night ? 0.62 : 0.48) - flick})`; ctx.fillRect(0, 0, this.w, this.h); });
+        tags.push([c, ar ? 'انقطاع الكهرباء' : '⚡ BLACKOUT', '#9fb4d8']);
+      }
       const lvl = (c.outbreak?.level || 0) / 100; if (!lvl) continue;
       this.clipTo(ctx, c.id, () => {
         ctx.globalCompositeOperation = 'screen';
-        ctx.fillStyle = `rgba(90,200,60,${(0.06 + lvl * 0.16) * (0.75 + 0.25 * Math.sin(time * 1.6 + c.lon))})`;
+        ctx.fillStyle = `rgba(90,200,60,${(0.1 + lvl * 0.2) * (0.75 + 0.25 * Math.sin(time * 1.6 + c.lon))})`;
         ctx.fillRect(0, 0, this.w, this.h);
       });
       const cities = (this._obCache ||= {})[c.id] ||= this.citiesOf(c.id).slice(0, 10);
       const n = Math.max(1, Math.round(cities.length * Math.min(1, lvl * 1.4)));
-      for (let i = 0; i < n; i++) {
+      for (let i = 0; i < Math.min(n, cities.length); i++) {
         const p = this.p(cities[i].lon, cities[i].lat); if (!p) continue;
-        const v = (time * 0.6 + i * 0.37) % 1;
-        ctx.strokeStyle = `rgba(190,255,110,${(1 - v) * (0.3 + lvl * 0.5)})`; ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.arc(p[0], p[1], 2 + v * (6 + lvl * 10), 0, TAU); ctx.stroke();
+        for (const off of [0, 0.5]) {
+          const v = (time * 0.6 + i * 0.37 + off) % 1;
+          ctx.strokeStyle = `rgba(190,255,110,${(1 - v) * (0.4 + lvl * 0.5)})`; ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.arc(p[0], p[1], 2 + v * (8 + lvl * 14), 0, TAU); ctx.stroke();
+        }
       }
+      tags.push([c, ar ? `وباء ${c.outbreak.level}%` : `☣ OUTBREAK ${c.outbreak.level}%`, '#b8ff6a']);
+    }
+    // Labels under the country's name, so the audience knows why it looks that way.
+    const stack = {};
+    for (const [c, text, col] of tags) {
+      const q = this.p(c.lon, c.lat); if (!q) continue;
+      const n = (stack[c.id] = (stack[c.id] || 0) + 1);
+      ctx.globalAlpha = 0.85 + 0.15 * Math.sin(time * 2 + n);
+      this.tag(ctx, q[0], q[1] + 14 + n * 15, text, col);
+      ctx.globalAlpha = 1;
     }
   },
 

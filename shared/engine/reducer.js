@@ -47,10 +47,13 @@ function log(s, ctx, text) {
 function news(s, ctx, en, ar, priority = 3, kind = 'news') {
   const item = { id: newId(s, 'n'), turn: s.meta.turn, kind, status: 'pending', priority, en, ar: ar || en, detail: '', at: ctx.now };
   s.review.push(item);
+  // Headlines go straight to the stage unless the Zeus has switched to reviewing them first.
+  if (kind === 'news' && s.settings.airMode !== 'manual') air(s, item, ctx);
   return item;
 }
 
 function air(s, item, ctx) {
+  if (s.aired.some(x => x.id === item.id)) return;
   item.status = 'aired';
   s.aired.push({ ...item, airedAt: ctx.now });
   if (s.aired.length > 120) s.aired.shift();
@@ -246,8 +249,8 @@ const WORLD = {
     else s.display.focus = null;
     return ok();
   } },
-  // Show the focused country's coat of arms on the stage.
-  setCoat: { perm: 'zeus', run(s, a) { s.display.coat = !!a.on; return ok(); } },
+  // Coats of arms for the selected or focused country, on every map. On unless the Zeus turns it off.
+  setCoat: { perm: 'zeus', run(s, a) { s.display.arms = !!a.on; return ok(); } },
   playEnding: { perm: 'zeus', run(s, a, ctx) {
     if (!ENDINGS[a.ending]) return err('Unknown ending.');
     s.display.ending = { type: a.ending, title: String(a.title || ENDINGS[a.ending].title).slice(0, 80), line: String(a.line || ENDINGS[a.ending].line).slice(0, 400), ar: a.ar || ENDINGS[a.ending].ar };
@@ -258,7 +261,8 @@ const WORLD = {
   setSetting: { perm: 'zeus', run(s, a) {
     const st = s.settings;
     if (a.key === 'lang' && ['en', 'ar', 'both'].includes(a.value)) st.lang = a.value;
-    else if (['sfx', 'autoAir', 'night', 'showStrikes', 'autoSnap'].includes(a.key)) st[a.key] = !!a.value;
+    else if (['sfx', 'night', 'showStrikes', 'autoSnap'].includes(a.key)) st[a.key] = !!a.value;
+    else if (a.key === 'autoAir') st.airMode = a.value ? 'auto' : 'manual';
     else if (a.key === 'layer' && a.layer in st.layers) st.layers[a.layer] = !!a.value;
     else if (a.key === 'fog') st.fog = a.value === 'public' || a.value === 'all' || C(s, a.value) ? a.value : 'public';
     else if (a.key === 'volume') st.volume = clamp(Number(a.value) || 0, 0, 1);

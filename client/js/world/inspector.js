@@ -36,8 +36,8 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
           <div class="insp-name">${c.name}</div>
           <div class="ar dim" dir="rtl">${c.ar}</div>
         </div>
-        <button class=${cls('btn xs', state.display.coat && state.display.focus?.id === id ? 'on' : 'ghost')} title="Show this country's coat of arms on the stage"
-          onClick=${() => { const on = !(state.display.coat && state.display.focus?.id === id); run(conn, { type: 'setCoat', on }); if (on && state.display.focus?.id !== id) run(conn, { type: 'setFocus', country: id }); }}>⚜ Arms</button>
+        <button class=${cls('btn xs', state.display.arms !== false ? 'on' : 'ghost')} title="Coats of arms on every map when a country is selected or in focus (click to turn off or on)"
+          onClick=${() => run(conn, { type: 'setCoat', on: state.display.arms === false })}>⚜ Arms ${state.display.arms !== false ? 'on' : 'off'}</button>
         <button class="btn xs ghost" onClick=${() => setSelected(null)}>✕</button>
       </div>
       <div class="row wrap" style="margin:8px 0">

@@ -43,7 +43,7 @@ export function ReviewTab({ conn, state }) {
     <div class="pane">
       <div class="pane-h">
         <h2>News desk</h2>
-        <label class="row dim" title="Air automatic headlines without review"><input type="checkbox" checked=${state.settings.autoAir} onChange=${e => run(conn, { type: 'setSetting', key: 'autoAir', value: e.target.checked })} /> Auto-air</label>
+        <label class="row dim" title="Air automatic headlines without review"><input type="checkbox" checked=${state.settings.airMode !== 'manual'} onChange=${e => run(conn, { type: 'setSetting', key: 'autoAir', value: e.target.checked })} /> Auto-air</label>
       </div>
       <p class="pane-hint">Automatic headlines and ending suggestions wait here. Nothing reaches the stage until you air it.</p>
       <div class="row" style="margin-bottom:8px">
