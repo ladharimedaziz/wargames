@@ -38,7 +38,7 @@ Kronos can rename committees, reset any committee as a world or court committee,
 
 ## Running a committee
 
-**Stage Zeus.** Sign in, press **Stage display**, and move that window to the projector. Double-click it for full screen, and click it once to turn on sound effects (there is no background music). Delegates only ever see this window. On the display itself you can click a country or scroll to zoom in, which reveals its major cities; press Esc to zoom back out.
+**Stage Zeus.** Sign in, press **Stage display**, and move that window to the projector. Double-click it for full screen, and click it once to turn on sound effects (there is no background music). Delegates only ever see this window. On the display itself you can click a country or scroll to zoom in, which reveals its cities and roads. Clicks never zoom out (so a double-click for full screen is safe); press Esc or scroll out instead.
 
 **Back Room Zeus.** The chair tells you what a delegate decided. Type it into the command bar at the bottom of the map, the way the chair said it:
 
@@ -84,7 +84,7 @@ Countries start in their real-world alliances (NATO, the GCC, CSTO, the Saudi–
 
 **Joining wars.** Computer-run countries no longer jump into wars on their own: a request to join a friend's war lands in the **News desk** marked *Needs approval*, and the Zeus approves or declines it.
 
-**Coat of arms.** When a country is selected or zoomed to, on any map (including a click on the stage display), its coat of arms appears beside it. A few countries the source set leaves out, such as Iran and Turkey, show their flag on a shield. Turn it off or on from the Zeus panel only: **⚜ Arms** in a country card, or **⚜ Coats of arms** in *Stage*.
+**Coat of arms.** When a country is selected or zoomed to, on any map (including a click on the stage display), its coat of arms rises out of its territory with a gold ring and a sweep of light. A few countries the source set leaves out, such as Iran and Turkey, show their flag on a shield. Turn it off or on from the Zeus panel only: **⚜ Arms** in a country card, or **⚜ Coats of arms** in *Stage*.
 
 **Saves.** Press **Ctrl+S** anywhere in the panel, or name a save under *Saves*. Manual saves are kept until you delete them; the automatic rewind point before each turn can be switched off.
 
