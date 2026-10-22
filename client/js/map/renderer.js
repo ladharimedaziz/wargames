@@ -3,7 +3,7 @@
 import { geoEqualEarth, geoPath, geoGraticule10, geoInterpolate } from 'd3-geo';
 import { SEA_ZONES } from '/shared/data/places.js';
 import { CITIES } from '/shared/data/cities.js';
-import { relation, isOOB } from '/shared/engine/core.js';
+import { relation, isOOB, OUT_OF_BOUNDS } from '/shared/engine/core.js';
 import { loadAtlas, makeCountryAt, makeLandAt, pairBorder } from './atlas.js';
 import { contours as d3contours } from 'd3-contour';
 import { CELL, cellKey, cellIJ, cellCenter, neighbors as cellNeighbors } from '/shared/engine/control.js';
@@ -1124,7 +1124,8 @@ export class WorldMap {
     const ar = this.opts.lang === 'ar';
     const placed = (this.labelBoxes || []).slice(), own = [];
     const minTier = k >= 8 ? 4 : k >= 5.5 ? 3 : k >= 3.6 ? 2 : 1;
-    const list = CITIES.filter(c => c.a3 !== 'ISR' && c.a3 !== 'PSE').filter(c => c.a3 === focusA3 ? k >= (c.tier === 4 ? 1.8 : 1.4) : c.tier <= minTier && k >= 2.6).sort((a, b) => (b.a3 === focusA3) - (a.a3 === focusA3) || a.tier - b.tier);
+    const oobA3 = new Set(OUT_OF_BOUNDS.map(id => s.countries[id]?.a3));
+    const list = CITIES.filter(c => !oobA3.has(c.a3)).filter(c => c.a3 === focusA3 ? k >= (c.tier === 4 ? 1.8 : 1.4) : c.tier <= minTier && k >= 2.6).sort((a, b) => (b.a3 === focusA3) - (a.a3 === focusA3) || a.tier - b.tier);
     ctx.textBaseline = 'middle';
     for (const c of list) {
       const q = this.p(c.lon, c.lat); if (!q || q[0] < -20 || q[0] > this.w + 20 || q[1] < -20 || q[1] > this.h + 20) continue;

@@ -9,7 +9,7 @@ import { atWar, relation, warClosures } from '../../shared/engine/core.js';
 import { validateOrder, autoUnits } from '../../shared/engine/orders.js';
 
 const gi = { ids: geo.atlasCountryIds(), name: geo.atlasName, anchor: geo.anchorOf, neighbors: geo.neighborsOf };
-const US = '840', RU = '643', UA = '804', FR = '250', SA = '682', JP = '392';
+const US = '840', RU = '643', UA = '804', FR = '250', AE = '784', JP = '392';
 
 function world() {
   const s = createWorldState({ id: 't', name: 'Test', seed: 7 }, gi);
@@ -49,9 +49,9 @@ test('Zeus can set world tension, and it animates', () => {
 test('acts of god play an animation at a spot in the country', () => {
   const { s, kronos } = world();
   for (const kind of ['earthquake', 'flood', 'pandemic', 'blackout', 'coup', 'discovery']) {
-    assert.equal(kronos({ type: 'disaster', country: '682', kind }).ok, true);
+    assert.equal(kronos({ type: 'disaster', country: '818', kind }).ok, true);
     const e = s.lastResolution.events[0];
-    assert.equal(e.kind, 'act'); assert.equal(e.act, kind); assert.equal(e.country, '682');
+    assert.equal(e.kind, 'act'); assert.equal(e.act, kind); assert.equal(e.country, '818');
     assert.ok(Number.isFinite(e.at.lat) && Number.isFinite(e.at.lon));
   }
 });
@@ -66,8 +66,8 @@ test('a Kronos freeze blocks Zeus changes but not reads', () => {
 
 test('the command bar understands what the chair says', () => {
   const { s, zeus } = world();
-  command(s, zeus, 'player saudi uae qatar');
-  assert.equal(s.countries[SA].control, 'player');
+  command(s, zeus, 'player egypt uae qatar');
+  assert.equal(s.countries[AE].control, 'player');
   command(s, zeus, 'russia declares war on ukraine');
   assert.ok(s.orders.some(o => o.type === 'war'), 'the declaration waits in the order queue');
   zeus({ type: 'resolveTurn' });
@@ -140,7 +140,7 @@ test('sandbox powers: disaster, smite and spawning units', () => {
   assert.ok(s.countries[JP].gdp < gdp);
   assert.ok(kronos({ type: 'smite', target: FR, from: RU, power: 3 }).ok);
   const before = Object.keys(s.units).length;
-  assert.ok(kronos({ type: 'spawnUnits', country: SA, unitType: 'carrier', count: 2 }).ok);
+  assert.ok(kronos({ type: 'spawnUnits', country: AE, unitType: 'carrier', count: 2 }).ok);
   assert.equal(Object.keys(s.units).length, before + 2);
 });
 
@@ -183,7 +183,7 @@ test('real alliances: hub treaties do not tie US partners to each other', async 
   const { s } = world();
   const { boundAllies } = await import('../../shared/engine/core.js');
   assert.ok(boundAllies(s, US, JP), 'US and Japan are treaty allies');
-  assert.ok(boundAllies(s, SA, '586'), 'Saudi Arabia and Pakistan have a defence pact');
+  assert.ok(boundAllies(s, AE, '634'), 'the UAE and Qatar are bound through the GCC');
   assert.ok(boundAllies(s, FR, '616'), 'France and Poland are NATO allies');
   assert.equal(boundAllies(s, '376', '634'), null, 'Israel and Qatar are not allied through the US');
   assert.equal(s.countries[RU].bloc, 'B');
@@ -234,10 +234,10 @@ test('the Zeus decides whether a front advances, holds or falls back', () => {
 test('only countries with landing fleets can invade across the sea', () => {
   const { s, kronos } = world();
   const IR = '364';
-  assert.ok(Object.values(s.units).some(u => u.owner === SA && u.type === 'fleet' && u.loc.id === 'persian_gulf'));
-  const saArmy = Object.values(s.units).find(u => u.owner === SA && u.type === 'army');
-  // Saudi Arabia has no landing ships, so it flies troops in by strategic airlift instead of landing them.
-  const o1 = { country: SA, type: 'invade', target: IR, units: [saArmy.id] };
+  assert.ok(Object.values(s.units).some(u => u.owner === AE && u.type === 'fleet' && u.loc.id === 'persian_gulf'));
+  const aeArmy = Object.values(s.units).find(u => u.owner === AE && u.type === 'army');
+  // The UAE has no landing ships, so it flies troops in by strategic airlift instead of landing them.
+  const o1 = { country: AE, type: 'invade', target: IR, units: [aeArmy.id] };
   const v1 = validateOrder(s, o1);
   assert.ok(v1.ok, v1.reason);
   assert.ok(o1.airborne && !o1.amphibious);
@@ -304,7 +304,7 @@ test('countries start from their real economies and settle back toward them, not
   const IR = '364', CN = '156';
   assert.ok(s.countries[IR].inflation > 20 && s.countries[US].inflation < 5);
   assert.ok(s.countries[IR].industry < 1 && s.countries[CN].industry > 1);
-  assert.ok(s.countries[SA].treasury > s.countries[IR].treasury);
+  assert.ok(s.countries[AE].treasury > s.countries[IR].treasury);
   for (let i = 0; i < 8; i++) assert.ok(zeus({ type: 'resolveTurn' }).ok);
   assert.ok(s.countries[IR].industry < 0.9, 'sanctioned industry does not heal to 100%');
   assert.ok(s.countries[IR].inflation > 20, 'inflation drifts to its own norm');
@@ -400,8 +400,8 @@ test('the Zeus can show a coat of arms on the stage', () => {
 
 test('Kronos can end every outbreak at once', () => {
   const { s, kronos, zeus } = world();
-  assert.ok(kronos({ type: 'disaster', country: SA, kind: 'pandemic' }).ok);
-  assert.ok(kronos({ type: 'outbreak', country: SA, op: 'spread' }).ok);
+  assert.ok(kronos({ type: 'disaster', country: '818', kind: 'pandemic' }).ok);
+  assert.ok(kronos({ type: 'outbreak', country: '818', op: 'spread' }).ok);
   assert.ok(Object.values(s.countries).filter(c => c.outbreak).length > 1);
   assert.equal(zeus({ type: 'endAllOutbreaks' }).ok, false);
   assert.ok(kronos({ type: 'endAllOutbreaks' }).ok);
@@ -442,10 +442,12 @@ test('US carrier groups are named, and a blockade can close a country\'s coast',
   assert.equal(Object.values(s.units).filter(u => u.blockadeOf).length, 0);
 });
 
-test('Israel and Palestine are out of bounds', () => {
+test('Israel, Palestine and Saudi Arabia are out of bounds', () => {
   const { s, zeus, kronos } = world();
-  const IL = '376', PS = '275', IR = '364';
-  assert.equal(Object.values(s.units).filter(u => u.owner === IL || u.owner === PS).length, 0);
+  const IL = '376', PS = '275', IR = '364', SA = '682';
+  assert.equal(Object.values(s.units).filter(u => [IL, PS, SA].includes(u.owner) || [IL, PS, SA].includes(u.loc.id)).length, 0);
+  assert.equal(zeus({ type: 'queueOrder', order: { country: IR, type: 'strike', target: SA, counts: { n: 1 } } }).ok, false);
+  assert.equal(command(s, () => ({ ok: true }), 'us blockade saudi').order.type, 'siege');
   assert.equal(s.countries[IL].oob, true);
   assert.equal(zeus({ type: 'queueOrder', order: { country: IR, type: 'war', target: IL } }).ok, false);
   assert.equal(zeus({ type: 'queueOrder', order: { country: IL, type: 'war', target: IR } }).ok, false);
