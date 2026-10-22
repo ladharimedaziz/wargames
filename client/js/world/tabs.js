@@ -111,9 +111,9 @@ export function OrdersTab({ conn, state, draft, setDraft, picking, setPicking, s
     const v = validateOrder(state, o);
     return { ok: v.ok, reason: v.ok ? '' : `${v.reason}${o._why ? ' ' + o._why : ''}`, text: describeOrder(state, o), units: o.units || [] };
   }, [d, state]);
-  const submit = async () => {
-    const r = await run(conn, { type: 'queueOrder', order: d });
-    if (r.ok) { toast(`Queued: ${r.result.text}`, 'good'); setDraft({ ...d, target: d.type === 'strike' ? d.target : null }); }
+  const submit = async (now = false) => {
+    const r = await run(conn, { type: 'queueOrder', order: d, now });
+    if (r.ok) { toast(now ? `Forced: ${preview?.text || 'order'}` : `Queued: ${r.result.text}`, 'good'); setDraft({ ...d, target: d.type === 'strike' ? d.target : null }); }
   };
   const actor = state.countries[d.country];
   return html`
@@ -153,16 +153,21 @@ export function OrdersTab({ conn, state, draft, setDraft, picking, setPicking, s
           ${d.type === 'peace' && html`<${PeaceTerms} state=${state} d=${d} set=${set} />`}
           ${d.type === 'nuke' && html`<div class="warn-box">Nuclear launch is locked below Global Tension 10. The ending will be shown without graphic imagery.</div>`}
           ${preview && html`<div class=${cls('preview', preview.ok ? 'ok' : 'bad')}>${preview.ok ? '✓' : '✗'} ${preview.ok ? preview.text : preview.reason}</div>`}
-          <button class="btn primary" disabled=${!preview?.ok} onClick=${submit}>Queue order</button>
+          <div class="row">
+            <button class="btn primary" disabled=${!preview?.ok} onClick=${() => submit()}>Queue order</button>
+            ${d.type !== 'nuke' && html`<button class="btn gold" disabled=${!preview?.ok} title="Resolve it right away without ending the turn" onClick=${() => submit(true)}>Force now</button>`}
+          </div>
         </div>
       </div>
 
-      <div class="sub-h">Queued this turn <span class="dim">(${queued.length})</span></div>
+      <div class="sub-h row">Queued this turn <span class="dim">(${queued.length})</span>
+        ${queued.some(o => o.type !== 'nuke') && html`<button class="btn xs gold" style="margin-left:auto" title="Resolve every queued order now without ending the turn" onClick=${() => run(conn, { type: 'executeAll' }, 'Orders forced')}>Force all now</button>`}
+      </div>
       <div class="list compact">
         ${queued.length === 0 && html`<div class="empty">No orders yet. Computer-run countries decide when you resolve the turn.</div>`}
         ${queued.map(o => html`<div class=${cls('order', o.type === 'nuke' && 'nuke')} key=${o.id}>
           <div class="grow"><div>${describeOrder(state, o)}</div><div class="dim small">${o.by} · ${fmt.time(o.at)}</div></div>
-          ${['war', 'ceasefire', 'peace', 'alliance', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'overflight', 'roe', 'election', 'propaganda', 'alert'].includes(o.type) && html`<button class="btn xs gold" title="Sign it now instead of waiting for the turn" onClick=${() => run(conn, { type: 'executeNow', id: o.id }, 'Done')}>Now</button>`}
+          ${o.type !== 'nuke' && html`<button class="btn xs gold" title="Force it now instead of waiting for the turn" onClick=${() => run(conn, { type: 'executeNow', id: o.id }, 'Done')}>Now</button>`}
           <button class="btn xs danger" onClick=${() => run(conn, { type: 'cancelOrder', id: o.id })}>✕</button>
         </div>`)}
       </div>
