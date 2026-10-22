@@ -2,7 +2,7 @@
 import { html, render, useState, useEffect, useRef, useMemo, Connection, useConnState, useNow, timerRemaining, fmt, cls } from '../lib.js';
 import { WorldMap } from '../map/renderer.js';
 import { KronosEye } from '../fx/eye.js';
-import { setAudio, sfx, unlockAudio, audioReady, resumeMusic } from '../fx/audio.js';
+import { setAudio, sfx, unlockAudio, audioReady } from '../fx/audio.js';
 import { tensionLevel, ENDINGS, UNIT_TYPES } from '/shared/engine/core.js';
 import { SEA_ZONES } from '/shared/data/places.js';
 import { t, tt } from './i18n.js';
@@ -44,9 +44,9 @@ function Stage({ conn }) {
   const [soundOn, setSoundOn] = useState(false);
   useEffect(() => {
     if (!state) return;
-    setAudio({ music: state.settings.music, sfx: state.settings.sfx, vol: state.settings.volume ?? 0.7, tension: state.global?.tension ?? 3 });
-  }, [state?.settings.music, state?.settings.sfx, state?.settings.volume, state?.global?.tension]);
-  const enableSound = () => { unlockAudio(); resumeMusic(); setSoundOn(true); };
+    setAudio({ sfx: state.settings.sfx, vol: state.settings.volume ?? 0.7 });
+  }, [state?.settings.sfx, state?.settings.volume]);
+  const enableSound = () => { unlockAudio(); setSoundOn(true); };
   useEffect(() => { document.title = state ? `${state.name} · Stage` : 'Stage'; }, [state?.name]);
   // Fullscreen on double-click for projectors.
   useEffect(() => { const f = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()); window.addEventListener('dblclick', f); return () => window.removeEventListener('dblclick', f); }, []);
@@ -61,7 +61,7 @@ function Stage({ conn }) {
       ${timerShown && html`<${StageTimer} conn=${conn} timer=${state.timer} />`}
       ${(global.pause || state.display.scene === 'pause') && html`<${PauseScreen} p=${global.pause} lang=${lang} />`}
       <${KronosEye} on=${state.kronos.eye} big=${true} />
-      ${!soundOn && html`<div class="sound-pill">Click once to enable sound · double-click for full screen</div>`}
+      ${!soundOn && html`<div class="sound-pill">Click once to enable sound · double-click for full screen · click a country or scroll to zoom, Esc to zoom out</div>`}
     </div>`;
 }
 
@@ -94,7 +94,7 @@ function StageMap({ state, lang, relations }) {
   const ref = useRef(), map = useRef();
   const stRef = useRef(state); stRef.current = state;
   useEffect(() => {
-    const m = new WorldMap(ref.current, { cinematic: true, lang, onNukeLaunch: () => sfx.alarm(), onNukeImpact: () => sfx.boom(2) });
+    const m = new WorldMap(ref.current, { cinematic: true, stageControl: true, lang, onNukeLaunch: () => sfx.alarm(), onNukeImpact: () => sfx.boom(2) });
     map.current = m; window.__map = m;
     m.ready.then(() => m.setState(stRef.current, { layers: { ...stRef.current.settings.layers, wars: true } }));
     return () => m.destroy();

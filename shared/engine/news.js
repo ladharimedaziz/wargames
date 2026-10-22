@@ -71,6 +71,11 @@ export function headlinesFrom(state, ev) {
         if (e.result === 'won') push(4, e.occupied ? `${N(e.attacker)} forces overrun ${N(e.defender)}` : `${N(e.attacker)} forces push into ${N(e.defender)}`, e.occupied ? `قوات ${A(e.attacker)} تجتاح ${A(e.defender)}` : `قوات ${A(e.attacker)} تتوغل في ${A(e.defender)}`);
         else push(4, `${N(e.defender)} repels ${N(e.attacker)} offensive`, `${A(e.defender)} تصد هجوم ${A(e.attacker)}`);
         break;
+      case 'landing': push(4, e.contested ? `${N(e.owner)} troops storm the beaches of ${N(e.country)} under fire from its navy` : `${N(e.owner)} launches an amphibious landing on ${N(e.country)}`,
+        e.contested ? `قوات ${A(e.owner)} تقتحم شواطئ ${A(e.country)} تحت نيران بحريتها` : `${A(e.owner)} تشن إنزالاً برمائياً على ${A(e.country)}`); break;
+      case 'neo': push(e.danger ? 4 : 2, `${N(e.owner)} evacuates ${e.evacuees.toLocaleString('en-US')} citizens from ${N(e.country)}${e.zone ? ' by sea' : ''}`,
+        `${A(e.owner)} تجلي ${e.evacuees.toLocaleString('en-US')} من مواطنيها من ${A(e.country)}${e.zone ? ' بحراً' : ''}`); break;
+      case 'liberation': push(5, `${N(e.country)} breaks the ${N(e.from)} occupation`, `${A(e.country)} تكسر احتلال ${A(e.from)}`); break;
       case 'occupation': push(5, `${N(e.country)} under ${N(e.by)} occupation`, `${A(e.country)} تحت احتلال ${A(e.by)}`); break;
       case 'capitulation': push(5, `${N(e.country)} capitulates`, `${A(e.country)} تستسلم`); break;
       case 'naval': push(4, `Naval battle in the ${SEA_ZONES[e.zone].name}: ${N(e.winner)} fleet prevails over ${N(e.loser)}`, `معركة بحرية في ${SEA_ZONES[e.zone].ar}: أسطول ${A(e.winner)} يتفوق على ${A(e.loser)}`); break;

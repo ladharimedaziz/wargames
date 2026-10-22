@@ -3,6 +3,7 @@ import { SEA_ZONES } from '../data/places.js';
 import { zonesTouching } from '../geo.js';
 import { rand, chance, newId, atWar, enemiesOf, sameSide, relation, unitsOf, unitsAt, isActive, boundAllies } from './core.js';
 import { autoUnits, validateOrder } from './orders.js';
+import { norms } from './economy.js';
 
 
 export function planAI(state, ctx) {
@@ -20,7 +21,8 @@ export function planAI(state, ctx) {
   for (const c of ais) {
     if (playerOrdered.has(c.id)) continue; // a Zeus already gave this country orders
     const enemies = enemiesOf(state, c.id).filter(e => isActive(state.countries[e]));
-    const exhausted = c.support < 25 || c.gdp / c.base.gdp < 0.6 || c.stability < 20;
+    const n = norms(c);
+    const exhausted = c.support < Math.min(25, n.support - 15) || c.gdp / c.base.gdp < 0.6 || c.stability < Math.min(20, n.stability - 15);
 
     // Neutrals pushed too far by airspace violations pick a side.
     if (c.bloc === 'N' && c.violations) {
@@ -90,7 +92,7 @@ export function planAI(state, ctx) {
       // Exhausted countries look for a way out.
       if (exhausted && chance(state, 0.45)) {
         const other = state.countries[primary];
-        const otherTired = other.control === 'ai' && (other.support < 35 || other.gdp / other.base.gdp < 0.7);
+        const otherTired = other.control === 'ai' && (other.support < Math.min(35, norms(other).support - 10) || other.gdp / other.base.gdp < 0.7);
         if (otherTired) add(c.id, 'ceasefire', { target: primary });
         else state._aiEvents?.push({ kind: 'ceasefire_offer', country: c.id, to: primary });
       }
@@ -100,7 +102,7 @@ export function planAI(state, ctx) {
     for (const other of Object.values(state.countries)) {
       if (other.sanctions.includes(c.id) && !c.sanctions.includes(other.id) && relation(state, c.id, other.id) < -30 && chance(state, 0.5)) add(c.id, 'sanction', { target: other.id });
     }
-    if (c.support < 40 && chance(state, 0.25)) add(c.id, 'propaganda', {});
+    if (c.support < Math.min(40, n.support - 5) && chance(state, 0.25)) add(c.id, 'propaganda', {});
   }
   return out;
 }

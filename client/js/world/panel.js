@@ -156,6 +156,7 @@ function MapView({ state, selected, onSelect, layers, picking }) {
           <span>Bloc</span><b>${state.blocs[c.bloc].name}</b>
           <span>GDP</span><b>${fmt.money(c.gdp)} <span class=${c.gdp < c.base.gdp * 0.98 ? 'neg' : 'dim'}>${c.gdp < c.base.gdp * 0.98 ? `▼${Math.round((1 - c.gdp / c.base.gdp) * 100)}%` : ''}</span></b>
           <span>Support</span><b>${Math.round(c.support)}%</b>
+          <span>Inflation</span><b class=${c.inflation > 8 ? 'neg' : ''}>${c.inflation.toFixed(1)}%</b>
           ${state.wars.some(w => w.a === c.id || w.b === c.id) && html`<span>At war</span><b class="neg">${state.wars.filter(w => w.a === c.id || w.b === c.id).length} enem${state.wars.filter(w => w.a === c.id || w.b === c.id).length === 1 ? 'y' : 'ies'}</b>`}
           ${c.occupiedBy && html`<span>Occupied</span><b class="neg">by ${state.countries[c.occupiedBy]?.name}</b>`}
           ${state.global.closedAirspace[c.id] && html`<span>Airspace</span><b class="neg">Closed</b>`}

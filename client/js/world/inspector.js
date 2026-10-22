@@ -54,9 +54,11 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
         ${c.bankrupt && html`<span class="chip red">Bankrupt</span>`}
       </div>
 
+      <${Fronts} conn=${conn} state=${state} id=${id} enemies=${enemies} setSelected=${setSelected} />
+
       <div class="sub-h">Quick orders</div>
       <div class="quick-grid">
-        ${[['strike', '✦ Strike'], ['invade', '➤ Invade'], ['fleet', '⛴ Fleet'], ['blockade', '⛓ Blockade'], ['war', '⚔ War'], ['ceasefire', '✋ Ceasefire'], ['peace', '☮ Peace'], ['sanction', '$ Sanction'], ['aid', '+ Aid'], ['arms', '⇄ Arms'], ['cyber', '⌁ Cyber'], ['spy', '◐ Spy']].map(([t, l]) => html`<button class="btn xs" onClick=${() => startOrder(t)}>${l}</button>`)}
+        ${[['strike', '✦ Strike'], ['invade', '➤ Invade'], ['fleet', '⛴ Fleet'], ['blockade', '⛓ Blockade'], ['war', '⚔ War'], ['ceasefire', '✋ Ceasefire'], ['peace', '☮ Peace'], ['sanction', '$ Sanction'], ['aid', '+ Aid'], ['arms', '⇄ Arms'], ['cyber', '⌁ Cyber'], ['spy', '◐ Spy'], ['neo', '✈ Evacuate']].map(([t, l]) => html`<button class="btn xs" onClick=${() => startOrder(t)}>${l}</button>`)}
       </div>
       <div class="row" style="margin-top:6px"><span class="dim small">Posture</span><div class="seg sm">${ROE.map(r => html`<button class=${c.roe === r ? 'on' : ''} onClick=${() => run(conn, { type: 'setRoe', country: id, roe: r })}>${r}</button>`)}</div></div>
 
@@ -67,6 +69,7 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
         <${Stat} label="Industry" value=${`${Math.round(c.industry * 100)}%`} pct=${c.industry * 100} />
         <${Stat} label="Energy" value=${`${Math.round(c.energy * 100)}%`} pct=${c.energy * 100} />
         <${Stat} label="Inflation" value=${`${c.inflation.toFixed(1)}%`} tone=${c.inflation > 8 ? 'neg' : ''} />
+        ${c.base.growth != null && html`<${Stat} label="Growth" value=${`${c.base.growth > 0 ? '+' : ''}${c.base.growth}% a year`} tone=${c.base.growth < 0 ? 'neg' : ''} />`}
         <${Stat} label="Oil" value=${c.oilNet > 0 ? `exports ${c.oilNet} mb/d` : c.oilNet < 0 ? `imports ${-c.oilNet} mb/d` : 'balanced'} />
       </div>
       <div class="sub-h">Home front</div>
@@ -151,7 +154,8 @@ function ZoneCard({ conn, state, selZone, startOrder }) {
   </div>`;
 }
 
-function WorldOverview({ state, setSelected }) {
+function WorldOverview({ conn, state, setSelected }) {
+  const fronts = Object.values(state.countries).filter(c => c.front);
   const g = state.global, lvl = tensionLevel(g.tension);
   const h = state.history.slice(-16);
   const spark = (key, max) => {
@@ -172,10 +176,48 @@ function WorldOverview({ state, setSelected }) {
       <div class="spark"><span class="dim small">World economy</span><b>${Math.round(g.gdpIndex * 100)}%</b><svg viewBox="0 0 100 32" preserveAspectRatio="none"><polyline points=${spark('gdpIndex')} /></svg></div>
       <div class="spark"><span class="dim small">Refugees</span><b>${fmt.refugees(g.refugees)}</b><svg viewBox="0 0 100 32" preserveAspectRatio="none"><polyline points=${spark('refugees')} /></svg></div>
     </div>
+    ${fronts.length > 0 && html`<div class="sub-h">War fronts (${fronts.length})</div>${fronts.map(c => html`<${FrontRow} conn=${conn} state=${state} c=${c} setSelected=${setSelected} named />`)}`}
     <div class="sub-h">Delegates (${players.length})</div>
     ${players.length === 0 && html`<div class="empty">No delegate countries yet. Use the Countries tab or type <span class="mono">player saudi uae</span>.</div>`}
     ${players.map(c => html`<div class="crow" onClick=${() => setSelected(c.id)}><i class="bloc-sw" style=${`background:${state.blocs[c.bloc].color}`}></i><div class="grow"><b>${c.name}</b>${c.delegate ? html` <span class="dim small">${c.delegate}</span>` : ''}<div class="dim small">${fmt.money(c.gdp)} · ${Math.round(c.support)}% support</div></div>${state.wars.some(w => w.a === c.id || w.b === c.id) && html`<span class="chip red">war</span>`}</div>`)}
     <div class="sub-h">Chokepoints</div>
     ${Object.entries(g.chokepoints).map(([z, cp]) => html`<div class="row small"><i class="dot" style=${`background:${cp.status === 'closed' ? 'var(--red)' : cp.status === 'contested' ? 'var(--gold)' : 'var(--green)'}`}></i><span class="grow">${SEA_ZONES[z].name}</span><span class="dim">${cp.status}</span></div>`)}
+  </div>`;
+}
+
+// War fronts: how much ground each attacker holds, and the Zeus's orders for each front.
+const MODES = [['auto', 'Battle decides', 'The engine moves the front from each turn\'s fighting'], ['advance', 'Advance', 'The attacker gains ground every turn'], ['hold', 'Hold', 'The line does not move'], ['retreat', 'Fall back', 'The defender retakes ground every turn']];
+
+function Fronts({ conn, state, id, enemies, setSelected }) {
+  const c = state.countries[id];
+  const mine = Object.values(state.countries).filter(o => o.front?.by === id);
+  // Enemies this country is at war with but has no front in yet.
+  const open = enemies.filter(e => state.countries[e].front?.by !== id && !state.countries[e].front);
+  // Enemies that could open a front inside this country.
+  const invaders = c.front ? [] : enemies;
+  if (!c.front && !mine.length && !open.length) return null;
+  return html`<div class="sub-h">War fronts</div>
+    ${c.front && html`<${FrontRow} conn=${conn} state=${state} c=${c} setSelected=${setSelected} />`}
+    ${mine.map(o => html`<${FrontRow} conn=${conn} state=${state} c=${o} setSelected=${setSelected} named />`)}
+    ${open.length > 0 && html`<div class="row wrap small" style="gap:6px;margin-top:4px"><span class="dim">Push into</span>${open.map(e => html`<button class="btn xs" title=${`Open a front: ${c.name} takes ground in ${state.countries[e].name} right now`} onClick=${() => run(conn, { type: 'frontPush', country: e, by: id, delta: 10 })}>${state.countries[e].name} +10%</button>`)}</div>`}
+    ${invaders.length > 0 && html`<div class="row wrap small" style="gap:6px;margin-top:4px"><span class="dim">Advance here</span>${invaders.map(e => html`<button class="btn xs" title=${`Open a front: ${state.countries[e].name} takes ground in ${c.name} right now`} onClick=${() => run(conn, { type: 'frontPush', country: id, by: e, delta: 10 })}>${state.countries[e].name} +10%</button>`)}</div>`}`;
+}
+
+function FrontRow({ conn, state, c, setSelected, named }) {
+  const f = c.front, by = state.countries[f.by];
+  const col = by.bloc !== 'N' ? state.blocs[by.bloc].color : '#ff8a3d';
+  const mode = f.mode || 'auto';
+  const push = delta => run(conn, { type: 'frontPush', country: c.id, delta });
+  return html`<div class="front-row">
+    <div class="row between small">
+      <span><b style=${`color:${col}`} class="click" onClick=${() => setSelected(by.id)}>${by.name}</b> holds <b class=${named ? 'click' : ''} onClick=${() => named && setSelected(c.id)}>${Math.round(f.pct)}%</b> of ${named ? html`<b class="click" onClick=${() => setSelected(c.id)}>${c.name}</b>` : c.name}</span>
+      ${c.occupiedBy && html`<span class="chip red">occupied</span>`}
+    </div>
+    <div class="front-bar"><i style=${`width:${f.pct}%;background:${col}`}></i></div>
+    <div class="seg sm front-modes">${MODES.map(([k, l, t]) => html`<button class=${mode === k ? 'on' : ''} title=${t} onClick=${() => run(conn, { type: 'frontMode', country: c.id, mode: k })}>${l}</button>`)}</div>
+    <div class="row small" style="gap:4px;margin-top:4px"><span class="dim grow">Move now</span>
+      <button class="btn xs" onClick=${() => push(-25)}>−25</button><button class="btn xs" onClick=${() => push(-10)}>−10</button>
+      <button class="btn xs" onClick=${() => push(10)}>+10</button><button class="btn xs" onClick=${() => push(25)}>+25</button>
+    </div>
   </div>`;
 }

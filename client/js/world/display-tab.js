@@ -1,4 +1,4 @@
-// Stage controls: what the projected/streamed display shows, the timer, language, music and endings.
+// Stage controls: what the projected/streamed display shows, the timer, language and endings.
 import { html, useState, useEffect, run, toast, fmt, useNow, timerRemaining, cls } from '../lib.js';
 import { ENDINGS } from '/shared/engine/core.js';
 import { CountrySelect, ZoneSelect } from './tabs.js';
@@ -91,7 +91,6 @@ export function DisplayTab({ conn, state, committee }) {
       <div class="sub-h">Language and sound</div>
       <div class="row wrap">
         <div class="seg">${[['en', 'English'], ['ar', 'العربية'], ['both', 'Both']].map(([k, l]) => html`<button class=${st.lang === k ? 'on' : ''} onClick=${() => run(conn, { type: 'setSetting', key: 'lang', value: k })}>${l}</button>`)}</div>
-        <button class=${cls('btn sm', st.music && 'on')} onClick=${() => run(conn, { type: 'setSetting', key: 'music', value: !st.music })}>♫ Music</button>
         <button class=${cls('btn sm', st.sfx && 'on')} onClick=${() => run(conn, { type: 'setSetting', key: 'sfx', value: !st.sfx })}>◖ Effects</button>
       </div>
       <label class="row" style="margin-top:8px"><span class="dim small" style="width:60px">Volume</span><input type="range" min="0" max="1" step="0.05" value=${st.volume ?? 0.7} class="grow" onChange=${e => run(conn, { type: 'setSetting', key: 'volume', value: +e.target.value })} /></label>

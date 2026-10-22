@@ -87,7 +87,7 @@ export class Store {
   }
   reset(id, mode, by) {
     this.snapshot(id, 'Before reset', by);
-    const s = this.fresh(id, mode, this.get(id).name);
+    const s = this.fresh(id, mode || this.get(id).mode, this.get(id).name);
     s.version = (this.get(id).version || 0) + 1;
     this.committees.set(id, s);
     this.touch(id);

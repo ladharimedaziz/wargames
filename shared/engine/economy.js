@@ -31,6 +31,12 @@ function blockadedCountries(state) {
   return out;
 }
 
+// A country's own normal: its real pre-crisis economy. Saves made before these figures existed fall back to the old flat values.
+export function norms(c) {
+  const b = c.base;
+  return { industry: b.industry ?? 1, energy: b.energy ?? 1, support: b.support ?? 55, stability: b.stability ?? 70, inflation: b.inflation ?? 2, growth: b.growth ?? 0 };
+}
+
 export function tickEconomy(state, ev, ctx) {
   const g = state.global;
   const turn = state.meta.turn;
@@ -57,11 +63,14 @@ export function tickEconomy(state, ev, ctx) {
 
   let sumGdp = 0, sumBase = 0, refugeesTotal = 0;
   const refugeeIn = {};
+  const years = (turn - 1) * (state.meta.turnDays || 7) / 365;
   for (const c of Object.values(state.countries)) {
+    const b = norms(c);
     const struckNow = c.lastStruck === turn;
     if (!struckNow) {
-      c.industry = clamp(c.industry + (c.industry < 1 ? 0.025 : 0), 0.05, 1.2);
-      if (!((c.cyber.grid || 0) >= turn)) c.energy = clamp(c.energy + (c.energy < 1 ? 0.03 : 0), 0.05, 1.2);
+      // Industry and energy recover toward the country's own pre-crisis level, not a universal 100%.
+      c.industry = clamp(c.industry + (c.industry < b.industry ? Math.min(0.025, b.industry - c.industry) : 0), 0.05, 1.2);
+      if (!((c.cyber.grid || 0) >= turn)) c.energy = clamp(c.energy + (c.energy < b.energy ? Math.min(0.03, b.energy - c.energy) : 0), 0.05, 1.2);
       c.damage = clamp(c.damage - 0.015, 0, 1);
     }
     const enemies = enemiesOf(state, c.id);
@@ -82,7 +91,8 @@ export function tickEconomy(state, ev, ctx) {
     const oilEffect = clamp(c.oilNet * oilShift * 0.012, -0.12, 0.25);
     const occ = c.occupiedBy ? 0.6 : 1 - 0.4 * (c.front?.pct || 0) / 100;
     const warDrag = atWarNow ? 0.03 : 0;
-    const targetGdp = c.base.gdp * Math.pow(c.industry, 0.5) * Math.pow(c.energy, 0.3) * tradeFactor * (1 + oilEffect) * occ * (1 - warDrag) * (1 - Math.min(0.3, Math.max(0, c.inflation - 2) / 100));
+    const trend = Math.pow(1 + b.growth / 100, years);
+    const targetGdp = c.base.gdp * trend * Math.pow(c.industry / b.industry, 0.5) * Math.pow(c.energy / b.energy, 0.3) * tradeFactor * (1 + oilEffect) * occ * (1 - warDrag) * (1 - Math.min(0.3, Math.max(0, c.inflation - Math.max(2, b.inflation)) / 100));
     c.gdp = Math.max(0.5, c.gdp + (targetGdp - c.gdp) * 0.4);
 
     // Peacetime budgets balance with a small surplus; war adds the cost of fighting on top.
@@ -90,14 +100,14 @@ export function tickEconomy(state, ev, ctx) {
     const warCost = atWarNow ? (upkeepBy[c.id] || 0) * 0.004 * Math.sqrt(c.base.gdp) * 3 : 0;
     c.treasury = Math.round((c.treasury + income * 0.2 - warCost) * 10) / 10;
     if (c.treasury < 0) { c.inflation += 1.5; c.support -= 1; }
-    else c.inflation += (2 - c.inflation) * 0.15;
+    else c.inflation += (b.inflation - c.inflation) * 0.15;
     if (oilShift > 0 && c.oilNet < 0) c.inflation += oilShift * 1.2;
     c.inflation = clamp(Math.round(c.inflation * 10) / 10, -2, 80);
 
     c.warWeariness = c.warWeariness * 0.9;
-    c.support += (55 - c.support) * 0.03 - c.warWeariness * 0.15 - Math.max(0, c.inflation - 5) * 0.35 - c.damage * 3 - (c.occupiedBy ? 2 : 0);
+    c.support += (b.support - c.support) * 0.03 - c.warWeariness * 0.15 - Math.max(0, c.inflation - Math.max(5, b.inflation + 3)) * 0.35 - c.damage * 3 - (c.occupiedBy ? 2 : 0);
     c.support = clamp(c.support, 0, 100);
-    c.stability = clamp(c.stability + (c.support - 50) * 0.04 - c.damage * 2 - (c.occupiedBy ? 3 : 0), 0, 100);
+    c.stability = clamp(c.stability + (c.support - b.support) * 0.04 + (b.stability - c.stability) * 0.02 - c.damage * 2 - (c.occupiedBy ? 3 : 0), 0, 100);
 
     if ((c.damage > 0.25 || c.occupiedBy) && c.major) {
       const flow = c.base.pop * (c.damage + (c.occupiedBy ? 0.2 : 0)) * 0.004; // millions per turn
@@ -107,9 +117,9 @@ export function tickEconomy(state, ev, ctx) {
       for (const n of nbs) refugeeIn[n] = (refugeeIn[n] || 0) + flow / nbs.length;
     }
     if (c.control !== 'inactive' && c.major) {
-      if (c.support < 30 && chance(state, 0.35)) ev.push({ kind: 'protest', country: c.id, support: Math.round(c.support) });
-      if (c.support < 15 && !c.noConfidence) { c.noConfidence = true; ev.push({ kind: 'no_confidence', country: c.id }); }
-      if (c.support > 25) c.noConfidence = false;
+      if (c.support < Math.min(30, b.support - 10) && chance(state, 0.35)) ev.push({ kind: 'protest', country: c.id, support: Math.round(c.support) });
+      if (c.support < Math.min(15, b.support - 15) && !c.noConfidence) { c.noConfidence = true; ev.push({ kind: 'no_confidence', country: c.id }); }
+      if (c.support > Math.min(25, b.support - 5)) c.noConfidence = false;
       if (c.treasury < -c.base.gdp * 0.05 && !c.bankrupt) { c.bankrupt = true; ev.push({ kind: 'bankrupt', country: c.id }); }
       if (c.treasury > 0) c.bankrupt = false;
     }

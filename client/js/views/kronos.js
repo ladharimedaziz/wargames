@@ -69,7 +69,8 @@ function CommitteeCard({ conn, c, enter, dm }) {
   const act = (action, ok) => conn.act(action, c.id).then(r => { if (!r.ok) toast(r.error, 'error'); else if (ok) toast(ok, 'good'); });
   const t = c.tension ?? 0;
   const rem = timerRemaining(c.timer, now);
-  const reset = async mode => { const r = await conn.request({ t: 'reset', committee: c.id, mode }); toast(r.ok ? `${c.name} reset as a ${mode} committee.` : r.error, r.ok ? 'good' : 'error'); setConfirm(false); };
+  const other = c.mode === 'court' ? 'world' : 'court';
+  const reset = async mode => { const r = await conn.request({ t: 'reset', committee: c.id, mode }); toast(r.ok ? (mode === c.mode ? `${c.name} has been reset.` : `${c.name} is now a ${mode === 'court' ? 'court' : 'world crisis'} committee.`) : r.error, r.ok ? 'good' : 'error'); setConfirm(false); };
   return html`
     <div class=${cls('k-card-c card', c.eye && 'watching', c.locked && 'frozen')}>
       <div class="kc-top">
@@ -95,7 +96,7 @@ function CommitteeCard({ conn, c, enter, dm }) {
         <button class="btn sm" onClick=${dm}>✉${c.unread ? html` <i class="badge inline">${c.unread}</i>` : ''}</button>
         <button class="btn sm ghost" onClick=${() => window.open(`/display?c=${c.id}`, `display-${c.id}`, 'width=1280,height=720')} title="Watch their stage display">▣</button>
         <div class="grow"></div>
-        ${confirm ? html`<button class="btn xs" onClick=${() => setConfirm(false)}>Cancel</button><button class="btn xs solid-danger" onClick=${() => reset('world')}>Reset world</button><button class="btn xs solid-danger" onClick=${() => reset('court')}>Reset court</button>`
+        ${confirm ? html`<button class="btn xs" onClick=${() => setConfirm(false)}>Cancel</button><button class="btn xs ghost" onClick=${() => reset(other)} title="Start over as the other kind of committee">Make it a ${other === 'court' ? 'court' : 'world crisis'}</button><button class="btn xs solid-danger" onClick=${() => reset(c.mode)}>Reset</button>`
           : html`<button class="btn xs ghost" onClick=${() => setConfirm(true)}>Reset…</button>`}
       </div>
     </div>`;

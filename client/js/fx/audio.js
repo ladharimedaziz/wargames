@@ -1,14 +1,12 @@
-// Procedural soundtrack and effects with WebAudio: no audio files to load.
-// The score is a slow drone that grows darker and faster as Global Tension climbs.
-let ctx = null, master = null, musicBus = null, sfxBus = null, music = null;
-let enabled = { music: false, sfx: true }, volume = 0.7;
+// Procedural sound effects with WebAudio: no audio files to load. There is no music.
+let ctx = null, master = null, sfxBus = null;
+let enabled = { sfx: true }, volume = 0.7;
 
 function ac() {
   if (!ctx) {
     ctx = new (window.AudioContext || window.webkitAudioContext)();
     master = ctx.createGain(); master.gain.value = volume; master.connect(ctx.destination);
     const comp = ctx.createDynamicsCompressor(); comp.threshold.value = -18; comp.ratio.value = 4; comp.connect(master);
-    musicBus = ctx.createGain(); musicBus.gain.value = 0; musicBus.connect(comp);
     sfxBus = ctx.createGain(); sfxBus.gain.value = 0.9; sfxBus.connect(comp);
   }
   if (ctx.state === 'suspended') ctx.resume();
@@ -17,98 +15,10 @@ function ac() {
 export const audioReady = () => !!ctx && ctx.state === 'running';
 export function unlockAudio() { ac(); }
 
-function reverb(seconds = 3) {
-  const c = ac(), len = c.sampleRate * seconds, buf = c.createBuffer(2, len, c.sampleRate);
-  for (let ch = 0; ch < 2; ch++) { const d = buf.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.4); }
-  const conv = c.createConvolver(); conv.buffer = buf; return conv;
-}
-
-// Minor-key pads; the chord pool shifts with tension.
-const ROOT = 41.2; // E1
-const CHORDS = [
-  [0, 7, 12, 15, 19], [0, 7, 12, 14, 19], [-4, 3, 8, 12, 15], [-2, 5, 10, 14, 17],
-  [0, 6, 12, 15, 18], [1, 7, 13, 16, 19],
-];
-const hz = semi => ROOT * Math.pow(2, semi / 12);
-
-function startMusic() {
-  const c = ac();
-  if (music) return;
-  const out = c.createGain(); out.gain.value = 1;
-  const verb = reverb(4.5); const wet = c.createGain(); wet.gain.value = 0.55;
-  out.connect(musicBus); out.connect(verb); verb.connect(wet); wet.connect(musicBus);
-  const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900; lp.Q.value = 0.7; lp.connect(out);
-  const voices = [];
-  for (let i = 0; i < 5; i++) {
-    const o1 = c.createOscillator(), o2 = c.createOscillator(), g = c.createGain();
-    o1.type = 'sawtooth'; o2.type = 'triangle'; o2.detune.value = 7 + i;
-    g.gain.value = 0;
-    o1.connect(g); o2.connect(g); g.connect(lp);
-    o1.start(); o2.start();
-    voices.push({ o1, o2, g });
-  }
-  // Sub pulse that quickens with tension.
-  const sub = c.createOscillator(), subG = c.createGain(); sub.type = 'sine'; sub.frequency.value = hz(-12); subG.gain.value = 0; sub.connect(subG); subG.connect(out); sub.start();
-  // Ticking clock layer for high tension.
-  const tickG = c.createGain(); tickG.gain.value = 0; tickG.connect(out);
-  music = { voices, lp, sub, subG, tickG, tension: 3, chord: 0, timer: null, beat: 0, out };
-  const step = () => {
-    if (!music) return;
-    const m = music, now = c.currentTime, t = m.tension;
-    const pool = t < 4 ? [0, 1, 2, 3] : t < 7 ? [0, 2, 3, 4] : [4, 5, 0, 5];
-    m.chord = pool[(pool.indexOf(m.chord) + 1 + Math.floor(Math.random() * 2)) % pool.length] ?? pool[0];
-    const notes = CHORDS[m.chord];
-    const dur = Math.max(2.6, 9 - t * 0.6);
-    m.voices.forEach((v, i) => {
-      const f = hz(notes[i] + 12);
-      v.o1.frequency.setTargetAtTime(f, now, 0.6); v.o2.frequency.setTargetAtTime(f * 1.002, now, 0.6);
-      v.g.gain.cancelScheduledValues(now);
-      v.g.gain.setTargetAtTime((i === 0 ? 0.05 : 0.028) * (0.7 + t * 0.05), now, 0.8);
-    });
-    m.lp.frequency.setTargetAtTime(500 + t * 220, now, 2);
-    m.subG.gain.setTargetAtTime(t >= 5 ? 0.05 + (t - 5) * 0.02 : 0.02, now, 1);
-    m.timer = setTimeout(step, dur * 1000);
-  };
-  step();
-  const pulse = () => {
-    if (!music) return;
-    const m = music, t = m.tension, now = c.currentTime;
-    if (t >= 6) {
-      // heartbeat sub thump
-      const o = c.createOscillator(), g = c.createGain(); o.type = 'sine'; o.frequency.setValueAtTime(70, now); o.frequency.exponentialRampToValueAtTime(38, now + 0.25);
-      g.gain.setValueAtTime(0.0001, now); g.gain.exponentialRampToValueAtTime(0.18 + (t - 6) * 0.04, now + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, now + 0.35);
-      o.connect(g); g.connect(m.out); o.start(now); o.stop(now + 0.4);
-    }
-    if (t >= 8) blip(m.out, 2400, 0.012, 0.02);
-    m.pulseTimer = setTimeout(pulse, Math.max(420, 1500 - t * 100));
-  };
-  pulse();
-}
-
-function stopMusic() {
-  if (!music) return;
-  const m = music; music = null;
-  clearTimeout(m.timer); clearTimeout(m.pulseTimer);
-  const now = ctx.currentTime;
-  m.voices.forEach(v => { v.g.gain.setTargetAtTime(0, now, 0.5); v.o1.stop(now + 3); v.o2.stop(now + 3); });
-  m.sub.stop(now + 3);
-}
-
-export function setAudio({ music: mu, sfx, vol, tension }) {
+export function setAudio({ sfx, vol }) {
   if (vol !== undefined) { volume = vol; if (master) master.gain.setTargetAtTime(vol, ctx.currentTime, 0.2); }
   if (sfx !== undefined) enabled.sfx = sfx;
-  if (mu !== undefined && mu !== enabled.music) {
-    enabled.music = mu;
-    if (ctx) {
-      if (mu) { startMusic(); musicBus.gain.setTargetAtTime(0.9, ctx.currentTime, 1.5); }
-      else { musicBus.gain.setTargetAtTime(0, ctx.currentTime, 0.8); setTimeout(() => { if (!enabled.music) stopMusic(); }, 3000); }
-    }
-  }
-  if (tension !== undefined && music) music.tension = tension;
-  if (tension !== undefined) lastTension = tension;
 }
-let lastTension = 3;
-export function resumeMusic() { if (enabled.music && ctx && !music) { startMusic(); music.tension = lastTension; musicBus.gain.setTargetAtTime(0.9, ctx.currentTime, 1.5); } }
 
 function blip(dest, f, len, gain) {
   const c = ac(), now = c.currentTime, o = c.createOscillator(), g = c.createGain();

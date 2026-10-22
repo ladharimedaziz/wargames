@@ -136,26 +136,145 @@ export class AirTraffic {
   }
 }
 
-function zonePath(zones) {
-  const pts = zones.map(z => [SEA_ZONES[z].lon, SEA_ZONES[z].lat]);
-  const out = [pts[0]];
-  for (let i = 1; i < pts.length; i++) out.push(...arc(pts[i - 1], pts[i]).slice(1));
-  return out;
-}
+// --- Shipping ---------------------------------------------------------------------------------------------
+// Ships follow real sea lanes: the narrow straits use hand-drawn water channels, and every open-sea leg between
+// them is found on a half-degree water grid so no route crosses land. Each ship then sails its own line within
+// the lane, at its own speed, so traffic never looks like beads on a string.
+
+// Water channels through each chokepoint, listed from one side to the other (lon, lat).
+const STRAITS = {
+  hormuz: [[54.6, 26.3], [55.8, 26.5], [56.4, 26.6], [56.75, 26.3], [57.1, 25.8], [57.6, 25.2]],
+  bab: [[42.2, 14.6], [42.9, 13.5], [43.3, 12.7], [43.5, 12.45], [43.9, 12.25], [44.6, 12.15]],
+  suez: [[33.9, 27.5], [33.2, 28.6], [32.56, 29.85], [32.57, 30.3], [32.35, 30.6], [32.31, 31.0], [32.33, 31.35], [32.4, 31.8]],
+  bosporus: [[25.6, 39.6], [26.05, 40.0], [26.25, 40.08], [26.55, 40.3], [26.7, 40.42], [27.3, 40.62], [28.3, 40.85], [28.95, 40.98], [29.05, 41.12], [29.12, 41.22], [29.3, 41.45], [29.8, 41.8]],
+  gibraltar: [[-7.5, 36.0], [-6.2, 35.95], [-5.6, 35.97], [-5.0, 36.05], [-4.0, 36.3]],
+  danish: [[9.0, 57.9], [10.7, 57.85], [11.4, 57.3], [11.9, 56.6], [12.55, 56.05], [12.7, 55.7], [12.85, 55.35], [13.6, 55.15], [14.6, 55.1]],
+  malacca: [[95.0, 6.3], [96.5, 6.0], [97.5, 5.7], [98.3, 5.2], [98.8, 4.6], [99.4, 4.0], [100.0, 3.5], [100.6, 2.9], [101.3, 2.4], [102.0, 2.0], [102.7, 1.6], [103.3, 1.2], [103.6, 1.17], [104.0, 1.22], [104.45, 1.35], [105.2, 1.9]],
+  panama: [[-79.95, 9.5], [-79.9, 9.3], [-79.75, 9.15], [-79.6, 9.0], [-79.55, 8.85], [-79.5, 8.6], [-79.4, 8.2]],
+};
+// Extra water waypoints for legs that pass narrow straits that are not zones of their own.
+const LEG_VIA = {
+  'atlantic_east|north_sea': [[-5.5, 48.9], [-2.0, 49.9], [0.5, 50.4], [1.6, 51.0], [2.4, 51.6]],
+  'java_sea|south_china': [[115.85, -9.2], [115.75, -8.4], [116.0, -6.5], [112.0, -4.0], [108.5, -2.0], [107.5, 1.5]],
+  'east_china|japan_sea': [[128.7, 34.0], [129.7, 35.2]],
+};
+
+const R0 = 0.5; // grid step, degrees
+const cellKey = (i, j) => `${i},${j}`;
 
 export class SeaTraffic {
-  constructor() {
+  constructor(landAt) {
+    this.landAt = landAt || (() => false);
     this.ships = [];
     this.blocked = new Set();
+    this.contested = new Set();
     this.routes = new Map();
-    this.target = 90;
+    this.legs = new Map();
+    this.target = 110;
     this.waiting = 0;
     this.recompute();
+  }
+  water(lon, lat) { return !this.landAt(lon, lat); }
+  // Nearest water to a point, searching outward in rings.
+  toWater(p) {
+    if (this.water(p[0], p[1])) return p;
+    for (const r of [0.1, 0.2, 0.35, 0.5, 0.75, 1, 1.5, 2, 3]) {
+      for (let a = 0; a < 16; a++) {
+        const q = [p[0] + Math.cos(a * Math.PI / 8) * r / Math.max(0.3, Math.cos(p[1] * Math.PI / 180)), p[1] + Math.sin(a * Math.PI / 8) * r];
+        if (this.water(q[0], q[1])) return q;
+      }
+    }
+    return p;
+  }
+  // Is the whole segment a→b at sea (sampled every ~0.2°)?
+  clear(a, b) {
+    let dl = b[0] - a[0]; if (dl > 180) dl -= 360; if (dl < -180) dl += 360;
+    const n = Math.max(2, Math.ceil(Math.hypot(dl, b[1] - a[1]) / 0.2));
+    for (let i = 1; i < n; i++) if (!this.water(a[0] + dl * i / n, a[1] + (b[1] - a[1]) * i / n)) return false;
+    return true;
+  }
+  // A* across the water grid between two sea points, then pulled taut. Falls back to a straight line.
+  leg(a, b) {
+    const key = `${a.join()}>${b.join()}`;
+    if (this.legs.has(key)) return this.legs.get(key);
+    let out = [a, b];
+    if (!this.clear(a, b)) {
+      const wrap = i => ((i % 720) + 720) % 720;
+      const toCell = p => [wrap(Math.round((p[0] + 180) / R0)), Math.round((p[1] + 90) / R0)];
+      const center = (i, j) => [i * R0 - 180, j * R0 - 90];
+      const [si, sj] = toCell(a), [ti, tj] = toCell(b);
+      const h = (i, j) => { let di = Math.abs(i - ti); di = Math.min(di, 720 - di); return Math.hypot(di * Math.cos(((j * R0 - 90) * Math.PI) / 180), j - tj); };
+      const open = [[h(si, sj), 0, si, sj]], g = new Map([[cellKey(si, sj), 0]]), from = new Map();
+      const wet = new Map(), isWet = (i, j) => { const k = cellKey(i, j); if (!wet.has(k)) { const c = center(i, j); wet.set(k, this.water(c[0], c[1])); } return wet.get(k); };
+      let found = false, steps = 0;
+      while (open.length && steps++ < 25000) {
+        let bi = 0; for (let x = 1; x < open.length; x++) if (open[x][0] < open[bi][0]) bi = x;
+        const [, gc, ci, cj] = open[bi]; open.splice(bi, 1);
+        if (ci === ti && cj === tj) { found = true; break; }
+        if (gc > g.get(cellKey(ci, cj))) continue;
+        for (let di = -1; di <= 1; di++) for (let dj = -1; dj <= 1; dj++) {
+          if (!di && !dj) continue;
+          const ni = wrap(ci + di), nj = cj + dj; if (nj < 4 || nj > 356) continue;
+          const goal = ni === ti && nj === tj;
+          if (!goal && !isWet(ni, nj)) continue;
+          // Hug the open sea: cells next to land cost more.
+          const coast = goal ? 0 : (!isWet(wrap(ni + 1), nj) || !isWet(wrap(ni - 1), nj) || !isWet(ni, nj + 1) || !isWet(ni, nj - 1)) ? 0.6 : 0;
+          const step = Math.hypot(di * Math.cos(((nj * R0 - 90) * Math.PI) / 180), dj) + coast;
+          const ng = gc + step, k = cellKey(ni, nj);
+          if (ng < (g.get(k) ?? Infinity)) { g.set(k, ng); from.set(k, cellKey(ci, cj)); open.push([ng + h(ni, nj), ng, ni, nj]); }
+        }
+      }
+      if (found) {
+        const cells = [];
+        for (let k = cellKey(ti, tj); k; k = from.get(k)) { const [i, j] = k.split(',').map(Number); cells.unshift(center(i, j)); }
+        const raw = [a, ...cells.slice(1, -1), b];
+        // String pulling: skip ahead to the farthest point still reachable in a straight line over water.
+        out = [raw[0]];
+        for (let i = 0; i < raw.length - 1;) {
+          let j = raw.length - 1;
+          while (j > i + 1 && !this.clear(raw[i], raw[j])) j--;
+          out.push(raw[j]); i = j;
+        }
+      }
+    }
+    this.legs.set(key, out);
+    return out;
+  }
+  // The full lane for a list of zones: strait channels, extra waypoints, and open-sea legs between them.
+  build(zones) {
+    const marks = []; // { p, fixed }
+    const push = (p, fixed) => marks.push({ p, fixed });
+    zones.forEach((z, i) => {
+      const prev = zones[i - 1];
+      if (prev) {
+        const via = LEG_VIA[[prev, z].sort().join('|')];
+        if (via) { const last = marks[marks.length - 1].p; const seq = km(last, via[0]) <= km(last, via[via.length - 1]) ? via : [...via].reverse(); seq.forEach(p => push(p, true)); }
+      }
+      const st = STRAITS[z];
+      if (st) {
+        const ref = marks.length ? marks[marks.length - 1].p : (zones[1] ? [SEA_ZONES[zones[1]].lon, SEA_ZONES[zones[1]].lat] : st[0]);
+        const fwd = marks.length ? km(ref, st[0]) <= km(ref, st[st.length - 1]) : km(ref, st[st.length - 1]) <= km(ref, st[0]);
+        (fwd ? st : [...st].reverse()).forEach(p => push(p, true));
+      } else push(this.toWater([SEA_ZONES[z].lon, SEA_ZONES[z].lat]), false);
+    });
+    const pts = [], fixed = [];
+    for (let i = 0; i < marks.length; i++) {
+      if (i === 0) { pts.push(marks[0].p); fixed.push(marks[0].fixed); continue; }
+      const a = marks[i - 1], b = marks[i];
+      const legPts = a.fixed && b.fixed ? [a.p, b.p] : this.leg(a.fixed ? a.p : this.toWater(a.p), b.fixed ? b.p : this.toWater(b.p));
+      for (let j = 1; j < legPts.length; j++) {
+        const seg = arc(legPts[j - 1], legPts[j]).slice(1);
+        for (const q of seg) { pts.push(q); fixed.push(a.fixed && b.fixed); }
+      }
+    }
+    // Last check: any open-sea point that still touches land (a small island, a cape) is pushed into the water.
+    for (let i = 0; i < pts.length; i++) if (!fixed[i] && !this.water(pts[i][0], pts[i][1])) pts[i] = this.toWater(pts[i]);
+    return { pts, fixed };
   }
   recompute() {
     for (const lane of SHIPPING_LANES) {
       const r = seaRoute(lane.from, lane.to, this.blocked);
-      this.routes.set(lane.id, r ? { zones: r, path: zonePath(r) } : null);
+      this.routes.set(lane.id, r ? { zones: r, ...this.build(r) } : null);
     }
   }
   sync(state) {
@@ -168,46 +287,85 @@ export class SeaTraffic {
     this.blocked = now;
     this.recompute();
     for (const s of this.ships) {
-      if (s.stuck) { if (!now.has(s.stuckAt)) { s.stuck = false; s.path = this.routes.get(s.lane)?.path || s.path; s.t = 0.5; } continue; }
+      if (s.stuck) { if (!now.has(s.stuckAt)) { s.stuck = false; this.assign(s, this.routes.get(s.lane), s.rev); s.t = 0.5; } continue; }
       const i = Math.floor(s.t * (s.zones.length - 1));
-      const ahead = s.zones.slice(i + 1);
-      const hitZone = ahead.find(z => newly.includes(z));
+      const hitZone = s.zones.slice(i + 1).find(z => newly.includes(z));
       if (!hitZone) continue;
-      const from = s.zones[Math.max(0, i)];
-      const r = seaRoute(from, s.zones[s.zones.length - 1], this.blocked);
-      const [lon, lat] = along(s.path, s.t);
-      if (r) { s.zones = r; s.path = [[lon, lat], ...zonePath(r)]; s.t = 0; s.speed = 1 / Math.max(30, polyLen(s.path) / 200); s.rerouted = true; }
-      else { s.stuck = true; s.stuckAt = hitZone; s.anchor = [SEA_ZONES[hitZone].lon + rnd(-2.5, 2.5), SEA_ZONES[hitZone].lat + rnd(-1.6, 1.6)]; s.from = [lon, lat]; s.anchorT = 0; }
+      const [lon, lat] = this.position(s);
+      const r = seaRoute(s.zones[Math.max(0, i)], s.zones[s.zones.length - 1], this.blocked);
+      if (r) {
+        const lane = this.build(r);
+        this.personalise(s, { zones: r, pts: [[lon, lat], ...lane.pts], fixed: [true, ...lane.fixed] }, false);
+        s.t = 0; s.rerouted = true;
+      } else {
+        // Nowhere to go: drop anchor outside the closed strait.
+        const z = SEA_ZONES[hitZone];
+        s.stuck = true; s.stuckAt = hitZone; s.from = [lon, lat]; s.anchorT = 0;
+        s.anchor = this.toWater([z.lon + rnd(-2.5, 2.5), z.lat + rnd(-1.6, 1.6)]);
+      }
     }
   }
+  // Gives a ship its own line inside the lane: a gentle sideways offset away from the straits, kept in the water.
+  personalise(s, route, rev) {
+    const pts = rev ? [...route.pts].reverse() : route.pts, fixed = rev ? [...route.fixed].reverse() : route.fixed;
+    s.zones = rev ? [...route.zones].reverse() : route.zones;
+    const n = pts.length, off = rnd(-1, 1) * rnd(0.3, 1.1), wob = rnd(0.15, 0.5), ph = rnd(0, 6.28);
+    // Distance (in points) to the nearest fixed channel point: offsets fade to nothing near the straits.
+    const near = new Array(n).fill(99);
+    for (let i = 0, d = 99; i < n; i++) { d = fixed[i] ? 0 : d + 1; near[i] = d; }
+    for (let i = n - 1, d = 99; i >= 0; i--) { d = fixed[i] ? 0 : d + 1; near[i] = Math.min(near[i], d); }
+    const path = pts.map((p, i) => {
+      if (fixed[i] || i === 0 || i === n - 1) return p;
+      const a = pts[Math.max(0, i - 1)], b = pts[Math.min(n - 1, i + 1)];
+      let dx = b[0] - a[0]; if (dx > 180) dx -= 360; if (dx < -180) dx += 360;
+      const dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1;
+      const taper = Math.min(1, near[i] / 6);
+      const o = (off + Math.sin(i * 0.18 + ph) * wob) * taper;
+      for (const f of [1, 0.5, 0.25]) {
+        const q = [p[0] - (dy / L) * o * f, p[1] + (dx / L) * o * f];
+        if (this.water(q[0], q[1])) return q;
+      }
+      return p;
+    });
+    s.path = path;
+    s.speed = (1 / Math.max(40, polyLen(path) / 160)) * s.pace;
+  }
+  assign(s, route, rev) { s.rev = rev; this.personalise(s, route, rev); }
   spawn() {
-    const total = SHIPPING_LANES.reduce((s, l) => s + l.weight, 0);
+    const total = SHIPPING_LANES.reduce((t, l) => t + l.weight, 0);
     let r = Math.random() * total, lane = SHIPPING_LANES[0];
     for (const l of SHIPPING_LANES) { r -= l.weight; if (r <= 0) { lane = l; break; } }
     const route = this.routes.get(lane.id);
-    const tanker = lane.from === 'persian_gulf' || lane.from === 'red_sea';
+    const oil = lane.from === 'persian_gulf' || lane.to === 'persian_gulf';
+    const kind = oil && Math.random() < 0.7 ? 'tanker' : Math.random() < 0.55 ? 'container' : Math.random() < 0.6 ? 'bulk' : 'lng';
+    // Container ships are fast; laden tankers and bulk carriers are slow.
+    const pace = { container: rnd(1.05, 1.35), lng: rnd(0.95, 1.15), tanker: rnd(0.7, 0.9), bulk: rnd(0.65, 0.85) }[kind];
     if (!route) {
-      // No way through: ships pile up at anchor outside the closed chokepoint.
       const choke = [...this.blocked][Math.floor(Math.random() * this.blocked.size)];
-      if (!choke || this.ships.filter(s => s.stuck).length > 40) return;
+      if (!choke || this.ships.filter(s => s.stuck).length > 40) return null;
       const z = SEA_ZONES[choke];
-      this.ships.push({ lane: lane.id, zones: [], path: [[z.lon, z.lat]], t: 0, speed: 0, tanker, stuck: true, stuckAt: choke, anchor: [z.lon + rnd(-3, 3), z.lat + rnd(-1.8, 1.8)], from: [z.lon + rnd(-6, 6), z.lat + rnd(-4, 4)], anchorT: 0 });
-      return;
+      const ship = { lane: lane.id, zones: [], path: [[z.lon, z.lat]], t: 0, speed: 0, kind, tanker: kind === 'tanker', pace, stuck: true, stuckAt: choke, anchorT: 0,
+        anchor: this.toWater([z.lon + rnd(-3, 3), z.lat + rnd(-1.8, 1.8)]), from: this.toWater([z.lon + rnd(-6, 6), z.lat + rnd(-4, 4)]) };
+      this.ships.push(ship);
+      return ship;
     }
-    const rev = Math.random() < 0.5;
-    const zones = rev ? [...route.zones].reverse() : route.zones;
-    const path = rev ? [...route.path].reverse() : route.path;
-    this.ships.push({ lane: lane.id, zones, path, t: 0, speed: 1 / Math.max(40, polyLen(path) / 160) * rnd(0.8, 1.2), tanker });
+    const ship = { lane: lane.id, t: 0, kind, tanker: kind === 'tanker', pace };
+    this.assign(ship, route, Math.random() < 0.5);
+    this.ships.push(ship);
+    return ship;
   }
   tick(dt) {
     for (const s of this.ships) {
       if (s.stuck) { s.anchorT = Math.min(1, s.anchorT + dt * 0.15); continue; }
-      s.t += s.speed * dt;
+      // Ships slow down while crossing a contested strait.
+      const i = Math.min(s.zones.length - 1, Math.floor(s.t * s.zones.length));
+      s.t += s.speed * dt * (this.contested.has(s.zones[i]) ? 0.45 : 1);
     }
     this.ships = this.ships.filter(s => s.t < 1);
     this.waiting = this.ships.filter(s => s.stuck).length;
     const moving = this.ships.length - this.waiting;
-    if (moving < this.target) for (let i = 0; i < 3; i++) { this.spawn(); const s = this.ships[this.ships.length - 1]; if (s && !s.stuck && this.ships.length < 40) s.t = Math.random() * 0.95; }
+    // At start-up the sea fills quickly with ships already under way; afterwards one new departure at a time.
+    if (moving < this.target) for (let i = 0; i < (this.ships.length < this.target * 0.5 ? 4 : 1); i++) { const s = this.spawn(); if (s && !s.stuck && this.ships.length < this.target * 0.5) s.t = Math.random() * 0.95; }
   }
   position(s) {
     if (s.stuck) { const k = s.anchorT; return [s.from[0] + (s.anchor[0] - s.from[0]) * k, s.from[1] + (s.anchor[1] - s.from[1]) * k, 0]; }

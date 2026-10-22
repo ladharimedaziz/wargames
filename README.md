@@ -38,7 +38,7 @@ Kronos can rename committees, reset any committee as a world or court committee,
 
 ## Running a committee
 
-**Stage Zeus.** Sign in, press **Stage display**, and move that window to the projector. Double-click it for full screen, and click it once to turn on sound. Delegates only ever see this window.
+**Stage Zeus.** Sign in, press **Stage display**, and move that window to the projector. Double-click it for full screen, and click it once to turn on sound effects (there is no background music). Delegates only ever see this window. On the display itself you can click a country or scroll to zoom in, which reveals its major cities; press Esc to zoom back out.
 
 **Back Room Zeus.** The chair tells you what a delegate decided. Type it into the command bar at the bottom of the map, the way the chair said it:
 
@@ -47,7 +47,8 @@ Kronos can rename committees, reset any committee as a world or court committee,
 | `russia strike ukraine 3 bombers energy escort 2` | Air strike with chosen units, target type and fighter escort |
 | `iran blockade hormuz 2` | Blockade a sea zone with two fleets |
 | `us sail to south china sea carrier` | Move a carrier group |
-| `china invade taiwan 3` | Send three army groups (needs a land border or ships nearby) |
+| `china invade taiwan 3` | Send three army groups (needs a land border, or a fleet offshore for a naval landing) |
+| `us evacuate sudan` | Evacuate citizens from a crisis zone (NEO), for countries with the airlift or ships to do it |
 | `uk sanction russia` · `us lift sanctions iran` | Economic pressure |
 | `saudi aid yemen 20` · `us arms ukraine fighter` | Money and arms transfers |
 | `israel cyber iran radar` · `uk spy russia sabotage` | Covert operations |
@@ -62,7 +63,9 @@ The bar shows what it understood before you press Enter. Orders wait in the queu
 
 The engine writes the news. Headlines wait in the **News desk** until a Zeus airs them, unless auto-air is on. Endings are suggested there too, and the Zeus decides whether to play one.
 
-Countries start in their real-world alliances (NATO, the GCC, CSTO, the Saudi–Pakistan pact, US treaty partners and more), with real rivalries reflected in starting relations. Invasions push a front line across the defending country turn by turn, and the display animates the advance. Kronos can set a front by hand in the sandbox.
+Countries start in their real-world alliances (NATO, the GCC, CSTO, the Saudi–Pakistan pact, US treaty partners and more), with real rivalries reflected in starting relations. Militaries match reality as closely as the game allows: real force sizes, plus a quality multiplier for land, air and sea, so the US Navy (eleven supercarriers, forward-deployed fleets) is in a class of its own. Economies start from real figures too: each country has its own inflation, public approval, stability, industry, energy security, reserves and growth rate, and recovers toward its own normal rather than a universal 100%.
+
+**War fronts.** Invasions push a front line across the defending country turn by turn, and the display animates the advance. In the country card, a Zeus chooses how each front behaves: **Battle decides** (the engine), **Advance**, **Hold** or **Fall back**, and can move it right now by ±10 or ±25. Pushing an occupied country's front back liberates it. Countries with landing fleets (the US, China, Russia, the UK, France, Japan and others, or anyone with a carrier) can invade across the sea; the display shows the landing craft hitting the beach.
 
 Nuclear weapons only work at tension 10. The nuclear ending is a quiet black screen, with nothing graphic.
 
