@@ -2,7 +2,7 @@
 import { SEA_ZONES, FLEET_MOVES_PER_TURN } from '../data/places.js';
 import { AMPHIBIOUS_A3, NEO_A3, AIRBORNE_KM, US_AIRCRAFT } from '../data/militaries.js';
 import { distanceKm, seaRoute, zonesTouching } from '../geo.js';
-import { UNIT_TYPES, TARGET_TYPES, ROE, anchor, unitRange, unitsOf, atWar, sameSide, countryName, isActive } from './core.js';
+import { UNIT_TYPES, TARGET_TYPES, ROE, anchor, unitRange, unitsOf, atWar, sameSide, countryName, isActive, isOOB, OOB_ERROR } from './core.js';
 
 export const ORDER_TYPES = {
   strike:     { label: 'Air or missile strike', group: 'military', needs: ['target'] },
@@ -55,6 +55,7 @@ export function validateOrder(state, o) {
   const c = state.countries[o.country];
   if (!c) return fail('Unknown country.');
   if (c.capitulated) return fail(`${c.name} has capitulated and can no longer act.`);
+  if (isOOB(o.country) || isOOB(o.target)) return fail(OOB_ERROR);
   const T = o.target ? state.countries[o.target] : null;
   if (ORDER_TYPES[o.type]?.needs.includes('target') && !T) return fail('Pick a target country.');
   if (T && o.target === o.country && !['roe', 'propaganda', 'election', 'cap', 'alert'].includes(o.type) && o.type !== 'rebase' && o.type !== 'invade') return fail('A country cannot target itself.');

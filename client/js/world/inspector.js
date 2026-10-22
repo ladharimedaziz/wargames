@@ -1,7 +1,7 @@
 // Right-hand inspector: the selected country (or sea zone), or a world overview when nothing is selected.
 import { html, useState, useEffect, run, fmt, cls } from '../lib.js';
 import { SEA_ZONES } from '/shared/data/places.js';
-import { UNIT_TYPES, ROE, BLOCS, tensionLevel, TENSION_LEVELS, relation } from '/shared/engine/core.js';
+import { UNIT_TYPES, ROE, BLOCS, tensionLevel, TENSION_LEVELS, relation, isOOB, OOB_ERROR } from '/shared/engine/core.js';
 import { ALLIANCE_NAMES } from '/shared/data/countries.js';
 import { navalLabel } from '/shared/data/militaries.js';
 
@@ -13,6 +13,7 @@ const Stat = ({ label, value, pct, tone, hint }) => html`
 
 export function Inspector(props) {
   const { state, selected, selZone } = props;
+  if (selected && isOOB(selected)) return html`<div class="pane inspector"><div class="empty">${OOB_ERROR}</div></div>`;
   if (selected && state.countries[selected]) return html`<${CountryCard} ...${props} />`;
   if (selZone && SEA_ZONES[selZone]) return html`<${ZoneCard} ...${props} />`;
   return html`<${WorldOverview} ...${props} />`;

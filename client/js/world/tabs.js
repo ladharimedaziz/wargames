@@ -1,11 +1,11 @@
 // Left-hand tools of the world panel: news desk, orders, countries, saves and log.
 import { html, useState, useMemo, useEffect, run, toast, fmt, cls, download, useEvent } from '../lib.js';
 import { SEA_ZONES } from '/shared/data/places.js';
-import { UNIT_TYPES, TARGET_TYPES, ENDINGS, BLOCS } from '/shared/engine/core.js';
+import { UNIT_TYPES, TARGET_TYPES, ENDINGS, BLOCS, isOOB } from '/shared/engine/core.js';
 import { ORDER_TYPES, CYBER_KINDS, SPY_KINDS, validateOrder, autoUnits, describeOrder } from '/shared/engine/orders.js';
 
 export function sortedCountries(state, filter = () => true) {
-  return Object.values(state.countries).filter(filter).sort((a, b) => (b.control === 'player') - (a.control === 'player') || (b.major - a.major) || a.name.localeCompare(b.name));
+  return Object.values(state.countries).filter(c => !isOOB(c.id)).filter(filter).sort((a, b) => (b.control === 'player') - (a.control === 'player') || (b.major - a.major) || a.name.localeCompare(b.name));
 }
 
 export function CountrySelect({ state, value, onChange, placeholder = 'Choose a country', filter, sm }) {

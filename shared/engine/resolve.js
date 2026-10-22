@@ -6,6 +6,7 @@ import { distanceKm, countriesCrossed, seaRoute, zonesTouching } from '../geo.js
 import {
   UNIT_TYPES, rand, chance, between, clamp, newId, atWar, sameSide, relation, shiftRelation, anchor, unitsAt, unitsOf,
   enemiesOf, isActive, countryName, boundAllies, airContested, closesAirspace, warClosures,
+  isOOB, OUT_OF_BOUNDS,
 } from './core.js';
 import { validateOrder, blockedFor, describeOrder } from './orders.js';
 import { tickEconomy } from './economy.js';
@@ -26,7 +27,7 @@ const pt = c => ({ lat: c.lat, lon: c.lon });
 const Q = (state, id, domain) => state.countries[id]?.quality?.[domain] ?? 1;
 
 export function declareWar(state, a, b, ev, why) {
-  if (a === b || atWar(state, a, b)) return false;
+  if (a === b || atWar(state, a, b) || isOOB(a) || isOOB(b)) return false;
   state.wars.push({ a, b, since: state.meta.turn });
   state.treaties = state.treaties.filter(t => !(t.type === 'ceasefire' && t.parties.includes(a) && t.parties.includes(b)));
   shiftRelation(state, a, b, -100);
@@ -660,12 +661,26 @@ function resolveEvacuation(state, o, ev) {
   c.support = clamp(c.support + (danger ? 4 : 1), 0, 100);
   if (enemiesOf(state, o.target).some(e => sameSide(state, e, o.country))) shiftRelation(state, o.country, o.target, -3);
   // A friendly staging point: the nearest allied capital, or home.
-  const allies = Object.values(state.countries).filter(x => x.id !== o.target && (x.id === o.country || sameSide(state, x.id, o.country) || relation(state, x.id, o.country) > 40) && !enemiesOf(state, x.id).length && x.lat != null);
+  const allies = Object.values(state.countries).filter(x => x.id !== o.target && !isOOB(x.id) && (x.id === o.country || sameSide(state, x.id, o.country) || relation(state, x.id, o.country) > 40) && !enemiesOf(state, x.id).length && x.lat != null);
   const stage = allies.sort((a, b) => distanceKm(pt(a), pt(T)) - distanceKm(pt(b), pt(T)))[0] || c;
   ev.push({ kind: 'neo', owner: o.country, country: o.target, from: pt(T), to: pt(stage), stage: stage.id, zone, sea: zone ? { lat: SEA_ZONES[zone].lat, lon: SEA_ZONES[zone].lon } : null, evacuees, danger });
 }
 
+// Out-of-bounds countries hold no forces and take no part in any war, even in saves made before the rule.
+function enforceOOB(state) {
+  for (const u of Object.values(state.units)) if (isOOB(u.owner)) delete state.units[u.id]; else if (u.blockadeOf && isOOB(u.blockadeOf)) { u.blockade = false; delete u.blockadeOf; }
+  state.wars = state.wars.filter(w => !isOOB(w.a) && !isOOB(w.b));
+  for (const id of OUT_OF_BOUNDS) {
+    const c = state.countries[id]; if (!c) continue;
+    Object.assign(c, { control: 'inactive', oob: true, front: null, occupiedBy: null });
+    if (hasGeo()) releaseCells(state, id);
+  }
+  for (const c of Object.values(state.countries)) if (c.front && isOOB(c.front.by)) c.front = null;
+  if (state.control) for (const k of Object.keys(state.control)) if (isOOB(state.control[k])) delete state.control[k];
+}
+
 export function resolveTurn(state, ctx) {
+  enforceOOB(state);
   const ev = [];
   const turn = state.meta.turn;
   // AI countries decide at the same moment as everyone else.
@@ -740,6 +755,7 @@ function publish(state, ev, ctx) {
 
 // Runs orders immediately, outside the weekly turn (signed treaties, Kronos interventions). The clock does not advance.
 export function resolveNow(state, orders, ctx) {
+  enforceOOB(state);
   const ev = [];
   for (const o of orders) { o.turn = state.meta.turn; o.status = 'queued'; state.orders.push(o); }
   const invasions = runOrders(state, orders, ctx, ev);
