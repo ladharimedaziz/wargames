@@ -97,11 +97,13 @@ export const NAVAL_FX = {
 
   // Everything land, as one path, so effects can be clipped to the water.
   seaClip(ctx) {
-    const lo = this.atlas?.lo; if (!lo) return false;
-    if (!this._land) { this._land = new Path2D(); for (const p of lo.paths.values()) this._land.addPath(p); }
+    if (!this.atlas?.lo) return false;
     const dpr = this.dpr, c = this.cam;
+    const A = (this.moving || c.k < 1.7 || !this.atlas.hi) ? this.atlas.lo : this.atlas.hi;
+    this._lands ||= new Map();
+    if (!this._lands.has(A)) { const land = new Path2D(); for (const p of A.paths.values()) land.addPath(p); this._lands.set(A, land); }
     ctx.setTransform(dpr * c.k, 0, 0, dpr * c.k, dpr * c.x, dpr * c.y);
-    const r = new Path2D(); r.rect(-c.x / c.k - 10, -c.y / c.k - 10, this.w / c.k + 20, this.h / c.k + 20); r.addPath(this._land);
+    const r = new Path2D(); r.rect(-c.x / c.k - 10, -c.y / c.k - 10, this.w / c.k + 20, this.h / c.k + 20); r.addPath(this._lands.get(A));
     ctx.clip(r, 'evenodd');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     return true;
@@ -122,7 +124,7 @@ export const NAVAL_FX = {
     if (!this.seaClip(ctx)) { ctx.restore(); return; }
     const dpr = this.dpr, c = this.cam;
     for (const [id, sg] of sieges) {
-      const path = this.atlas.lo.paths.get(id); if (!path) continue;
+      const path = this.pathOf(id); if (!path) continue;
       // Nearby water glows red where the warships hold station, and a band of red runs along the whole coast.
       for (const z of sg.zones) {
         const zz = SEA_ZONES[z], q = zz && this.p(zz.lon, zz.lat); if (!q) continue;
@@ -162,7 +164,7 @@ export const NAVAL_FX = {
 
   // The moment a blockade starts: the cordon is drawn along the coast and the country flashes red.
   fx_siege(ctx, fx, u) {
-    const e = fx.e, path = this.atlas?.lo?.paths.get(e.target); if (!path) return;
+    const e = fx.e, path = this.pathOf(e.target); if (!path) return;
     const dpr = this.dpr, c = this.cam, fade = u > 0.8 ? 1 - (u - 0.8) / 0.2 : 1, v = ease(u / 0.6);
     ctx.save();
     if (this.seaClip(ctx)) {

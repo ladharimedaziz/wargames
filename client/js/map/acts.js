@@ -29,8 +29,13 @@ export const ACT_FX = {
     return [b[0][0] * k + x, b[0][1] * k + y, b[1][0] * k + x, b[1][1] * k + y];
   },
   // Run fn in screen coordinates, clipped to a country's outline.
+  // Paths at the same detail as the country fills: coarse while moving or zoomed out, fine when close.
+  pathOf(id) {
+    const A = this.atlas && ((this.moving || this.cam.k < 1.7 || !this.atlas.hi) ? this.atlas.lo : this.atlas.hi);
+    return A?.paths.get(id) || this.atlas?.lo?.paths.get(id);
+  },
   clipTo(ctx, id, fn) {
-    const path = this.atlas?.lo?.paths.get(id); if (!path) return;
+    const path = this.pathOf(id); if (!path) return;
     const dpr = this.dpr, c = this.cam;
     ctx.save();
     ctx.setTransform(dpr * c.k, 0, 0, dpr * c.k, dpr * c.x, dpr * c.y); ctx.clip(path);
@@ -39,7 +44,7 @@ export const ACT_FX = {
     ctx.restore();
   },
   outline(ctx, id, style, width) {
-    const path = this.atlas?.lo?.paths.get(id); if (!path) return;
+    const path = this.pathOf(id); if (!path) return;
     const dpr = this.dpr, c = this.cam;
     ctx.save(); ctx.setTransform(dpr * c.k, 0, 0, dpr * c.k, dpr * c.x, dpr * c.y);
     ctx.strokeStyle = style; ctx.lineWidth = width / c.k; ctx.stroke(path); ctx.restore();

@@ -4,7 +4,7 @@ import { SEA_ZONES } from '../data/places.js';
 import { carrierName } from '../data/militaries.js';
 import { zonesTouching } from '../geo.js';
 import {
-  UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures,
+  UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures, isOOB, OOB_ERROR,
 } from './core.js';
 import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.js';
 import { resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
@@ -649,11 +649,18 @@ export function actionsFor(state) {
 function pick(obj, keys) { return Object.fromEntries(keys.filter(k => obj[k]).map(k => [k, obj[k]])); }
 
 // ctx: { role: 'stage'|'backroom'|'kronos', user, now, geo }
+// Any action naming Israel or Palestine is refused, whoever sends it.
+function touchesOOB(a) {
+  const ids = [a.country, a.target, a.a, a.b, a.by, a.at, a.owner, a.order?.country, a.order?.target, ...(Array.isArray(a.countries) ? a.countries : []), ...(Array.isArray(a.parties) ? a.parties : [])];
+  return ids.some(id => typeof id === 'string' && isOOB(id));
+}
+
 export function applyAction(state, action, ctx) {
   const def = actionsFor(state)[action?.type];
   if (!def) return err(`Unknown action "${action?.type}".`);
   if (def.perm === 'kronos' && ctx.role !== 'kronos') return err('Only Kronos can do that.');
   if (state.kronos.locked && ctx.role !== 'kronos' && !def.readOnly) return err('Kronos has locked this panel.');
+  if (!def.readOnly && touchesOOB(action)) return err(OOB_ERROR);
   bindGeo(ctx.geo);
   try {
     const r = def.run(state, action, ctx);

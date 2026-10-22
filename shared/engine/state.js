@@ -5,7 +5,7 @@ import { MILITARIES, DEPLOYMENTS, AIR_BASES, carrierName } from '../data/militar
 import { ECONOMIES, ECONOMY_DEFAULT } from '../data/economies.js';
 import { SEA_ZONES } from '../data/places.js';
 import { zonesTouching } from '../geo.js';
-import { COURT_PHASES, newId } from './core.js';
+import { COURT_PHASES, newId, isOOB } from './core.js';
 
 function baseState({ id, name, mode, seed }) {
   return {
@@ -55,6 +55,7 @@ export function createWorldState(opts, geoInfo) {
   const byA3 = Object.fromEntries(Object.values(s.countries).map(c => [c.a3, c.id]));
   for (const c of Object.values(s.countries)) {
     const f = c.forces0; delete c.forces0;
+    if (isOOB(c.id)) { Object.assign(c, { control: 'inactive', oob: true, bloc: 'N', alliances: [] }); continue; }
     const bases = AIR_BASES[c.a3] || {};
     for (const type of ['army', 'fighter', 'bomber', 'missile']) for (let i = 0; i < f[type]; i++) {
       const host = bases[type]?.[i] && byA3[bases[type][i]];

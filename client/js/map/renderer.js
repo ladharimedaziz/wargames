@@ -3,7 +3,7 @@
 import { geoEqualEarth, geoPath, geoGraticule10, geoInterpolate } from 'd3-geo';
 import { SEA_ZONES } from '/shared/data/places.js';
 import { CITIES } from '/shared/data/cities.js';
-import { relation } from '/shared/engine/core.js';
+import { relation, isOOB } from '/shared/engine/core.js';
 import { loadAtlas, makeCountryAt, makeLandAt, pairBorder } from './atlas.js';
 import { contours as d3contours } from 'd3-contour';
 import { CELL, cellKey, cellIJ, cellCenter, neighbors as cellNeighbors } from '/shared/engine/control.js';
@@ -12,11 +12,14 @@ import { ACT_FX } from './acts.js';
 import { AIRCRAFT_FX, DIPLO_KINDS } from './aircraft.js';
 import { ROAD_FX } from './roads.js';
 import { NAVAL_FX } from './naval.js';
+import { OOB_FX } from './oob.js';
 
 const TAU = Math.PI * 2;
 const withCamOn = (ctx, dpr, cam, fn) => { ctx.save(); ctx.setTransform(dpr * cam.k, 0, 0, dpr * cam.k, dpr * cam.x, dpr * cam.y); fn(); ctx.restore(); };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ease = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+// How far any map can zoom in.
+const MAX_K = 24;
 const easeInOut = t => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
 
 function hexA(hex, a) {
@@ -59,7 +62,9 @@ export class WorldMap {
   async init() {
     const { lo, hi } = await loadAtlas();
     this.atlas = { lo, hi };
-    this.countryAt = makeCountryAt(lo);
+    this.rawCountryAt = makeCountryAt(lo);
+    // Out-of-bounds countries cannot be hovered, picked or hit.
+    this.countryAt = (lon, lat) => { const id = this.rawCountryAt(lon, lat); return isOOB(id) ? null : id; };
     this.air = new AirTraffic(this.countryAt);
     this.landAt = makeLandAt(hi);
     this.sea = new SeaTraffic(this.landAt);
@@ -117,6 +122,7 @@ export class WorldMap {
       return [c.id, geoPath(proj).centroid(main.f)];
     }));
     this.borderCache = new Map();
+    this._lands = null; this._oobPaths = null; // paths cached for blockades and the out-of-bounds zone
   }
 
   // --- coordinates ---
@@ -370,12 +376,12 @@ export class WorldMap {
     if (!bx) return { k: 1, x: 0, y: 0 };
     const [[x0, y0], [x1, y1]] = bx;
     const bw = Math.max(40, x1 - x0), bh = Math.max(30, y1 - y0);
-    const k = clamp(Math.min(this.w / bw, this.h / bh) * (focus.pad || 0.42), 1, focus.maxK || 7);
+    const k = clamp(Math.min(this.w / bw, this.h / bh) * (focus.pad || 0.55), 1, focus.maxK || 12);
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
     return this.clampView({ k, x: this.w / 2 - cx * k, y: this.h / 2 - cy * k });
   }
   clampView(v) {
-    const k = clamp(v.k, 1, 12);
+    const k = clamp(v.k, 1, MAX_K);
     return { k, x: clamp(v.x, this.w - this.w * k, 0), y: clamp(v.y, this.h - this.h * k, 0) };
   }
   applyFocus(instant) {
@@ -408,7 +414,7 @@ export class WorldMap {
     fx.addEventListener('wheel', e => {
       e.preventDefault();
       const r = fx.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
-      const t = this.camTarget, k = clamp(t.k * Math.exp(-e.deltaY * 0.0016), 1, 12);
+      const t = this.camTarget, k = clamp(t.k * Math.exp(-e.deltaY * 0.0016), 1, MAX_K);
       this.camTarget = this.clampView({ k, x: mx - (mx - t.x) * (k / t.k), y: my - (my - t.y) * (k / t.k) });
       this.userAt = performance.now();
       // Scrolling all the way out on the stage lets go of the clicked country.
@@ -459,6 +465,7 @@ export class WorldMap {
         const r = fx.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
         const zone = this.zoneAt(mx, my);
         const ll = this.screenToLonLat(mx, my);
+        if (ll && isOOB(this.rawCountryAt(ll[0], ll[1]))) { drag = null; return; }
         const id = ll ? this.countryAt(ll[0], ll[1]) : null;
         if (this.opts.stageControl) this.stageClick(id && this.state?.countries?.[id] ? id : null);
         else this.opts.onSelect?.(zone && !id ? { zone } : zone && this.state?.countries?.[id] == null ? { zone } : { id, zone: null }, e);
@@ -618,7 +625,7 @@ export class WorldMap {
     const s = this.state; if (!s?.countries) return;
     const k = this.cam.k;
     const ar = this.opts.lang === 'ar';
-    const list = Object.values(s.countries).filter(c => c.control !== 'inactive' || k > 3.5);
+    const list = Object.values(s.countries).filter(c => (c.control !== 'inactive' || k > 3.5) && !isOOB(c.id));
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const placed = this.labelBoxes = [];
     list.sort((a, b) => (b.control === 'player') - (a.control === 'player') || b.base.gdp - a.base.gdp);
@@ -921,7 +928,7 @@ export class WorldMap {
   drawCoat(ctx, time) {
     const id = this.state?.display?.arms !== false ? this.focusedCountry() : null;
     if (id !== this.coatId) { this.coatId = id; this.coatAt = performance.now(); }
-    if (!id) return;
+    if (!id || isOOB(id)) return;
     this.coatImgs ||= new Map();
     let img = this.coatImgs.get(id);
     if (!img) { img = new Image(); img.onload = () => { this.coatAt = performance.now(); this.dirty = true; }; img.src = `/client/img/coats/${id}.webp`; this.coatImgs.set(id, img); }
@@ -1083,6 +1090,7 @@ export class WorldMap {
     this.drawRoads(ctx);
     this.drawFronts(ctx, now, time, withCam);
     this.drawConditions(ctx, time);
+    this.drawOOB(ctx, time);
     this.drawCoat(ctx, time);
     this.drawBlockades(ctx, time);
     this.drawBattles(ctx, time);
@@ -1093,6 +1101,7 @@ export class WorldMap {
     this.drawChokepoints(ctx, time);
     if (this.layers.units !== false) this.drawUnits(ctx, time);
     this.drawEffects(ctx, now, withCam);
+    this.drawOOBLabel(ctx);
     this.drawBrush(ctx);
     if (this.night) {
       const v = ctx.createRadialGradient(this.w / 2, this.h / 2, this.h * 0.35, this.w / 2, this.h / 2, this.w * 0.75);
@@ -1115,7 +1124,7 @@ export class WorldMap {
     const ar = this.opts.lang === 'ar';
     const placed = (this.labelBoxes || []).slice(), own = [];
     const minTier = k >= 8 ? 4 : k >= 5.5 ? 3 : k >= 3.6 ? 2 : 1;
-    const list = CITIES.filter(c => c.a3 === focusA3 ? k >= (c.tier === 4 ? 1.8 : 1.4) : c.tier <= minTier && k >= 2.6).sort((a, b) => (b.a3 === focusA3) - (a.a3 === focusA3) || a.tier - b.tier);
+    const list = CITIES.filter(c => c.a3 !== 'ISR' && c.a3 !== 'PSE').filter(c => c.a3 === focusA3 ? k >= (c.tier === 4 ? 1.8 : 1.4) : c.tier <= minTier && k >= 2.6).sort((a, b) => (b.a3 === focusA3) - (a.a3 === focusA3) || a.tier - b.tier);
     ctx.textBaseline = 'middle';
     for (const c of list) {
       const q = this.p(c.lon, c.lat); if (!q || q[0] < -20 || q[0] > this.w + 20 || q[1] < -20 || q[1] > this.h + 20) continue;
@@ -2195,7 +2204,7 @@ export class WorldMap {
   }
 }
 
-Object.assign(WorldMap.prototype, ACT_FX, AIRCRAFT_FX, ROAD_FX, NAVAL_FX);
+Object.assign(WorldMap.prototype, ACT_FX, AIRCRAFT_FX, ROAD_FX, NAVAL_FX, OOB_FX);
 
 function geoDistanceKm(a, b) {
   const R = 6371, rad = Math.PI / 180;

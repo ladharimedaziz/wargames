@@ -441,3 +441,21 @@ test('US carrier groups are named, and a blockade can close a country\'s coast',
   zeus({ type: 'queueOrder', order: { country: US, type: 'lift' }, now: true });
   assert.equal(Object.values(s.units).filter(u => u.blockadeOf).length, 0);
 });
+
+test('Israel and Palestine are out of bounds', () => {
+  const { s, zeus, kronos } = world();
+  const IL = '376', PS = '275', IR = '364';
+  assert.equal(Object.values(s.units).filter(u => u.owner === IL || u.owner === PS).length, 0);
+  assert.equal(s.countries[IL].oob, true);
+  assert.equal(zeus({ type: 'queueOrder', order: { country: IR, type: 'war', target: IL } }).ok, false);
+  assert.equal(zeus({ type: 'queueOrder', order: { country: IL, type: 'war', target: IR } }).ok, false);
+  assert.equal(kronos({ type: 'forceWar', a: US, b: PS }).ok, false);
+  assert.equal(kronos({ type: 'spawnUnits', country: IL, unitType: 'army', count: 2 }).ok, false);
+  assert.equal(zeus({ type: 'setFocus', country: IL }).ok, false);
+  // Old saves with forces or wars there are cleaned up at the next turn.
+  s.wars.push({ a: IR, b: IL, since: 1 });
+  s.units.uX = { id: 'uX', type: 'army', owner: IL, loc: { kind: 'country', id: IL }, strength: 100 };
+  assert.ok(zeus({ type: 'resolveTurn' }).ok);
+  assert.ok(!s.wars.some(w => w.a === IL || w.b === IL));
+  assert.ok(!s.units.uX);
+});
