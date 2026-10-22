@@ -386,9 +386,11 @@ export class WorldMap {
     if (f?.kind === 'country') return f.id;
     return this.opts.interactive ? this.selected : null;
   }
-  // On the stage display, clicking a country zooms to it; clicking it again, the sea, or pressing Escape zooms back out.
+  // On the stage display, clicking a country zooms to it. Clicks never zoom out (a double-click for full screen
+  // would otherwise bounce the camera in and out): Escape or the scroll wheel does that.
   stageClick(id) {
-    this.localFocus = id && id !== this.localFocus?.id && this.bounds.get(id) ? { kind: 'country', id } : null;
+    if (!id || !this.bounds.get(id) || this.localFocus?.id === id) return;
+    this.localFocus = { kind: 'country', id };
     this.userAt = performance.now();
     this.applyFocus();
   }
@@ -403,6 +405,8 @@ export class WorldMap {
       const t = this.camTarget, k = clamp(t.k * Math.exp(-e.deltaY * 0.0016), 1, 12);
       this.camTarget = this.clampView({ k, x: mx - (mx - t.x) * (k / t.k), y: my - (my - t.y) * (k / t.k) });
       this.userAt = performance.now();
+      // Scrolling all the way out on the stage lets go of the clicked country.
+      if (this.opts.stageControl && k <= 1.05 && this.localFocus) this.localFocus = null;
     }, { passive: false });
     fx.addEventListener('pointerdown', e => {
       // With a brush, the left button paints; any other button still pans the map.
@@ -457,7 +461,7 @@ export class WorldMap {
     });
     fx.addEventListener('pointerleave', () => { this.hover = null; this.brushPos = null; this.opts.onHover?.(null); });
     fx.addEventListener('contextmenu', e => { if (this.brush) e.preventDefault(); });
-    fx.addEventListener('dblclick', () => { this.userFocus = null; this.camTarget = { k: 1, x: 0, y: 0 }; });
+    fx.addEventListener('dblclick', () => { if (this.opts.stageControl) return; this.userFocus = null; this.camTarget = { k: 1, x: 0, y: 0 }; });
   }
   zoneAt(mx, my) {
     let best = null, bd = 14;
@@ -905,37 +909,58 @@ export class WorldMap {
   }
 
   // --- coat of arms ---
-  // When the Zeus turns it on, the country in focus gets a broadcast-style plate with its coat of arms.
+  // The selected or focused country wears its coat of arms on its own territory: it rises out of the land with a
+  // gold ring, then breathes gently while a band of light sweeps across it. On unless the Zeus turns it off.
   drawCoat(ctx, time) {
     const id = this.state?.display?.arms !== false ? this.focusedCountry() : null;
     if (id !== this.coatId) { this.coatId = id; this.coatAt = performance.now(); }
     if (!id) return;
     this.coatImgs ||= new Map();
     let img = this.coatImgs.get(id);
-    if (!img) { img = new Image(); img.onload = () => { this.dirty = true; }; img.src = `/client/img/coats/${id}.webp`; this.coatImgs.set(id, img); }
+    if (!img) { img = new Image(); img.onload = () => { this.coatAt = performance.now(); this.dirty = true; }; img.src = `/client/img/coats/${id}.webp`; this.coatImgs.set(id, img); }
     if (!img.complete || !img.naturalWidth) return;
-    const c = this.state.countries[id], ar = this.opts.lang === 'ar';
-    const t = clamp((performance.now() - this.coatAt) / 900, 0, 1), e = ease(t);
-    const H = this.opts.cinematic ? Math.min(230, this.h * 0.28) : Math.min(120, this.h * 0.16), W = H * (img.naturalWidth / img.naturalHeight);
-    const x = (this.opts.cinematic ? 60 : 24) + W / 2, y = (this.opts.cinematic ? this.h * 0.5 : this.h * 0.36) - (1 - e) * 20;
-    ctx.save(); ctx.globalAlpha = e;
-    // A soft light behind the arms so dark emblems still read on the night map.
-    const g = ctx.createRadialGradient(x, y, 0, x, y, H * 0.85);
-    g.addColorStop(0, 'rgba(255,240,200,0.26)'); g.addColorStop(0.6, 'rgba(255,230,180,0.08)'); g.addColorStop(1, 'rgba(255,230,180,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, H * 0.85, 0, TAU); ctx.fill();
-    ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 18;
-    ctx.drawImage(img, x - W / 2, y - H / 2, W, H);
-    ctx.shadowBlur = 0;
-    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
-    const fs = this.opts.cinematic ? 20 : 14;
-    ctx.font = ar ? `700 ${fs + 2}px Cairo, sans-serif` : `700 ${fs}px Rajdhani, Inter, sans-serif`;
-    const name = ar ? c.ar : c.name.toUpperCase();
-    ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(4,7,12,0.85)'; ctx.strokeText(name, x, y + H / 2 + 12);
-    ctx.fillStyle = '#f3e3b0'; ctx.fillText(name, x, y + H / 2 + 12);
-    ctx.strokeStyle = `rgba(243,220,142,${0.6 * e})`; ctx.lineWidth = 1;
-    const lw = Math.min(W, 160) * e; ctx.beginPath(); ctx.moveTo(x - lw / 2, y + H / 2 + 6); ctx.lineTo(x + lw / 2, y + H / 2 + 6); ctx.stroke();
-    ctx.restore();
-    if (t < 1) this.dirty = true;
+    const b = this.bounds.get(id), cen = this.centroids.get(id); if (!b || !cen) return;
+    const k = this.cam.k, toS = (x, y) => [x * k + this.cam.x, y * k + this.cam.y];
+    const [x0, y0] = toS(b[0][0], b[0][1]), [x1, y1] = toS(b[1][0], b[1][1]);
+    const bw = x1 - x0, bh = y1 - y0; if (bw < 8 || bh < 8) return;
+    // Centre on the land, nudged toward the middle of the main landmass for odd shapes.
+    const c = toS(cen[0], cen[1]), cx = (c[0] * 2 + (x0 + x1) / 2) / 3, cy = (c[1] * 2 + (y0 + y1) / 2) / 3;
+    const t = (performance.now() - this.coatAt) / 1000, rise = ease(clamp(t / 1.4, 0, 1));
+    const aspect = img.naturalWidth / img.naturalHeight;
+    let H = clamp(Math.min(bh * 0.72, bw * 0.72 / aspect), 40, this.h * 0.55);
+    H *= (0.55 + 0.45 * rise) * (1 + 0.015 * Math.sin(time * 1.3));
+    const W = H * aspect;
+    // Draw the emblem once into an offscreen canvas with the light sweep, then lay it onto the country.
+    const dpr = this.dpr || 1, pw = Math.ceil(W * dpr), ph = Math.ceil(H * dpr);
+    const cv = (this.coatCv ||= document.createElement('canvas'));
+    if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
+    const g = cv.getContext('2d');
+    g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, pw, ph);
+    g.drawImage(img, 0, 0, pw, ph);
+    const sweep = ((time * 0.28) % 1.6) - 0.3;
+    if (sweep > -0.3 && sweep < 1.3) {
+      g.globalCompositeOperation = 'source-atop';
+      const lg = g.createLinearGradient(pw * (sweep - 0.25), 0, pw * (sweep + 0.25), ph);
+      lg.addColorStop(0, 'rgba(255,248,220,0)'); lg.addColorStop(0.5, 'rgba(255,248,220,0.55)'); lg.addColorStop(1, 'rgba(255,248,220,0)');
+      g.fillStyle = lg; g.fillRect(0, 0, pw, ph);
+    }
+    this.clipTo(ctx, id, () => {
+      // A warm glow pools under the emblem, then the emblem itself, a little translucent so the map reads through.
+      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.9);
+      glow.addColorStop(0, `rgba(255,226,150,${0.22 * rise})`); glow.addColorStop(1, 'rgba(255,226,150,0)');
+      ctx.fillStyle = glow; ctx.fillRect(cx - W * 1.2, cy - H * 1.2, W * 2.4, H * 2.4);
+      ctx.globalAlpha = (this.night ? 0.74 : 0.68) * rise;
+      ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 14;
+      ctx.drawImage(cv, cx - W / 2, cy - H / 2, W, H);
+      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+      // The reveal: a gold ring expands across the country and fades.
+      if (t < 2.2) {
+        const u = clamp(t / 2.2, 0, 1), R = Math.max(bw, bh) * 0.75 * ease(u);
+        ctx.strokeStyle = `rgba(243,214,130,${0.7 * (1 - u)})`; ctx.lineWidth = 2 + 3 * (1 - u);
+        ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.stroke();
+      }
+    });
+    if (t < 2.5) this.dirty = true;
   }
 
   // --- painting ground by hand (Zeus panel) ---
@@ -1051,6 +1076,7 @@ export class WorldMap {
     this.drawRoads(ctx);
     this.drawFronts(ctx, now, time, withCam);
     this.drawConditions(ctx, time);
+    this.drawCoat(ctx, time);
     this.drawBattles(ctx, time);
     this.ambientStrikes(now);
     this.drawCities(ctx, time);
@@ -1058,7 +1084,6 @@ export class WorldMap {
     if (this.layers.air !== false) this.drawFlights(ctx, time);
     this.drawChokepoints(ctx, time);
     if (this.layers.units !== false) this.drawUnits(ctx, time);
-    this.drawCoat(ctx, time);
     this.drawEffects(ctx, now, withCam);
     this.drawBrush(ctx);
     if (this.night) {
