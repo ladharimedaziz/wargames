@@ -3,7 +3,7 @@ import { SEA_ZONES, FLEET_MOVES_PER_TURN } from '../data/places.js';
 import { distanceKm, countriesCrossed, seaRoute, zonesTouching } from '../geo.js';
 import {
   UNIT_TYPES, rand, chance, between, clamp, newId, atWar, sameSide, relation, shiftRelation, anchor, unitsAt, unitsOf,
-  enemiesOf, isActive, countryName,
+  enemiesOf, isActive, countryName, boundAllies,
 } from './core.js';
 import { validateOrder, blockedFor, describeOrder } from './orders.js';
 import { tickEconomy } from './economy.js';
@@ -15,7 +15,7 @@ import { snapshotStats } from './state.js';
 const PRIORITY = ['roe', 'overflight', 'war', 'alliance', 'ceasefire', 'peace', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'lift',
   'rebase', 'cap', 'fleet', 'blockade', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'strike', 'invade', 'nuke', 'election'];
 
-const ANIMATED = ['strike', 'battle', 'naval', 'fleet', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war'];
+const ANIMATED = ['strike', 'battle', 'naval', 'fleet', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front'];
 
 const pt = c => ({ lat: c.lat, lon: c.lon });
 
@@ -29,9 +29,9 @@ export function declareWar(state, a, b, ev, why) {
   // Alliance trigger: allies of the defender are alerted, AI allies may join.
   for (const ally of Object.values(state.countries)) {
     if (!isActive(ally) || ally.id === a || ally.id === b) continue;
-    const bound = ally.alliances.some(x => state.countries[b].alliances.includes(x) && ['NATO', 'CSTO', 'GCC', 'USPAC'].includes(x));
+    const bound = boundAllies(state, ally.id, b);
     if (bound) {
-      if (!ev.some(e => e.kind === 'treaty_trigger' && e.ally === b)) ev.push({ kind: 'treaty_trigger', ally: b, attacker: a, alliance: ally.alliances.find(x => state.countries[b].alliances.includes(x)) });
+      if (!ev.some(e => e.kind === 'treaty_trigger' && e.ally === b)) ev.push({ kind: 'treaty_trigger', ally: b, attacker: a, alliance: bound });
       shiftRelation(state, ally.id, a, -30);
     }
   }
@@ -175,6 +175,7 @@ function resolveInvasions(state, orders, ev) {
     if (!attackers.length) continue;
     const defenders = unitsAt(state, 'country', target).filter(u => u.type === 'army' && (u.owner === target || sameSide(state, u.owner, target) || T.occupiedBy === u.owner) && !attackers.some(a => a.u.id === u.id));
     const lead = hostile[0].country;
+    const origin = anchor(state, attackers[0].u.loc);
     const airBonus = Math.min(0.3, 0.1 * ev.filter(e => e.kind === 'strike' && e.target === target && !e.intercepted && sameSide(state, e.owner, lead)).length);
     let A = attackers.reduce((s, { u, o }) => s + u.strength * supplyFactor(state, u.owner, target) * (o.amphibious ? 0.7 : 1), 0) * (1 + airBonus) * between(state, 0.8, 1.2);
     const garrison = T.occupiedBy ? 10 : 20 + T.airDefense * 3 + (T.major ? 15 : 0);
@@ -186,8 +187,15 @@ function resolveInvasions(state, orders, ev) {
       for (const { u } of attackers) damageUnit(state, u, u.strength * clamp(0.3 / ratio, 0.05, 0.45), ev, 'battle losses');
       const remainingDef = unitsAt(state, 'country', target).filter(u => u.type === 'army' && sameSide(state, u.owner, target)).reduce((s, u) => s + u.strength, 0);
       const survivors = attackers.filter(({ u }) => state.units[u.id]);
+      // The front line moves forward; the country falls once the attacker holds all of it.
+      const front = T.front && (T.front.by === lead || sameSide(state, T.front.by, lead)) ? T.front : { by: lead, pct: 0, from: origin };
+      const prev = front.pct;
+      const advance = clamp(18 + 50 * (ratio - 1), 15, 70) + (remainingDef < 15 ? 45 : 0);
+      front.prev = prev; front.pct = survivors.length ? Math.min(100, prev + advance) : prev; front.turn = state.meta.turn;
+      T.front = front;
+      ev.push({ kind: 'front', by: front.by, country: target, from: front.from, prev, pct: front.pct });
       let occupied = false;
-      if (remainingDef < 15 && survivors.length) {
+      if (front.pct >= 100 && survivors.length) {
         for (const { u } of survivors) u.loc = { kind: 'country', id: target };
         if (T.occupiedBy && sameSide(state, T.occupiedBy, lead) === false && T.occupiedBy !== lead) T.occupiedBy = lead;
         else if (!T.occupiedBy || T.occupiedBy !== lead) T.occupiedBy = lead === target ? null : lead;
@@ -199,11 +207,18 @@ function resolveInvasions(state, orders, ev) {
       }
       const cas = Math.round((A + D) * between(state, 0.6, 1.2));
       T.casualties += cas; state.global.casualties += cas; T.warWeariness += 8;
-      ev.push({ kind: 'battle', attacker: lead, defender: target, at, result: 'won', occupied });
+      ev.push({ kind: 'battle', attacker: lead, defender: target, at, result: 'won', occupied, front: true });
       if (occupied) ev.push({ kind: 'occupation', by: lead, country: target });
     } else {
       for (const { u } of attackers) damageUnit(state, u, u.strength * clamp(0.5 * ratio + 0.2, 0.2, 0.8), ev, 'repelled');
       for (const u of defenders) damageUnit(state, u, u.strength * clamp(0.2 * ratio, 0.03, 0.3), ev, 'held the line');
+      // A failed offensive gives ground back.
+      if (T.front && !T.occupiedBy && (T.front.by === lead || sameSide(state, T.front.by, lead))) {
+        const prev = T.front.pct;
+        T.front.prev = prev; T.front.pct = Math.max(0, prev - clamp(8 / Math.max(ratio, 0.2), 8, 25)); T.front.turn = state.meta.turn;
+        ev.push({ kind: 'front', by: T.front.by, country: target, from: T.front.from, prev, pct: T.front.pct });
+        if (T.front.pct <= 0) T.front = null;
+      }
       const cas = Math.round((A + D) * between(state, 0.4, 0.9));
       T.casualties += cas; state.global.casualties += cas;
       ev.push({ kind: 'battle', attacker: lead, defender: target, at, result: 'repelled', occupied: false });
@@ -253,6 +268,27 @@ function updateChokepoints(state, ev) {
       cp.status = contested ? 'contested' : 'closed'; cp.by = owner;
     }
     if (prev !== cp.status) ev.push({ kind: 'chokepoint', zone, status: cp.status, by: cp.by, prev });
+  }
+}
+
+// Fronts nobody fought over this turn: a ceasefire freezes them, peace clears them, and defenders slowly retake ground.
+function updateFronts(state, ev) {
+  const turn = state.meta.turn;
+  for (const T of Object.values(state.countries)) {
+    const f = T.front; if (!f) continue;
+    if (T.occupiedBy) { if (f.turn < turn) T.front = null; continue; }
+    if (f.turn === turn) continue;
+    if (!atWar(state, f.by, T.id)) {
+      const frozen = state.treaties.some(t => t.type === 'ceasefire' && t.parties.includes(f.by) && t.parties.includes(T.id));
+      if (!frozen) T.front = null;
+      continue;
+    }
+    const held = unitsAt(state, 'country', T.id).filter(u => u.type === 'army' && (u.owner === T.id || sameSide(state, u.owner, T.id))).reduce((s, u) => s + u.strength, 0);
+    if (held < 40) { f.prev = f.pct; continue; }
+    const prev = f.pct;
+    f.prev = prev; f.pct = Math.max(0, prev - 6); f.turn = turn;
+    ev.push({ kind: 'front', by: f.by, country: T.id, from: f.from, prev, pct: f.pct });
+    if (f.pct <= 0) T.front = null;
   }
 }
 
@@ -319,7 +355,10 @@ function resolveDiplomacy(state, o, ev) {
       shiftRelation(state, a, b, o.type === 'peace' ? 60 : 30);
       if (o.type === 'peace') {
         const t = o.terms || {};
-        for (const [x, y] of [[a, b], [b, a]]) if (state.countries[x].occupiedBy === y && t.returnTerritory !== false) state.countries[x].occupiedBy = null;
+        for (const [x, y] of [[a, b], [b, a]]) {
+          const X = state.countries[x];
+          if (t.returnTerritory !== false && (X.occupiedBy === y || X.front?.by === y)) { X.occupiedBy = null; X.front = null; }
+        }
         if (t.reparations > 0 && t.payer && t.payee) { state.countries[t.payer].treasury -= t.reparations; state.countries[t.payee].treasury += t.reparations; }
         if (t.demilitarize) for (const u of Object.values(state.units)) if ((u.owner === a && u.loc.id === b) || (u.owner === b && u.loc.id === a)) u.loc = { kind: u.loc.kind, id: u.loc.kind === 'country' ? u.owner : u.loc.id };
       }
@@ -402,6 +441,7 @@ export function resolveTurn(state, ctx) {
   const invasions = runOrders(state, queued, ctx, ev);
   resolveNaval(state, ev);
   resolveInvasions(state, invasions, ev);
+  updateFronts(state, ev);
   updateChokepoints(state, ev);
 
   // Capitulation: occupied, exhausted countries stop fighting.

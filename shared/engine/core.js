@@ -1,6 +1,7 @@
 // Shared constants and small helpers for the simulation engine.
 import { SEA_ZONES } from '../data/places.js';
 import { MISSILE_RANGE_KM } from '../data/countries.js';
+import { ALLIANCES, sharedAlliances, BASE_RELATIONS } from '../data/alliances.js';
 
 export const UNIT_TYPES = {
   army:     { name: 'Army group', ar: 'مجموعة جيش', icon: 'army', domain: 'land', upkeep: 0.7, cost: 12 },
@@ -62,7 +63,13 @@ export const pairKey = (a, b) => (a < b ? `${a}|${b}` : `${b}|${a}`);
 export function shareAlliance(state, a, b) {
   const A = state.countries[a], B = state.countries[b];
   if (!A || !B) return false;
-  return A.alliances.some(x => B.alliances.includes(x)) || state.treaties.some(t => t.type === 'alliance' && t.parties.includes(a) && t.parties.includes(b));
+  return sharedAlliances(A, B).length > 0 || state.treaties.some(t => t.type === 'alliance' && t.parties.includes(a) && t.parties.includes(b));
+}
+// Mutual-defence obligations between two countries: real treaties, or an alliance signed in the game.
+export function boundAllies(state, a, b) {
+  const A = state.countries[a], B = state.countries[b];
+  if (!A || !B) return null;
+  return sharedAlliances(A, B).find(k => ALLIANCES[k].binding) || (state.treaties.some(t => t.type === 'alliance' && t.parties.includes(a) && t.parties.includes(b)) ? 'treaty' : null);
 }
 
 export function atWar(state, a, b) {
@@ -85,7 +92,10 @@ export function relation(state, a, b) {
   let r = 0;
   if (A.bloc !== 'N' && A.bloc === B.bloc) r += 60;
   else if (A.bloc !== 'N' && B.bloc !== 'N') r -= 55;
-  if (A.alliances.some(x => B.alliances.includes(x))) r += 35;
+  const shared = sharedAlliances(A, B);
+  if (shared.some(x => ALLIANCES[x].binding)) r += 40;
+  else if (shared.length) r += 12;
+  r += BASE_RELATIONS[k] || 0;
   if (atWar(state, a, b)) r = -100;
   return clamp(r, -100, 100);
 }

@@ -157,3 +157,30 @@ test('world-only actions are refused in a court committee', () => {
   const s = createCourtState({ id: 'c', name: 'Court', seed: 1 });
   assert.equal(applyAction(s, { type: 'resolveTurn' }, { role: 'stage', user: 'x', now: 1, geo }).ok, false);
 });
+
+test('real alliances: hub treaties do not tie US partners to each other', async () => {
+  const { s } = world();
+  const { boundAllies } = await import('../../shared/engine/core.js');
+  assert.ok(boundAllies(s, US, JP), 'US and Japan are treaty allies');
+  assert.ok(boundAllies(s, SA, '586'), 'Saudi Arabia and Pakistan have a defence pact');
+  assert.ok(boundAllies(s, FR, '616'), 'France and Poland are NATO allies');
+  assert.equal(boundAllies(s, '376', '634'), null, 'Israel and Qatar are not allied through the US');
+  assert.equal(s.countries[RU].bloc, 'B');
+  assert.equal(s.countries[US].bloc, 'A');
+});
+
+test('invasions push a front line forward until the country falls', () => {
+  const { s, kronos } = world();
+  kronos({ type: 'spawnUnits', country: RU, unitType: 'army', count: 10 });
+  let peak = 0;
+  for (let i = 0; i < 4 && !s.countries[UA].occupiedBy; i++) {
+    for (const a of parseCommand(s, 'russia invade ukraine 8', 'stage').actions) kronos(a);
+    kronos({ type: 'resolveTurn' });
+    peak = Math.max(peak, s.countries[UA].front?.pct || 0);
+    if (s.countries[UA].front && !s.countries[UA].occupiedBy) assert.ok(s.countries[UA].front.pct < 100);
+  }
+  assert.ok(peak > 0, 'the front moved');
+  assert.equal(s.countries[UA].occupiedBy, RU);
+  kronos({ type: 'forcePeace', a: RU, b: UA });
+  assert.equal(s.countries[UA].front, null);
+});

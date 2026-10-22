@@ -17,7 +17,7 @@ export function CourtPanel({ conn, user, state, committee, logout, onBack }) {
   const speaker = c.seats.find(s => s.id === c.speaker);
   const sp = c.speakTimer, rem = timerRemaining(sp, now);
   const [status, setStatus] = useState(conn.status);
-  useEffect(() => conn.on('status', setStatus), [conn]);
+  useEffect(() => { setStatus(conn.status); return conn.on('status', setStatus); }, [conn]);
 
   // Keyboard shortcuts for whoever is mirroring the chair.
   const ref = useRef(); ref.current = { c, objPick };

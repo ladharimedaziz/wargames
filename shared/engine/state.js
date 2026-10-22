@@ -1,5 +1,6 @@
 // Builds fresh committee states for world (map) mode and court mode.
 import { COUNTRIES, minorCountry } from '../data/countries.js';
+import { alliancesOf, defaultBloc } from '../data/alliances.js';
 import { SEA_ZONES } from '../data/places.js';
 import { zonesTouching } from '../geo.js';
 import { COURT_PHASES, newId } from './core.js';
@@ -31,12 +32,12 @@ export function createWorldState(opts, geoInfo) {
     if (!a) continue;
     s.countries[id] = {
       id, a3: d.a3, name: d.name, ar: d.ar, major: d.major, lat: a.lat, lon: a.lon,
-      control: d.major ? 'ai' : 'inactive', bloc: 'N',
+      control: d.major ? 'ai' : 'inactive', bloc: defaultBloc(id),
       base: { gdp: d.gdp, pop: d.pop }, gdp: d.gdp, treasury: Math.round(d.gdp * 0.08 * 10) / 10,
       industry: 1, energy: 1, support: 62, stability: 70, inflation: 2, influence: Math.min(100, Math.round(10 + Math.log10(d.gdp + 1) * 18)),
       airDefense: d.airDefense, nuclear: { has: d.nuclear, alert: false }, oilNet: d.oilNet,
-      alliances: d.alliances, stealth: d.stealth, veto: d.veto,
-      roe: 'firm', damage: 0, casualties: 0, refugees: 0, occupiedBy: null, capitulated: false,
+      alliances: alliancesOf(id), stealth: d.stealth, veto: d.veto,
+      roe: 'firm', damage: 0, casualties: 0, refugees: 0, occupiedBy: null, front: null, capitulated: false,
       sanctions: [], overflight: [], intel: {}, blindUntil: 0, cyber: {}, lastStruck: 0, warWeariness: 0,
       forces0: d.forces,
     };

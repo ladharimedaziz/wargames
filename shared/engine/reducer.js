@@ -322,7 +322,7 @@ const WORLD = {
     if (a.flag === 'nuclear') c.nuclear.has = !!a.value;
     else if (a.flag === 'stealth' || a.flag === 'veto') c[a.flag] = !!a.value;
     else if (a.flag === 'capitulated') { c.capitulated = !!a.value; if (a.value) s.wars = s.wars.filter(w => w.a !== c.id && w.b !== c.id); }
-    else if (a.flag === 'occupiedBy') c.occupiedBy = C(s, a.value) ? a.value : null;
+    else if (a.flag === 'occupiedBy') { c.occupiedBy = C(s, a.value) ? a.value : null; c.front = null; }
     else return err('Unknown flag.');
     return ok();
   } },
@@ -360,8 +360,20 @@ const WORLD = {
   } },
   forcePeace: { perm: 'kronos', run(s, a, ctx) {
     const pairs = a.all ? s.wars.map(w => [w.a, w.b]) : [[a.a, a.b]];
-    for (const [x, y] of pairs) { s.wars = s.wars.filter(w => !((w.a === x && w.b === y) || (w.a === y && w.b === x))); shiftRelation(s, x, y, 40); }
+    for (const [x, y] of pairs) {
+      s.wars = s.wars.filter(w => !((w.a === x && w.b === y) || (w.a === y && w.b === x))); shiftRelation(s, x, y, 40);
+      for (const [p, q] of [[x, y], [y, x]]) if (s.countries[p]?.front?.by === q) s.countries[p].front = null;
+    }
     log(s, ctx, a.all ? 'Kronos ended every war' : `Kronos ended the war between ${C(s, a.a)?.name} and ${C(s, a.b)?.name}`);
+    return ok();
+  } },
+  setFront: { perm: 'kronos', run(s, a, ctx) {
+    const c = C(s, a.country), by = C(s, a.by); if (!c || !by || c === by) return err('Pick two countries.');
+    const pct = clamp(Number(a.pct) || 0, 0, 99);
+    if (!pct) { c.front = null; return ok(); }
+    const prev = c.front?.by === a.by ? c.front.pct : 0;
+    c.front = { by: a.by, pct, prev, from: { lat: by.lat, lon: by.lon }, turn: s.meta.turn };
+    log(s, ctx, `Kronos set ${by.name}'s hold on ${c.name} to ${pct}%`);
     return ok();
   } },
   setRelation: { perm: 'kronos', run(s, a) { if (!C(s, a.a) || !C(s, a.b)) return err('Pick two countries.'); s.relations[[a.a, a.b].sort().join('|')] = clamp(Number(a.value) || 0, -100, 100); return ok(); } },

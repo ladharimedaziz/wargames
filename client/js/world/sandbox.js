@@ -82,6 +82,10 @@ export function SandboxTab({ conn, state, selected, selZone }) {
           <button class="btn xs" onClick=${() => k({ type: 'setFlag', country: other, flag: 'occupiedBy', value: cid })}>${state.countries[other].name} occupied by ${c.name}</button>
         </div>
         <div class="row" style="margin-top:6px">
+          <span class="dim small">${c.name} holds of ${state.countries[other].name}</span>
+          ${[0, 25, 50, 75].map(p => html`<button class=${cls('btn xs', (state.countries[other].front?.by === cid ? Math.round(state.countries[other].front.pct) : 0) === p && 'on')} onClick=${() => k({ type: 'setFront', country: other, by: cid, pct: p }, p ? `Front moved to ${p}%` : 'Front cleared')}>${p}%</button>`)}
+        </div>
+        <div class="row" style="margin-top:6px">
           <select class="input sm" value=${cat} onChange=${e => setCat(e.target.value)}>${TARGET_TYPES.map(t => html`<option value=${t}>${t}</option>`)}</select>
           <span class="dim small">Power</span><input type="range" min="1" max="5" value=${power} onInput=${e => setPower(+e.target.value)} />
           <button class="btn xs solid-danger" title="A strike nothing can intercept" onClick=${() => k({ type: 'smite', from: cid, target: other, category: cat, power }, 'Strike landed')}>Unstoppable strike</button>

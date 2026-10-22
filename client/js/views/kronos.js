@@ -11,7 +11,7 @@ export function KronosHome({ conn, user, logout }) {
   const [dmFor, setDmFor] = useState(null);
   const [accounts, setAccounts] = useState(null);
   const [status, setStatus] = useState(conn.status);
-  useEffect(() => conn.on('status', setStatus), [conn]);
+  useEffect(() => { setStatus(conn.status); return conn.on('status', setStatus); }, [conn]);
   useEffect(() => conn.on('overview:raw', m => setOverview(m.committees)), [conn]);
   useEffect(() => conn.on('accounts:raw', m => setAccounts(m.list)), [conn]);
   useEffect(() => conn.on('dm', m => { if (!m.msg.fromKronos) toast(`${m.msg.from}: ${m.msg.text.slice(0, 90)}`, m.msg.urgent ? 'error' : 'kronos'); }), [conn]);
@@ -107,6 +107,8 @@ function GlobalControls({ conn }) {
   const [label, setLabel] = useState('Prayer break');
   const [mins, setMins] = useState(20);
   const [text, setText] = useState('');
+  const [sure, setSure] = useState(false);
+  const resetAll = async () => { const r = await conn.request({ t: 'resetAll' }); toast(r.ok ? 'Every committee has been reset. Each one kept a "Before reset" save point.' : r.error, r.ok ? 'good' : 'error'); setSure(false); };
   return html`<div class="card"><div class="card-h"><h3>Every committee</h3></div><div class="card-b col">
     <div class="row"><input class="input sm grow" value=${label} onInput=${e => setLabel(e.target.value)} /><input class="input sm" style="width:56px" type="number" min="0" value=${mins} onInput=${e => setMins(+e.target.value)} title="Minutes (0 = until lifted)" /><span class="dim small">min</span></div>
     ${g.pause ? html`<button class="btn solid-danger" onClick=${() => conn.request({ t: 'pauseAll', on: false })}>End the pause everywhere</button>`
@@ -114,6 +116,10 @@ function GlobalControls({ conn }) {
     <hr class="sep" />
     <textarea class="input" rows="2" placeholder="Broadcast to every Zeus and display" value=${text} onInput=${e => setText(e.target.value)}></textarea>
     <div class="row"><button class="btn sm kronos" disabled=${!text.trim()} onClick=${() => { conn.request({ t: 'broadcast', text, seconds: 25 }); setText(''); }}>Broadcast</button>${g.broadcast && html`<button class="btn sm ghost" onClick=${() => conn.request({ t: 'broadcast', text: '' })}>Clear</button>`}</div>
+    <hr class="sep" />
+    ${sure ? html`<div class="col"><span class="small">Start every committee over from the beginning? Each keeps its name and type, and gets a "Before reset" save point you can restore.</span>
+        <div class="row"><button class="btn sm ghost" onClick=${() => setSure(false)}>Cancel</button><button class="btn sm solid-danger" onClick=${resetAll}>Yes, reset all</button></div></div>`
+      : html`<button class="btn danger" onClick=${() => setSure(true)}>↺ Reset every committee</button>`}
   </div></div>`;
 }
 
