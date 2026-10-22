@@ -206,7 +206,7 @@ function WorldOverview({ conn, state, setSelected }) {
     </div>
     ${fronts.length > 0 && html`<div class="sub-h">War fronts (${fronts.length})</div>${fronts.map(c => html`<${FrontRow} conn=${conn} state=${state} c=${c} setSelected=${setSelected} named />`)}`}
     <div class="sub-h">Delegates (${players.length})</div>
-    ${players.length === 0 && html`<div class="empty">No delegate countries yet. Use the Countries tab or type <span class="mono">player saudi uae</span>.</div>`}
+    ${players.length === 0 && html`<div class="empty">No delegate countries yet. Use the Countries tab or type <span class="mono">player egypt uae</span>.</div>`}
     ${players.map(c => html`<div class="crow" onClick=${() => setSelected(c.id)}><i class="bloc-sw" style=${`background:${state.blocs[c.bloc].color}`}></i><div class="grow"><b>${c.name}</b>${c.delegate ? html` <span class="dim small">${c.delegate}</span>` : ''}<div class="dim small">${fmt.money(c.gdp)} · ${Math.round(c.support)}% support</div></div>${state.wars.some(w => w.a === c.id || w.b === c.id) && html`<span class="chip red">war</span>`}</div>`)}
     <div class="sub-h">Chokepoints</div>
     ${Object.entries(g.chokepoints).map(([z, cp]) => html`<div class="row small"><i class="dot" style=${`background:${cp.status === 'closed' ? 'var(--red)' : cp.status === 'contested' ? 'var(--gold)' : 'var(--green)'}`}></i><span class="grow">${SEA_ZONES[z].name}</span><span class="dim">${cp.status}</span></div>`)}

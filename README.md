@@ -64,7 +64,7 @@ Kronos can rename committees, reset any committee as a world or court committee,
 | `us paratroopers afghanistan` · `us invade afghanistan` | Paratroop drop. An invasion with no land border falls back to sailing the nearest fleet in, or to an airborne drop for countries with strategic airlift |
 | `us b-2 strike iran` · `us b2 moab afghanistan` · `us strike iran with 2 f-117` · `us b-52 strike iran 3` · `us b-1b iran energy` | Named US aircraft, each with its own model and run. The B-2 and F-117 are stealthy precision strikes; only the B-2 can carry the MOAB |
 
-The bar shows what it understood before you press Enter. **Out of bounds.** Israel and Palestine are permanently out of play: they hold no forces, cannot act or be targeted, are left out of every country list, and no war, blockade, sandbox power or stage zoom can reach them. Every map covers both with one **OUT OF BOUNDS** zone (dark fill, amber hazard stripes and a dashed border). Saves made before this rule are cleaned up at the next turn.
+The bar shows what it understood before you press Enter. **Out of bounds.** Israel, Palestine and Saudi Arabia are permanently out of play: they hold no forces (foreign forces based there go home), cannot act or be targeted, are left out of every country list, and no war, blockade, sandbox power or stage zoom can reach them. Every map draws an **OUT OF BOUNDS** zone (dark fill, amber hazard stripes and a dashed border) over Israel and Palestine, and another over Saudi Arabia. The list lives in `OOB_GROUPS` in shared/engine/core.js. Saves made before this rule are cleaned up at the next turn.
 
 **Zoom.** Every map zooms in up to 24×, and a click on a country on the stage frames it more tightly.
 

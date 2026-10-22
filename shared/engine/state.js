@@ -58,7 +58,7 @@ export function createWorldState(opts, geoInfo) {
     if (isOOB(c.id)) { Object.assign(c, { control: 'inactive', oob: true, bloc: 'N', alliances: [] }); continue; }
     const bases = AIR_BASES[c.a3] || {};
     for (const type of ['army', 'fighter', 'bomber', 'missile']) for (let i = 0; i < f[type]; i++) {
-      const host = bases[type]?.[i] && byA3[bases[type][i]];
+      const host = bases[type]?.[i] && !isOOB(byA3[bases[type][i]]) && byA3[bases[type][i]];
       place(c.id, type, { kind: 'country', id: host || c.id });
     }
     const zones = zonesTouching(c.id), dep = DEPLOYMENTS[c.a3] || {};

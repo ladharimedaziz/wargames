@@ -668,7 +668,11 @@ function resolveEvacuation(state, o, ev) {
 
 // Out-of-bounds countries hold no forces and take no part in any war, even in saves made before the rule.
 function enforceOOB(state) {
-  for (const u of Object.values(state.units)) if (isOOB(u.owner)) delete state.units[u.id]; else if (u.blockadeOf && isOOB(u.blockadeOf)) { u.blockade = false; delete u.blockadeOf; }
+  for (const u of Object.values(state.units)) {
+    if (isOOB(u.owner)) { delete state.units[u.id]; continue; }
+    if (u.blockadeOf && isOOB(u.blockadeOf)) { u.blockade = false; delete u.blockadeOf; }
+    if (u.loc.kind === 'country' && isOOB(u.loc.id)) u.loc = { kind: 'country', id: u.owner }; // forces based there go home
+  }
   state.wars = state.wars.filter(w => !isOOB(w.a) && !isOOB(w.b));
   for (const id of OUT_OF_BOUNDS) {
     const c = state.countries[id]; if (!c) continue;

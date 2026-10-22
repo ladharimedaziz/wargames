@@ -170,9 +170,10 @@ export function countryName(state, id, lang = 'en') {
   return lang === 'ar' ? c.ar : c.name;
 }
 
-// Israel and Palestine are permanently out of bounds: no orders, no forces, no sandbox powers, and every map draws
-// an OUT OF BOUNDS zone over them.
-export const OUT_OF_BOUNDS = ['376', '275'];
+// Countries permanently out of bounds: no orders, no forces, no sandbox powers, and every map draws an OUT OF BOUNDS
+// zone over each group (one zone for Israel and Palestine, one for Saudi Arabia).
+export const OOB_GROUPS = [['376', '275'], ['682']];
+export const OUT_OF_BOUNDS = OOB_GROUPS.flat();
 export const isOOB = id => OUT_OF_BOUNDS.includes(id);
-export const OOB_ERROR = 'Israel and Palestine are out of bounds in this simulation.';
+export const OOB_ERROR = 'Israel, Palestine and Saudi Arabia are out of bounds in this simulation.';
 export function isActive(c) { return c && c.control !== 'inactive' && !c.capitulated && !isOOB(c.id); }
