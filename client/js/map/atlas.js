@@ -23,7 +23,20 @@ async function load(url) {
   });
   const borders = mesh(topo, topo.objects.countries, (a, b) => a !== b);
   const coast = mesh(topo, topo.objects.countries, (a, b) => a === b);
-  return { countries, byId: new Map(countries.map(c => [c.id, c])), borders, coast };
+  return { countries, byId: new Map(countries.map(c => [c.id, c])), borders, coast, topo, pairs: new Map() };
+}
+
+// The land border two countries share, as a MultiLineString (empty when they do not touch). Cached per pair.
+export function pairBorder(atlas, a, b) {
+  const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+  if (!atlas.pairs.has(key)) {
+    const { topo } = atlas;
+    atlas.pairs.set(key, mesh(topo, topo.objects.countries, (x, y) => {
+      const i = featureCountryId(x), j = featureCountryId(y);
+      return (i === a && j === b) || (i === b && j === a);
+    }));
+  }
+  return atlas.pairs.get(key);
 }
 
 export function loadAtlas() {

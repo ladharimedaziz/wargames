@@ -44,7 +44,7 @@ Kronos can rename committees, reset any committee as a world or court committee,
 
 | Type | Does |
 |---|---|
-| `russia strike ukraine 3 bombers energy escort 2` | Air strike with chosen units, target type and fighter escort |
+| `russia strike ukraine 3 bombers energy escort 2` | Air strike with chosen units, target type and fighter escort. Bombers fly a carpet-bombing run, fighters a precision strike, missiles a salvo; military strikes hit bases and the front, industry and energy strikes hit major cities, capital strikes hit the capital |
 | `iran blockade hormuz 2` | Blockade a sea zone with two fleets |
 | `us sail to south china sea carrier` | Move a carrier group |
 | `china invade taiwan 3` | Send three army groups (needs a land border, or a fleet offshore for a naval landing) |
@@ -65,7 +65,7 @@ The engine writes the news. Headlines wait in the **News desk** until a Zeus air
 
 Countries start in their real-world alliances (NATO, the GCC, CSTO, the Saudi–Pakistan pact, US treaty partners and more), with real rivalries reflected in starting relations. Militaries match reality as closely as the game allows: real force sizes, plus a quality multiplier for land, air and sea, so the US Navy (eleven supercarriers, forward-deployed fleets) is in a class of its own. Economies start from real figures too: each country has its own inflation, public approval, stability, industry, energy security, reserves and growth rate, and recovers toward its own normal rather than a universal 100%.
 
-**War fronts.** Invasions push a front line across the defending country turn by turn, and the display animates the advance. In the country card, a Zeus chooses how each front behaves: **Battle decides** (the engine), **Advance**, **Hold** or **Fall back**, and can move it right now by ±10 or ±25. Pushing an occupied country's front back liberates it. Countries with landing fleets (the US, China, Russia, the UK, France, Japan and others, or anyone with a carrier) can invade across the sea; the display shows the landing craft hitting the beach.
+**War fronts.** When neighbours are at war their shared border glows with shelling, and once ground is taken the real border bends: the attacker's territory grows out of the border, unevenly, with salients and pockets, and the percentage is the share of the defender's land held. Invasions from further away sweep in from the landing point. In the country card, a Zeus chooses how each front behaves: **Battle decides** (the engine), **Advance**, **Hold** or **Fall back**, and can move it right now by ±10 or ±25. Pushing an occupied country's front back liberates it. Countries with landing fleets (the US, China, Russia, the UK, France, Japan and others, or anyone with a carrier) can invade across the sea; the display shows the landing craft hitting the beach.
 
 Nuclear weapons only work at tension 10. The nuclear ending is a quiet black screen, with nothing graphic.
 
