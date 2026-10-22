@@ -1,0 +1,28 @@
+{
+  "name": "world-engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The World Engine: live crisis simulation website for Riyadh MUN",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test \"test/unit/*.test.js\"",
+    "test:e2e": "node test/e2e/run.js"
+  },
+  "dependencies": {
+    "d3-array": "^3.2.4",
+    "d3-geo": "^3.1.1",
+    "htm": "^3.1.1",
+    "preact": "^11.0.1",
+    "topojson-client": "^3.1.0",
+    "world-atlas": "^2.0.2",
+    "ws": "^8.22.0"
+  },
+  "devDependencies": {
+    "playwright": "^1.64.1"
+  }
+}
