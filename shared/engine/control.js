@@ -224,6 +224,24 @@ export function behindLines(state, X, Y, depth, pick = Math.random) {
   return { from: { lon: fl, lat: fa }, to: { lon: tl, lat: ta }, key: best, contact: c0 };
 }
 
+// The cell Y still holds that lies closest to a point (a beach for helicopters coming off a ship, an airfield
+// near the capital for paratroopers).
+export function nearestHeld(state, Y, point) {
+  if (!G || !point) return null;
+  const pi = (point.lon + 180) / CELL, pj = (90 - point.lat) / CELL;
+  let best = null, bd = Infinity;
+  for (const k of G.cellsOf(Y)) {
+    if (controller(state, k) !== Y) continue;
+    const [i, j] = cellIJ(k);
+    let dx = i + 0.5 - pi; if (dx > NI / 2) dx -= NI; if (dx < -NI / 2) dx += NI;
+    const d = dx * dx + (j + 0.5 - pj) ** 2;
+    if (d < bd) { bd = d; best = k; }
+  }
+  if (best == null) return null;
+  const [lon, lat] = cellCenter(best);
+  return { key: best, at: { lon, lat } };
+}
+
 // An air assault takes a pocket of n cells around a landing zone, cut off from the main line.
 export function dropPocket(state, X, Y, center, n) {
   const taken = [], seen = new Set([center]);

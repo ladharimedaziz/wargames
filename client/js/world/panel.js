@@ -50,6 +50,12 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
 
   useEffect(() => {
     const onKey = e => {
+      if (e.key === 's' && (e.metaKey || e.ctrlKey)) {
+        // Quick manual save from anywhere in the panel.
+        e.preventDefault();
+        conn.request({ t: 'snapshot', committee, label: `Quick save, ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` }).then(r => toast(r.ok ? 'Saved. Find it under Saves.' : r.error, r.ok ? 'good' : 'error'));
+        return;
+      }
       if (e.target.closest('input, textarea, select')) return;
       if (e.key === '/' || (e.key === 'k' && (e.metaKey || e.ctrlKey))) { e.preventDefault(); document.querySelector('.cmd-input')?.focus(); }
       if (e.key === 'Escape') { setPicking(null); setSelected(null); setSelZone(null); setBrush(null); }
@@ -189,7 +195,7 @@ function DrawBar({ state, brush, setBrush }) {
       <button class=${brush.mode === 'restore' ? 'on' : ''} onClick=${() => set({ mode: 'restore' })} title="Give painted ground back to the country it belongs to">Give back</button>
     </div>
     ${brush.mode === 'take' && html`<div style="width:170px"><${CountrySelect} sm state=${state} value=${brush.owner} onChange=${v => set({ owner: v })} placeholder="Which side takes it" /></div>`}
-    <div class="seg sm">${[['S', 10], ['M', 20], ['L', 36]].map(([l, r]) => html`<button class=${brush.r === r ? 'on' : ''} onClick=${() => set({ r })}>${l}</button>`)}</div>
+    <div class="seg sm">${[['XS', 4], ['S', 9], ['M', 18], ['L', 32], ['XL', 54]].map(([l, r]) => html`<button class=${brush.r === r ? 'on' : ''} onClick=${() => set({ r })}>${l}</button>`)}</div>
     <span class="dim small grow">${brush.mode === 'take' ? (enemies.length ? `Paint inside ${enemies.slice(0, 3).join(', ')}${enemies.length > 3 ? '…' : ''}.` : `${owner?.name || 'This side'} is at war with nobody yet.`) : 'Paint over held ground to hand it back.'} Scroll to zoom, right-drag to pan.</span>
     <button class="btn sm primary" onClick=${() => setBrush(null)}>Done</button>
   </div>`;

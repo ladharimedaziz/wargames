@@ -1,4 +1,4 @@
-// Real-world alliances and rivalries the simulation starts from (as of late 2025).
+// Real-world alliances and rivalries the simulation starts from (as of autumn 2026, from the latest reporting available).
 // binding: a mutual-defence commitment; AI members may join a member's defensive war.
 // hub: a hub-and-spoke arrangement. Only pairs that include the hub count as allied (US partners are not allied to each other).
 // Members are ISO alpha-3 codes for countries in the main dataset, or ISO numeric ids for smaller ones.
@@ -36,16 +36,25 @@ export const ALLIANCES = {
 // Starting relations for well-known pairs, added on top of alliances and blocs (-100 to 100).
 // Pairs across the Western/Eastern blocs already start 55 lower, so their figures here are smaller.
 const RELATIONS = [
-  ['ISR', 'IRN', -85], ['IND', 'PAK', -65], ['CHN', 'TWN', -60], ['PRK', 'KOR', -40], ['PRK', 'JPN', -15], ['PRK', 'USA', -30],
-  ['RUS', 'UKR', -90], ['USA', 'IRN', -20], ['SAU', 'IRN', -15], ['CHN', 'USA', -5], ['RUS', 'USA', -20], ['RUS', 'GBR', -20],
-  ['ARM', 'AZE', -55], ['CHN', 'IND', -30], ['CHN', 'JPN', -5], ['GRC', 'TUR', -25], ['ISR', 'LBN', -50], ['ISR', 'SYR', -35],
-  ['ISR', 'YEM', -60], ['USA', 'VEN', -50], ['USA', 'CUB', -45], ['MAR', 'DZA', -45], ['ETH', 'EGY', -30], ['RUS', 'POL', -15],
-  ['RUS', 'EST', -10], ['RUS', 'LVA', -10], ['RUS', 'LTU', -10], ['CHN', 'PHL', -5], ['CHN', 'VNM', -15], ['PAK', 'AFG', -30],
-  ['USA', 'ISR', 70], ['USA', 'GBR', 30], ['USA', 'TWN', 35], ['RUS', 'CHN', 45], ['RUS', 'IRN', 40], ['CHN', 'IRN', 30],
-  ['RUS', 'PRK', 50], ['CHN', 'PAK', 55], ['IND', 'RUS', 25], ['TUR', 'AZE', 45], ['RUS', 'SRB', 35], ['UKR', 'POL', 35],
-  ['SAU', 'PAK', 40], ['SAU', 'ARE', 30], ['SAU', 'EGY', 35], ['ARE', 'EGY', 30], ['FRA', 'DEU', 25], ['JPN', 'AUS', 30],
-  ['IND', 'ARE', 25], ['SAU', 'USA', 35], ['ARE', 'USA', 30], ['RUS', 'BLR', 40], ['CHN', 'PRK', 30], ['IRN', 'YEM', 35],
-  ['IRN', 'IRQ', 25], ['USA', 'UKR', 25], ['GBR', 'UKR', 35],
+  // Wars, rivalries and frozen conflicts.
+  ['RUS', 'UKR', -90], ['ISR', 'IRN', -95], ['USA', 'IRN', -30], ['IND', 'PAK', -75], ['CHN', 'TWN', -60], ['PRK', 'KOR', -45],
+  ['PRK', 'JPN', -20], ['PRK', 'USA', -30], ['SAU', 'IRN', -5], ['CHN', 'USA', -10], ['RUS', 'USA', -15], ['RUS', 'GBR', -25],
+  ['ARM', 'AZE', -25], ['CHN', 'IND', -15], ['CHN', 'JPN', -15], ['GRC', 'TUR', -20], ['ISR', 'LBN', -55], ['ISR', 'SYR', -30],
+  ['ISR', 'YEM', -70], ['USA', 'YEM', -40], ['USA', 'VEN', -70], ['USA', 'CUB', -45], ['MAR', 'DZA', -45], ['ETH', 'EGY', -30],
+  ['ETH', '232', -35], ['RUS', 'POL', -20], ['RUS', 'EST', -15], ['RUS', 'LVA', -15], ['RUS', 'LTU', -15], ['RUS', 'FIN', -10],
+  ['CHN', 'PHL', -30], ['CHN', 'VNM', -15], ['PAK', 'AFG', -55], ['THA', '116', -35], ['ISR', 'PSE', -80], ['ISR', 'TUR', -45],
+  ['ISR', 'QAT', -40], ['ISR', 'EGY', -10], ['ISR', 'IRQ', -40], ['SYR', 'IRN', -35], ['AZE', 'RUS', -25], ['SRB', 'XKX', -40],
+  ['COD', '646', -25], ['DZA', '466', -30], ['DZA', 'FRA', -20], ['VEN', '328', -35], ['IND', 'BGD', -15], ['GBR', 'IRN', -20],
+  ['FRA', 'IRN', -20], ['DEU', 'IRN', -20], ['USA', 'ZAF', -20], ['USA', 'CAN', -10], ['USA', 'BRA', -10], ['USA', 'DNK', -10],
+  ['IND', 'USA', -5], ['SDN', 'ARE', -30],
+  // Partnerships.
+  ['USA', 'ISR', 70], ['USA', 'GBR', 30], ['USA', 'TWN', 35], ['RUS', 'CHN', 50], ['RUS', 'IRN', 35], ['CHN', 'IRN', 30],
+  ['RUS', 'PRK', 60], ['CHN', 'PAK', 55], ['IND', 'RUS', 30], ['TUR', 'AZE', 50], ['RUS', 'SRB', 30], ['UKR', 'POL', 30],
+  ['SAU', 'PAK', 45], ['SAU', 'ARE', 25], ['SAU', 'EGY', 35], ['ARE', 'EGY', 30], ['FRA', 'DEU', 25], ['JPN', 'AUS', 30],
+  ['IND', 'ARE', 30], ['SAU', 'USA', 45], ['ARE', 'USA', 35], ['QAT', 'USA', 35], ['RUS', 'BLR', 45], ['CHN', 'PRK', 30],
+  ['IRN', 'YEM', 35], ['IRN', 'IRQ', 25], ['USA', 'UKR', 20], ['GBR', 'UKR', 40], ['FRA', 'UKR', 35], ['DEU', 'UKR', 35],
+  ['TUR', 'SYR', 40], ['SAU', 'SYR', 30], ['QAT', 'SYR', 30], ['USA', 'SYR', 5], ['TUR', 'QAT', 35], ['HUN', 'RUS', 20],
+  ['JPN', 'KOR', 15], ['PAK', 'TUR', 35], ['ISR', 'IND', 30], ['ISR', 'ARE', 15], ['SAU', 'CHN', 20], ['ARE', 'CHN', 20],
 ];
 
 export const DEFAULT_BLOCS = {

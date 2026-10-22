@@ -1,6 +1,6 @@
 // Order definitions, validation and unit selection. Used for live previews in the panel and again at resolution.
 import { SEA_ZONES, FLEET_MOVES_PER_TURN } from '../data/places.js';
-import { AMPHIBIOUS_A3, NEO_A3 } from '../data/militaries.js';
+import { AMPHIBIOUS_A3, NEO_A3, AIRBORNE_KM, US_AIRCRAFT } from '../data/militaries.js';
 import { distanceKm, seaRoute, zonesTouching } from '../geo.js';
 import { UNIT_TYPES, TARGET_TYPES, ROE, anchor, unitRange, unitsOf, atWar, sameSide, countryName, isActive } from './core.js';
 
@@ -32,6 +32,7 @@ export const ORDER_TYPES = {
   neo:        { label: 'Evacuate citizens (NEO)', group: 'military', needs: ['target'] },
   helistrike: { label: 'Helicopter strike', group: 'military', needs: ['target'] },
   airassault: { label: 'Air assault behind the lines', group: 'military', needs: ['target'] },
+  airdrop:    { label: 'Paratroop drop', group: 'military', needs: ['target'] },
   roe:        { label: 'Rules of engagement', group: 'military', needs: ['kind'] },
   election:   { label: 'Call an election', group: 'politics', needs: [] },
 };
@@ -69,6 +70,13 @@ export function validateOrder(state, o) {
         if (d > r) return fail(`${UNIT_TYPES[u.type].name} based in ${countryName(state, u.loc.id)} is ${Math.round(d)} km from ${T.name}; its range is ${r} km.`);
       }
       if (o.category && !TARGET_TYPES.includes(o.category)) return fail('Unknown target type.');
+      if (o.aircraft) {
+        const spec = US_AIRCRAFT[o.aircraft];
+        if (!spec) return fail('Unknown aircraft.');
+        if (c.a3 !== 'USA') return fail(`Only the United States flies the ${spec.name}.`);
+        if (units.some(u => u.type !== spec.type)) return fail(`The ${spec.name} flies from ${spec.type === 'bomber' ? 'bomber' : 'fighter'} wings.`);
+        if (o.payload === 'moab' && o.aircraft !== 'b2') return fail('The heavy bomb is a B-2 option.');
+      }
       if (sameSide(state, o.country, o.target)) return fail(`${T.name} is on the same side as ${c.name}.`);
       return { ok: true };
     }
@@ -82,11 +90,17 @@ export function validateOrder(state, o) {
         if (from === o.target) return fail('That army is already there.');
         const adjacent = (state.adjacency[from] || []).includes(o.target);
         if (adjacent) continue;
-        const zone = liftZone(state, o.country, o.target);
-        if (!zone) return fail(`${T.name} does not border ${countryName(state, from)}, and ${c.name} has no fleet off its coast for a landing.`);
-        if (!friendly && !canLandBySea(state, o.country)) return fail(`${c.name} does not have the landing ships for a sea invasion. Only large navies, or countries with a carrier group, can land troops on a defended coast.`);
-        o.amphibious = true; o.zone = zone;
+        const seaOk = friendly || canLandBySea(state, o.country);
+        const zone = seaOk && liftZone(state, o.country, o.target);
+        if (zone) { o.amphibious = true; o.zone = zone; continue; }
+        // No fleet off the coast yet: the nearest warships in range sail there as part of the order.
+        const plan = seaOk && sailPlan(state, o.country, o.target);
+        if (plan) { o.amphibious = true; o.zone = plan.zone; o.sail = plan.unit; continue; }
+        // Landlocked, or out of reach by sea: countries with paratroopers fly the spearhead in.
+        if (airdropReach(state, o.country, o.target, u)) { o.airborne = true; continue; }
+        return fail(`${T.name} does not border ${countryName(state, from)}${zonesTouching(o.target).length ? `, and ${c.name} has no warships within reach of its coast for a landing` : ' and has no coast'}${AIRBORNE_KM[c.a3] ? `; ${T.name} is also beyond ${c.name}'s paratroop range` : `, and ${c.name} has no paratroopers to fly in`}.`);
       }
+      if (o.airborne && armies.length > 2) return fail('Paratroopers can drop at most two army groups at once.');
       if (sameSide(state, o.country, o.target) || o.target === o.country) return { ok: true, peaceful: true };
       if (T.overflight.includes(o.country)) return { ok: true, peaceful: true };
       return { ok: true };
@@ -130,12 +144,27 @@ export function validateOrder(state, o) {
       if (atWar(state, o.country, o.target)) return fail(`${c.name} is at war with ${T.name}; its citizens cannot be flown out.`);
       return { ok: true };
     }
+    case 'airdrop': {
+      if (!AIRBORNE_KM[c.a3]) return fail(`${c.name} has no paratroopers. Countries with airborne forces include the US, Russia, China, the UK, France, India and Turkey.`);
+      const armies = units.filter(u => u.type === 'army' && u.loc.kind === 'country' && u.loc.id !== o.target);
+      if (!armies.length) return fail(`${c.name} has no army group available to drop.`);
+      if (armies.length > 2) return fail('Paratroopers can drop at most two army groups at once.');
+      if (!armies.every(u => airdropReach(state, o.country, o.target, u))) return fail(`${T.name} is beyond ${c.name}'s paratroop range (${AIRBORNE_KM[c.a3].toLocaleString('en-US')} km).`);
+      o.airborne = true;
+      if (sameSide(state, o.country, o.target) || T.overflight.includes(o.country)) return { ok: true, peaceful: true };
+      return { ok: true };
+    }
     case 'helistrike': case 'airassault': {
-      // Helicopters fly from the front line: the two sides must touch on land, or one must hold ground in the other.
-      if (!atWar(state, o.country, o.target)) return fail(`${c.name} is not at war with ${T.name}.`);
+      // Helicopters fly from the front line: the two sides touch on land, one holds ground in the other, or the
+      // attacker has forces based in a friendly country next door (US troops in Kuwait next to Iraq).
+      if (sameSide(state, o.country, o.target)) return fail(`${T.name} is on the same side as ${c.name}.`);
       const touch = (state.adjacency[o.country] || []).includes(o.target) || T.front?.by === o.country || c.front?.by === o.target
-        || Object.values(state.units).some(u => u.owner === o.country && u.type === 'army' && u.loc.kind === 'country' && u.loc.id === o.target);
-      if (!touch) return fail(`${c.name} has no front line with ${T.name} for helicopters to cross.`);
+        || Object.values(state.units).some(u => u.owner === o.country && u.loc.kind === 'country' && (u.loc.id === o.target
+          || ((state.adjacency[u.loc.id] || []).includes(o.target) && sameSide(state, u.loc.id, o.country))));
+      // Or from the sea: a carrier group, or a navy with landing ships, sitting off the coast.
+      const deck = !touch && heliDeck(state, o.country, o.target);
+      if (!touch && !deck) return fail(`${c.name} has no front line with ${T.name} for helicopters to cross, and no strike group off its coast to fly them from.`);
+      o.fromSea = deck || null;
       const army = Object.values(state.units).filter(u => u.owner === o.country && u.type === 'army' && u.strength > 20);
       if (!army.length) return fail(`${c.name} has no army aviation left.`);
       if (o.type === 'airassault') o.units = [army.find(u => u.loc.id === o.target)?.id || army[0].id];
@@ -167,6 +196,37 @@ export function canLandBySea(state, owner) {
   return AMPHIBIOUS_A3.includes(state.countries[owner]?.a3) || Object.values(state.units).some(u => u.owner === owner && u.type === 'carrier' && u.strength > 0);
 }
 
+// Warships of `owner` that can reach a sea zone off `target` this turn: the closest one sails there to cover a landing.
+export function sailPlan(state, owner, target) {
+  const coast = zonesTouching(target); if (!coast.length) return null;
+  const blocked = blockedFor(state, owner);
+  let best = null;
+  for (const u of Object.values(state.units)) {
+    if (u.owner !== owner || u.strength <= 0 || (u.type !== 'fleet' && u.type !== 'carrier') || u.loc.kind !== 'sea') continue;
+    for (const z of coast) {
+      const r = seaRoute(u.loc.id, z, blocked);
+      if (r && r.length - 1 <= FLEET_MOVES_PER_TURN * 2 && (!best || r.length < best.len || (r.length === best.len && u.type === 'carrier'))) best = { unit: u.id, zone: z, len: r.length };
+    }
+  }
+  return best;
+}
+
+// Paratroopers fly from home or from wherever the army group is, up to the country's airborne range.
+export function airdropReach(state, owner, target, u) {
+  const km = AIRBORNE_KM[state.countries[owner]?.a3]; if (!km) return false;
+  const T = state.countries[target], to = { lat: T.lat, lon: T.lon };
+  const from = u ? anchor(state, u.loc) : null, home = state.countries[owner];
+  return Math.min(distanceKm({ lat: home.lat, lon: home.lon }, to), from ? distanceKm(from, to) : Infinity) <= km;
+}
+
+// A sea zone off `target` holding a deck for helicopters: a carrier, or warships of a navy with landing ships.
+export function heliDeck(state, owner, target) {
+  const zones = zonesTouching(target), amphib = AMPHIBIOUS_A3.includes(state.countries[owner]?.a3);
+  const ships = Object.values(state.units).filter(u => u.owner === owner && u.strength > 0 && zones.includes(u.loc.id) && (u.type === 'carrier' || (amphib && u.type === 'fleet')));
+  ships.sort((a, b) => (b.type === 'carrier') - (a.type === 'carrier'));
+  return ships[0]?.loc.id || null;
+}
+
 // Chokepoints closed by an enemy of `owner` are impassable for its fleets.
 export function blockedFor(state, owner) {
   const b = new Set();
@@ -179,6 +239,9 @@ export function autoUnits(state, o, counts = {}) {
   const T = o.target && state.countries[o.target];
   if (o.type === 'strike' && T) {
     const to = { lat: T.lat, lon: T.lon };
+    // A named American aircraft flies from the matching wings; the B-2 can carry the heavy bomb instead.
+    const spec = counts.aircraft && US_AIRCRAFT[counts.aircraft];
+    if (spec) { o.aircraft = counts.aircraft; o.payload = counts.aircraft === 'b2' && counts.payload === 'moab' ? 'moab' : null; counts = { ...counts, type: spec.type }; }
     const want = counts.type ? [[counts.type, counts.n || 1]] : [['bomber', counts.n || 1]];
     let units = [];
     for (const [type, n] of want) units.push(...pickUnits(state, o.country, type, to, n).chosen.map(s => s.u.id));
@@ -193,9 +256,16 @@ export function autoUnits(state, o, counts = {}) {
     const n = counts.n || 1;
     let armies = unitsOf(state, o.country, 'army').filter(u => u.loc.kind === 'country' && u.loc.id !== o.target);
     const borders = armies.filter(u => (state.adjacency[u.loc.id] || []).includes(o.target));
-    const pool = borders.length ? borders : (hasSeaLift(state, o.country, o.target) ? armies : borders);
+    const bySea = canLandBySea(state, o.country) || sameSide(state, o.country, o.target);
+    const sea = bySea && (hasSeaLift(state, o.country, o.target) || sailPlan(state, o.country, o.target));
+    const air = !sea && armies.filter(u => airdropReach(state, o.country, o.target, u));
+    const pool = borders.length ? borders : sea ? armies : air;
     pool.sort((a, b) => b.strength - a.strength);
-    o.units = pool.slice(0, n).map(u => u.id);
+    o.units = pool.slice(0, air && !borders.length ? Math.min(n, 2) : n).map(u => u.id);
+  } else if (o.type === 'airdrop' && T) {
+    const armies = unitsOf(state, o.country, 'army').filter(u => u.loc.kind === 'country' && u.loc.id !== o.target && u.strength > 20 && airdropReach(state, o.country, o.target, u));
+    armies.sort((a, b) => b.strength - a.strength);
+    o.units = armies.slice(0, Math.min(counts.n || 1, 2)).map(u => u.id);
   } else if ((o.type === 'fleet' || o.type === 'blockade') && SEA_ZONES[o.zone]) {
     const ships = unitsOf(state, o.country).filter(u => (u.type === 'fleet' || u.type === 'carrier') && !(counts.type && u.type !== counts.type));
     const blocked = blockedFor(state, o.country);
@@ -215,8 +285,9 @@ export function describeOrder(state, o, lang = 'en') {
   const count = type => units.filter(u => u.type === type).length;
   const parts = ['bomber', 'missile', 'carrier', 'fighter', 'army', 'fleet'].filter(count).map(tp => `${count(tp)} ${UNIT_TYPES[tp].name.toLowerCase().replace(/y$/, count(tp) > 1 ? 'ie' : 'y')}${count(tp) > 1 ? 's' : ''}`);
   switch (o.type) {
-    case 'strike': return `${c} strikes ${t}${o.category ? ` (${o.category})` : ''} with ${parts.join(', ') || 'no units'}${o.escort?.length ? `, ${o.escort.length} fighter escort` : ''}`;
-    case 'invade': return `${c} sends ${parts.join(', ')} into ${t}${o.amphibious ? ' by sea' : ''}`;
+    case 'strike': return `${c} strikes ${t}${o.category ? ` (${o.category})` : ''} with ${o.aircraft ? `${US_AIRCRAFT[o.aircraft]?.name.replace(/s$/, 'se')}s${o.payload === 'moab' ? ' carrying the heavy bomb (MOAB)' : ''}` : parts.join(', ') || 'no units'}${o.escort?.length ? `, ${o.escort.length} fighter escort` : ''}`;
+    case 'invade': return `${c} sends ${parts.join(', ')} into ${t}${o.amphibious ? ` by sea${o.sail ? ', its fleet sailing in to cover the landing' : ''}` : o.airborne ? ' by parachute' : ''}`;
+    case 'airdrop': return `${c} drops paratroopers into ${t} (${parts.join(', ') || 'no units'})`;
     case 'rebase': return `${c} rebases ${parts.join(', ')} to ${t}`;
     case 'fleet': return `${c} sails ${parts.join(', ')} to ${n(o.zone)}`;
     case 'blockade': return `${c} blockades ${n(o.zone)} with ${parts.join(', ')}`;
@@ -240,7 +311,7 @@ export function describeOrder(state, o, lang = 'en') {
     case 'satellite': return `${c} blinds ${t}'s satellites`;
     case 'neo': return `${c} evacuates its citizens from ${t}`;
     case 'helistrike': return `${c} attack helicopters strike ${t}'s forces behind the front`;
-    case 'airassault': return `${c} lands troops by helicopter behind ${t}'s lines`;
+    case 'airassault': return o.fromSea ? `${c} flies troops ashore in ${t} by helicopter from its ships off the coast` : `${c} lands troops by helicopter behind ${t}'s lines`;
     case 'propaganda': return o.target ? `${c} runs propaganda against ${t}` : `${c} runs a propaganda campaign at home`;
     case 'roe': return `${c} sets rules of engagement to ${o.kind}`;
     case 'election': return `${c} holds an election`;

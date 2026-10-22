@@ -65,6 +65,12 @@ export class Store {
     this.saveSnapshots(id);
     return snap;
   }
+  deleteSnapshot(id, snapId) {
+    const list = this.snapshots.get(id), i = list.findIndex(s => s.id === snapId);
+    if (i < 0) return false;
+    list.splice(i, 1); this.saveSnapshots(id);
+    return true;
+  }
   snapshotList(id) { return this.snapshots.get(id).map(({ data, ...rest }) => ({ ...rest, size: data.length })); }
   rewind(id, snapId, by) {
     const snap = this.snapshots.get(id).find(s => s.id === snapId);

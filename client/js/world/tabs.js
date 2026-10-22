@@ -33,7 +33,7 @@ export function ReviewTab({ conn, state }) {
   const [en, setEn] = useState('');
   const [ar, setAr] = useState('');
   const [editing, setEditing] = useState(null);
-  const pending = state.review.filter(r => r.status === 'pending').sort((a, b) => (b.kind === 'ending') - (a.kind === 'ending') || b.priority - a.priority || b.at - a.at);
+  const pending = state.review.filter(r => r.status === 'pending').sort((a, b) => (b.kind === 'join') - (a.kind === 'join') || (b.kind === 'ending') - (a.kind === 'ending') || b.priority - a.priority || b.at - a.at);
   const aired = state.aired.slice(-30).reverse();
   const add = async airNow => {
     const r = await run(conn, { type: 'addNews', en, ar, priority: airNow ? 7 : 4, airNow });
@@ -56,15 +56,17 @@ export function ReviewTab({ conn, state }) {
         ${pending.map(r => html`
           <div class=${cls('news-item', r.kind === 'ending' && 'ending', r.priority >= 6 && 'hot')} key=${r.id}>
             ${editing === r.id ? html`<${EditNews} conn=${conn} item=${r} done=${() => setEditing(null)} />` : html`
-              <div class="news-en">${r.kind === 'ending' ? html`<span class="chip gold">Ending</span> ` : ''}${r.en}</div>
+              <div class="news-en">${r.kind === 'ending' ? html`<span class="chip gold">Ending</span> ` : r.kind === 'join' ? html`<span class="chip red">Needs approval</span> ` : ''}${r.en}</div>
               ${r.ar && r.ar !== r.en && html`<div class="news-ar ar" dir="rtl">${r.ar}</div>`}
               ${r.detail && html`<div class="dim small">${r.detail}</div>`}
               <div class="row news-actions">
                 <span class="dim small">T${r.turn} · P${r.priority}</span><div class="grow"></div>
-                ${r.kind === 'ending'
+                ${r.kind === 'join'
+                  ? html`<button class="btn xs danger" onClick=${() => run(conn, { type: 'airItem', id: r.id }, 'War declared')}>Approve: join the war</button>`
+                  : r.kind === 'ending'
                   ? html`<button class="btn xs gold" onClick=${() => run(conn, { type: 'airItem', id: r.id }, 'Ending is playing on stage')}>Play ending</button>`
                   : html`<button class="btn xs ghost" onClick=${() => setEditing(r.id)}>Edit</button><button class="btn xs good" onClick=${() => run(conn, { type: 'airItem', id: r.id })}>Air</button>`}
-                <button class="btn xs danger" onClick=${() => run(conn, { type: 'killItem', id: r.id })}>Kill</button>
+                <button class="btn xs danger" onClick=${() => run(conn, { type: 'killItem', id: r.id })}>${r.kind === 'join' ? 'Decline' : 'Kill'}</button>
               </div>`}
           </div>`)}
       </div>
@@ -139,6 +141,9 @@ export function OrdersTab({ conn, state, draft, setDraft, picking, setPicking, s
               <label class="field" style="width:70px">How many<input class="input" type="number" min="1" max="12" value=${d.counts?.n || 1} onInput=${e => set({ counts: { ...d.counts, n: +e.target.value } })} /></label>
               <label class="field" style="width:70px">Escort<input class="input" type="number" min="0" max="8" value=${d.counts?.escort || 0} onInput=${e => set({ counts: { ...d.counts, escort: +e.target.value } })} /></label>
             </div>
+            ${state.countries[d.country]?.a3 === 'USA' && html`<label class="field">US aircraft<div class="seg wrap">
+              ${[['', 'Any'], ['b2', 'B-2 Spirit'], ['f117', 'F-117 Nighthawk'], ['b52', 'B-52'], ['b1b', 'B-1B Lancer']].map(([k, l]) => html`<button class=${(d.counts?.aircraft || '') === k ? 'on' : ''} onClick=${() => set({ counts: { ...d.counts, aircraft: k || undefined, type: k ? undefined : d.counts?.type, payload: k === 'b2' ? d.counts?.payload : undefined } })}>${l}</button>`)}
+            </div>${d.counts?.aircraft === 'b2' && html`<label class="row small" style="margin-top:4px"><input type="checkbox" checked=${d.counts?.payload === 'moab'} onChange=${e => set({ counts: { ...d.counts, payload: e.target.checked ? 'moab' : undefined } })} /> Carry the heavy bomb (MOAB)</label>`}</label>`}
             <label class="field">Target type<div class="seg wrap">${TARGET_TYPES.map(t => html`<button class=${d.category === t ? 'on' : ''} onClick=${() => set({ category: t })}>${t}</button>`)}</div></label>`}
           ${['invade', 'fleet', 'blockade', 'rebase'].includes(d.type) && html`<label class="field">Units<input class="input" type="number" min="1" max="10" value=${d.counts?.n || 1} onInput=${e => set({ counts: { ...d.counts, n: +e.target.value } })} /></label>`}
           ${d.type === 'rebase' && html`<label class="field">Unit type<select class="input" value=${d.counts?.type || 'fighter'} onChange=${e => set({ counts: { ...d.counts, type: e.target.value } })}>${['fighter', 'bomber', 'missile', 'airdef'].map(t => html`<option value=${t}>${UNIT_TYPES[t].name}</option>`)}</select></label>`}
@@ -231,6 +236,14 @@ export function SavesTab({ conn, state, committee, kronos }) {
   const [label, setLabel] = useState('');
   const [confirm, setConfirm] = useState(null);
   const save = async () => { const r = await conn.request({ t: 'snapshot', committee, label: label || `Save point, turn ${state.meta.turn}` }); toast(r.ok ? 'Saved.' : r.error, r.ok ? 'good' : 'error'); setLabel(''); };
+  const remove = async id => { const r = await conn.request({ t: 'deleteSnapshot', committee, snapId: id }); if (!r.ok) toast(r.error, 'error'); };
+  const auto = state.settings.autoSnap !== false;
+  const mine = list.filter(s => s.keep), autos = list.filter(s => !s.keep);
+  const row = s => html`<div class="snap" key=${s.id}>
+    <div class="grow"><div><b>${s.label}</b></div><div class="dim small">Turn ${s.turn}${s.clock ? ` · ${s.clock}` : ''} · ${fmt.time(s.at)} · ${s.by}</div></div>
+    ${confirm === s.id ? html`<button class="btn xs" onClick=${() => setConfirm(null)}>No</button><button class="btn xs solid-danger" onClick=${() => rewind(s.id)}>Load</button>`
+      : html`<button class="btn xs" onClick=${() => setConfirm(s.id)}>⟲ Load</button><button class="btn xs ghost" title="Delete this save point" onClick=${() => remove(s.id)}>✕</button>`}
+  </div>`;
   const rewind = async id => { const r = await conn.request({ t: 'rewind', committee, snapId: id }); toast(r.ok ? 'Rewound. The world is as it was.' : r.error, r.ok ? 'good' : 'error'); setConfirm(null); };
   const importFile = e => {
     const f = e.target.files[0]; if (!f) return;
@@ -241,15 +254,18 @@ export function SavesTab({ conn, state, committee, kronos }) {
   return html`
     <div class="pane">
       <div class="pane-h"><h2>Saves and rewind</h2></div>
-      <p class="pane-hint">The committee saves itself every second. A rewind point is made automatically before every turn, so a bad turn can be undone.</p>
-      <div class="row"><input class="input grow" placeholder="Name this save point" value=${label} onInput=${e => setLabel(e.target.value)} /><button class="btn primary" onClick=${save}>Save</button></div>
-      <div class="sub-h">Rewind points</div>
+      <p class="pane-hint">Save whenever you like (Ctrl+S anywhere in the panel), name it, and load it later. Manual saves are never cleared out. The live committee still keeps itself safe on disk every second.</p>
+      <div class="row"><input class="input grow" placeholder="Name this save" value=${label} onInput=${e => setLabel(e.target.value)} onKeyDown=${e => e.key === 'Enter' && save()} /><button class="btn primary" onClick=${save}>💾 Save</button></div>
+      <div class="sub-h">Your saves</div>
       <div class="list compact">
-        ${list.length === 0 && html`<div class="empty">No rewind points yet.</div>`}
-        ${[...list].reverse().map(s => html`<div class="snap" key=${s.id}>
-          <div class="grow"><div><b>${s.label}</b>${s.keep ? html` <span class="chip cyan">saved</span>` : ''}</div><div class="dim small">Turn ${s.turn}${s.clock ? ` · ${s.clock}` : ''} · ${fmt.time(s.at)} · ${s.by}</div></div>
-          ${confirm === s.id ? html`<button class="btn xs" onClick=${() => setConfirm(null)}>No</button><button class="btn xs solid-danger" onClick=${() => rewind(s.id)}>Rewind</button>` : html`<button class="btn xs" onClick=${() => setConfirm(s.id)}>⟲ Rewind</button>`}
-        </div>`)}
+        ${mine.length === 0 && html`<div class="empty">No manual saves yet.</div>`}
+        ${[...mine].reverse().map(row)}
+      </div>
+      <div class="sub-h row"><span class="grow">Automatic rewind points</span>
+        <label class="small dim" style="text-transform:none;letter-spacing:0"><input type="checkbox" checked=${auto} onChange=${e => run(conn, { type: 'setSetting', key: 'autoSnap', value: e.target.checked })} /> before every turn</label></div>
+      <div class="list compact">
+        ${autos.length === 0 && html`<div class="empty">${auto ? 'None yet.' : 'Off: only your own saves are kept.'}</div>`}
+        ${[...autos].reverse().map(row)}
       </div>
       <div class="sub-h">Files</div>
       <div class="row wrap">

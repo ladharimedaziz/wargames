@@ -122,6 +122,11 @@ function Sounds({ state }) {
         if (e.kind === 'spawn') sfx.ping();
         if (e.kind === 'strike' && e.divine) setTimeout(() => sfx.boom(1.2), 1100);
         if (e.kind === 'peace') sfx.chime();
+        if (e.kind === 'strike' && e.payload === 'moab') setTimeout(() => sfx.boom(1.8), 3200);
+        if (e.kind === 'airdrop') setTimeout(() => sfx.whoosh(), 1500);
+        if (['cyber', 'spy', 'satellite'].includes(e.kind)) sfx.glitch();
+        if (['ceasefire', 'alliance', 'trade', 'aid', 'unsanction', 'lift'].includes(e.kind)) sfx.chime();
+        if (e.kind === 'alert') sfx.alarm();
       }
     }
     const newAired = state.aired.filter(a => !p.aired.some(x => x.id === a.id));

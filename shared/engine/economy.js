@@ -70,9 +70,11 @@ export function tickEconomy(state, ev, ctx) {
     if (!struckNow) {
       // Industry and energy recover toward the country's own pre-crisis level, not a universal 100%.
       c.industry = clamp(c.industry + (c.industry < b.industry ? Math.min(0.025, b.industry - c.industry) : 0), 0.05, 1.2);
-      if (!((c.cyber.grid || 0) >= turn)) c.energy = clamp(c.energy + (c.energy < b.energy ? Math.min(0.03, b.energy - c.energy) : 0), 0.05, 1.2);
+      if (!((c.cyber.grid || 0) >= turn) && !c.blackout) c.energy = clamp(c.energy + (c.energy < b.energy ? Math.min(0.03, b.energy - c.energy) : 0), 0.05, 1.2);
       c.damage = clamp(c.damage - 0.015, 0, 1);
     }
+    if (c.blackout) c.energy = Math.min(c.energy, 0.3);
+    const sick = (c.outbreak?.level || 0) / 100;
     const enemies = enemiesOf(state, c.id);
     const atWarNow = enemies.length > 0;
     let tradeFactor = 1;
@@ -92,7 +94,7 @@ export function tickEconomy(state, ev, ctx) {
     const occ = c.occupiedBy ? 0.6 : 1 - 0.4 * (c.front?.pct || 0) / 100;
     const warDrag = atWarNow ? 0.03 : 0;
     const trend = Math.pow(1 + b.growth / 100, years);
-    const targetGdp = c.base.gdp * trend * Math.pow(c.industry / b.industry, 0.5) * Math.pow(c.energy / b.energy, 0.3) * tradeFactor * (1 + oilEffect) * occ * (1 - warDrag) * (1 - Math.min(0.3, Math.max(0, c.inflation - Math.max(2, b.inflation)) / 100));
+    const targetGdp = c.base.gdp * trend * Math.pow(c.industry / b.industry, 0.5) * Math.pow(c.energy / b.energy, 0.3) * tradeFactor * (1 + oilEffect) * occ * (1 - warDrag) * (1 - sick * 0.25) * (c.blackout ? 0.88 : 1) * (1 - Math.min(0.3, Math.max(0, c.inflation - Math.max(2, b.inflation)) / 100));
     c.gdp = Math.max(0.5, c.gdp + (targetGdp - c.gdp) * 0.4);
 
     // Peacetime budgets balance with a small surplus; war adds the cost of fighting on top.
@@ -105,7 +107,7 @@ export function tickEconomy(state, ev, ctx) {
     c.inflation = clamp(Math.round(c.inflation * 10) / 10, -2, 80);
 
     c.warWeariness = c.warWeariness * 0.9;
-    c.support += (b.support - c.support) * 0.03 - c.warWeariness * 0.15 - Math.max(0, c.inflation - Math.max(5, b.inflation + 3)) * 0.35 - c.damage * 3 - (c.occupiedBy ? 2 : 0);
+    c.support += (b.support - c.support) * 0.03 - c.warWeariness * 0.15 - Math.max(0, c.inflation - Math.max(5, b.inflation + 3)) * 0.35 - c.damage * 3 - (c.occupiedBy ? 2 : 0) - sick * 2 - (c.blackout ? 1 : 0);
     c.support = clamp(c.support, 0, 100);
     c.stability = clamp(c.stability + (c.support - b.support) * 0.04 + (b.stability - c.stability) * 0.02 - c.damage * 2 - (c.occupiedBy ? 3 : 0), 0, 100);
 

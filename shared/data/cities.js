@@ -1,5 +1,5 @@
 // Major cities, shown on the map when the camera zooms in or a country is in focus.
-// Columns: name | Arabic name | lat | lon | country (alpha-3) | tier (1 capital or megacity, 2 major city, 3 regional city)
+// Columns: name | Arabic name | lat | lon | country (alpha-3) | tier (1 capital or megacity, 2 major city, 3 regional city, 4 town or base shown only close up)
 const RAW = `
 Riyadh|الرياض|24.71|46.68|SAU|1
 Jeddah|جدة|21.49|39.19|SAU|2
@@ -375,6 +375,514 @@ Porto-Novo|بورتو نوفو|6.50|2.60|BEN|1
 Banjul|بانجول|13.45|-16.58|GMB|1
 Bissau|بيساو|11.86|-15.60|GNB|1
 Nuuk|نوك|64.18|-51.72|DNK|3
+Taif|الطائف|21.27|40.42|SAU|4
+Buraidah|بريدة|26.33|43.97|SAU|4
+Hail|حائل|27.52|41.69|SAU|4
+Jizan|جازان|16.89|42.55|SAU|4
+Najran|نجران|17.49|44.13|SAU|4
+Al Khobar|الخبر|26.28|50.21|SAU|4
+Hofuf|الهفوف|25.38|49.59|SAU|4
+Yanbu|ينبع|24.09|38.06|SAU|4
+Khamis Mushait|خميس مشيط|18.31|42.73|SAU|4
+Arar|عرعر|30.98|41.04|SAU|4
+Sakaka|سكاكا|29.97|40.21|SAU|4
+Al Ula|العلا|26.61|37.92|SAU|4
+Hafar al-Batin|حفر الباطن|28.43|45.96|SAU|4
+Al Ain|العين|24.21|55.74|ARE|4
+Ras al-Khaimah|رأس الخيمة|25.79|55.94|ARE|4
+Fujairah|الفجيرة|25.12|56.33|ARE|4
+Sohar|صحار|24.35|56.71|OMN|4
+Nizwa|نزوى|22.93|57.53|OMN|4
+Duqm|الدقم|19.66|57.70|OMN|4
+Khasab|خصب|26.18|56.25|OMN|4
+Al Wakrah|الوكرة|25.17|51.60|QAT|4
+Ahmadi|الأحمدي|29.08|48.08|KWT|4
+Taiz|تعز|13.58|44.02|YEM|4
+Marib|مأرب|15.46|45.32|YEM|4
+Mukalla|المكلا|14.54|49.12|YEM|4
+Saada|صعدة|16.94|43.76|YEM|4
+Qom|قم|34.64|50.88|IRN|4
+Kermanshah|كرمانشاه|34.31|47.07|IRN|4
+Kerman|كرمان|30.28|57.08|IRN|4
+Yazd|يزد|31.90|54.37|IRN|4
+Rasht|رشت|37.28|49.58|IRN|4
+Zahedan|زاهدان|29.50|60.86|IRN|4
+Chabahar|تشابهار|25.29|60.64|IRN|4
+Hamadan|همدان|34.80|48.51|IRN|4
+Natanz|نطنز|33.51|51.92|IRN|4
+Arak|أراك|34.09|49.69|IRN|4
+Urmia|أرومية|37.55|45.08|IRN|4
+Kirkuk|كركوك|35.47|44.39|IRQ|4
+Najaf|النجف|32.00|44.34|IRQ|4
+Karbala|كربلاء|32.62|44.02|IRQ|4
+Sulaymaniyah|السليمانية|35.56|45.44|IRQ|4
+Fallujah|الفلوجة|33.35|43.78|IRQ|4
+Ramadi|الرمادي|33.42|43.30|IRQ|4
+Tikrit|تكريت|34.61|43.68|IRQ|4
+Deir ez-Zor|دير الزور|35.34|40.14|SYR|4
+Raqqa|الرقة|35.95|39.01|SYR|4
+Idlib|إدلب|35.93|36.63|SYR|4
+Hama|حماة|35.13|36.75|SYR|4
+Tartus|طرطوس|34.89|35.89|SYR|4
+Daraa|درعا|32.62|36.10|SYR|4
+Qamishli|القامشلي|37.05|41.22|SYR|4
+Irbid|إربد|32.56|35.85|JOR|4
+Zarqa|الزرقاء|32.07|36.09|JOR|4
+Tripoli (Lebanon)|طرابلس|34.44|35.83|LBN|4
+Sidon|صيدا|33.56|35.37|LBN|4
+Tyre|صور|33.27|35.20|LBN|4
+Baalbek|بعلبك|34.01|36.21|LBN|4
+Beersheba|بئر السبع|31.25|34.79|ISR|4
+Ashdod|أسدود|31.80|34.65|ISR|4
+Nazareth|الناصرة|32.70|35.30|ISR|4
+Khan Yunis|خان يونس|31.35|34.31|PSE|4
+Nablus|نابلس|32.22|35.26|PSE|4
+Hebron|الخليل|31.53|35.10|PSE|4
+Luxor|الأقصر|25.69|32.64|EGY|4
+Ismailia|الإسماعيلية|30.60|32.27|EGY|4
+Hurghada|الغردقة|27.26|33.81|EGY|4
+Sharm el-Sheikh|شرم الشيخ|27.92|34.33|EGY|4
+Mansoura|المنصورة|31.04|31.38|EGY|4
+Asyut|أسيوط|27.18|31.18|EGY|4
+El Arish|العريش|31.13|33.80|EGY|4
+Marsa Matruh|مرسى مطروح|31.35|27.24|EGY|4
+Omdurman|أم درمان|15.64|32.48|SDN|4
+El Fasher|الفاشر|13.63|25.35|SDN|4
+Nyala|نيالا|12.05|24.88|SDN|4
+Kassala|كسلا|15.45|36.40|SDN|4
+Misrata|مصراتة|32.38|15.09|LBY|4
+Sirte|سرت|31.21|16.59|LBY|4
+Tobruk|طبرق|32.08|23.96|LBY|4
+Sabha|سبها|27.04|14.43|LBY|4
+Sfax|صفاقس|34.74|10.76|TUN|4
+Sousse|سوسة|35.83|10.64|TUN|4
+Constantine|قسنطينة|36.37|6.61|DZA|4
+Annaba|عنابة|36.90|7.77|DZA|4
+Tamanrasset|تمنراست|22.79|5.52|DZA|4
+Marrakesh|مراكش|31.63|-8.01|MAR|4
+Fez|فاس|34.03|-5.00|MAR|4
+Agadir|أكادير|30.43|-9.60|MAR|4
+Laayoune|العيون|27.15|-13.20|MAR|4
+Bursa|بورصة|40.19|29.06|TUR|4
+Adana|أضنة|37.00|35.32|TUR|4
+Gaziantep|غازي عنتاب|37.07|37.38|TUR|4
+Konya|قونية|37.87|32.48|TUR|4
+Diyarbakir|ديار بكر|37.91|40.24|TUR|4
+Trabzon|طرابزون|41.00|39.72|TUR|4
+Erzurum|أرضروم|39.90|41.27|TUR|4
+Van|وان|38.50|43.38|TUR|4
+Samsun|سامسون|41.29|36.33|TUR|4
+Patras|باتراس|38.25|21.73|GRC|4
+Heraklion|هيراكليون|35.34|25.13|GRC|4
+Souda Bay|خليج سودا|35.49|24.12|GRC|4
+Limassol|ليماسول|34.68|33.04|CYP|4
+Birmingham|برمنغهام|52.49|-1.89|GBR|4
+Glasgow|غلاسكو|55.86|-4.25|GBR|4
+Liverpool|ليفربول|53.41|-2.98|GBR|4
+Leeds|ليدز|53.80|-1.55|GBR|4
+Bristol|بريستول|51.45|-2.59|GBR|4
+Cardiff|كارديف|51.48|-3.18|GBR|4
+Plymouth|بليموث|50.38|-4.14|GBR|4
+Faslane|فاسلين|56.07|-4.82|GBR|4
+Lakenheath|لاكنهيث|52.41|0.56|GBR|4
+Cork|كورك|51.90|-8.47|IRL|4
+Bordeaux|بوردو|44.84|-0.58|FRA|4
+Toulouse|تولوز|43.60|1.44|FRA|4
+Nice|نيس|43.70|7.27|FRA|4
+Lille|ليل|50.63|3.06|FRA|4
+Strasbourg|ستراسبورغ|48.57|7.75|FRA|4
+Nantes|نانت|47.22|-1.55|FRA|4
+Cherbourg|شيربورغ|49.64|-1.62|FRA|4
+Ajaccio|أجاكسيو|41.93|8.74|FRA|4
+Cologne|كولونيا|50.94|6.96|DEU|4
+Stuttgart|شتوتغارت|48.78|9.18|DEU|4
+Dresden|دريسدن|51.05|13.74|DEU|4
+Leipzig|لايبزيغ|51.34|12.37|DEU|4
+Hanover|هانوفر|52.37|9.73|DEU|4
+Kiel|كيل|54.32|10.12|DEU|4
+Nuremberg|نورنبيرغ|49.45|11.08|DEU|4
+Bremen|بريمن|53.08|8.80|DEU|4
+Dusseldorf|دوسلدورف|51.23|6.78|DEU|4
+Antwerp|أنتويرب|51.22|4.40|BEL|4
+Utrecht|أوترخت|52.09|5.12|NLD|4
+Basel|بازل|47.56|7.59|CHE|4
+Graz|غراتس|47.07|15.44|AUT|4
+Salzburg|سالزبورغ|47.81|13.06|AUT|4
+Turin|تورينو|45.07|7.69|ITA|4
+Venice|البندقية|45.44|12.32|ITA|4
+Florence|فلورنسا|43.77|11.26|ITA|4
+Bologna|بولونيا|44.49|11.34|ITA|4
+Genoa|جنوة|44.41|8.93|ITA|4
+Bari|باري|41.12|16.87|ITA|4
+Palermo|باليرمو|38.12|13.36|ITA|4
+Taranto|تارانتو|40.47|17.24|ITA|4
+Aviano|أفيانو|46.07|12.59|ITA|4
+Cagliari|كالياري|39.22|9.12|ITA|4
+Valencia|بلنسية|39.47|-0.38|ESP|4
+Bilbao|بلباو|43.26|-2.93|ESP|4
+Malaga|مالقة|36.72|-4.42|ESP|4
+Zaragoza|سرقسطة|41.65|-0.88|ESP|4
+Palma|بالما|39.57|2.65|ESP|4
+Cartagena (Spain)|قرطاجنة|37.61|-0.99|ESP|4
+Faro|فارو|37.02|-7.93|PRT|4
+Aarhus|آرهوس|56.16|10.20|DNK|4
+Trondheim|تروندهايم|63.43|10.40|NOR|4
+Tromso|ترومسو|69.65|18.96|NOR|4
+Bodo|بودو|67.28|14.40|NOR|4
+Malmo|مالمو|55.60|13.00|SWE|4
+Lulea|لوليو|65.58|22.15|SWE|4
+Visby|فيسبي|57.64|18.30|SWE|4
+Tampere|تامبيري|61.50|23.76|FIN|4
+Turku|توركو|60.45|22.27|FIN|4
+Oulu|أولو|65.01|25.47|FIN|4
+Tartu|تارتو|58.38|26.72|EST|4
+Narva|نارفا|59.38|28.19|EST|4
+Daugavpils|داوغافبيلس|55.87|26.54|LVA|4
+Kaunas|كاوناس|54.90|23.90|LTU|4
+Klaipeda|كلايبيدا|55.70|21.14|LTU|4
+Poznan|بوزنان|52.41|16.93|POL|4
+Wroclaw|فروتسواف|51.11|17.04|POL|4
+Lodz|لودز|51.76|19.46|POL|4
+Lublin|لوبلين|51.25|22.57|POL|4
+Bialystok|بياليستوك|53.13|23.16|POL|4
+Szczecin|شتشين|53.43|14.55|POL|4
+Brno|برنو|49.20|16.61|CZE|4
+Ostrava|أوسترافا|49.82|18.26|CZE|4
+Kosice|كوشيتسه|48.72|21.26|SVK|4
+Debrecen|دبرتسن|47.53|21.64|HUN|4
+Cluj-Napoca|كلوج نابوكا|46.77|23.59|ROU|4
+Iasi|ياش|47.16|27.59|ROU|4
+Timisoara|تيميشوارا|45.75|21.23|ROU|4
+Galati|غالاتي|45.44|28.05|ROU|4
+Plovdiv|بلوفديف|42.15|24.75|BGR|4
+Burgas|بورغاس|42.50|27.47|BGR|4
+Novi Sad|نوفي ساد|45.27|19.83|SRB|4
+Nis|نيش|43.32|21.90|SRB|4
+Split|سبليت|43.51|16.44|HRV|4
+Banja Luka|بانيا لوكا|44.77|17.19|BIH|4
+Mostar|موستار|43.34|17.81|BIH|4
+Durres|دوريس|41.32|19.45|ALB|4
+Tiraspol|تيراسبول|46.84|29.63|MDA|4
+Balti|بالتي|47.76|27.93|MDA|4
+Gomel|غوميل|52.44|30.98|BLR|4
+Grodno|غرودنو|53.68|23.83|BLR|4
+Vitebsk|فيتيبسك|55.19|30.20|BLR|4
+Mogilev|موغيليف|53.90|30.33|BLR|4
+Chernihiv|تشيرنيهيف|51.49|31.29|UKR|4
+Sumy|سومي|50.91|34.80|UKR|4
+Poltava|بولتافا|49.59|34.55|UKR|4
+Mykolaiv|ميكولايف|46.97|31.99|UKR|4
+Vinnytsia|فينيتسا|49.23|28.47|UKR|4
+Zhytomyr|جيتومير|50.25|28.66|UKR|4
+Kryvyi Rih|كريفي ريه|47.91|33.39|UKR|4
+Luhansk|لوهانسك|48.57|39.31|UKR|4
+Bakhmut|باخموت|48.59|38.00|UKR|4
+Kramatorsk|كراماتورسك|48.72|37.56|UKR|4
+Melitopol|ميليتوبول|46.85|35.37|UKR|4
+Simferopol|سيمفيروبول|44.95|34.10|UKR|4
+Kerch|كيرتش|45.36|36.47|UKR|4
+Uzhhorod|أوجهورود|48.62|22.29|UKR|4
+Chernivtsi|تشيرنيفتسي|48.29|25.94|UKR|4
+Ternopil|ترنوبل|49.55|25.59|UKR|4
+Rivne|ريفني|50.62|26.25|UKR|4
+Kursk|كورسك|51.73|36.19|RUS|4
+Belgorod|بيلغورود|50.60|36.59|RUS|4
+Voronezh|فورونيج|51.67|39.18|RUS|4
+Bryansk|بريانسك|53.24|34.36|RUS|4
+Smolensk|سمولينسك|54.78|32.05|RUS|4
+Pskov|بسكوف|57.82|28.33|RUS|4
+Nizhny Novgorod|نيجني نوفغورود|56.33|44.00|RUS|4
+Samara|سامارا|53.20|50.15|RUS|4
+Saratov|ساراتوف|51.53|46.03|RUS|4
+Ufa|أوفا|54.74|55.97|RUS|4
+Perm|بيرم|58.01|56.25|RUS|4
+Chelyabinsk|تشيليابينسك|55.16|61.40|RUS|4
+Krasnodar|كراسنودار|45.04|38.98|RUS|4
+Astrakhan|أستراخان|46.35|48.04|RUS|4
+Grozny|غروزني|43.32|45.69|RUS|4
+Makhachkala|محج قلعة|42.98|47.50|RUS|4
+Arkhangelsk|أرخانغيلسك|64.54|40.54|RUS|4
+Severomorsk|سيفيرومورسك|69.07|33.42|RUS|4
+Engels|إنغلز|51.48|46.12|RUS|4
+Tula|تولا|54.19|37.62|RUS|4
+Tver|تفير|56.86|35.90|RUS|4
+Yaroslavl|ياروسلافل|57.63|39.87|RUS|4
+Tyumen|تيومين|57.15|65.53|RUS|4
+Barnaul|بارناول|53.35|83.78|RUS|4
+Tomsk|تومسك|56.48|84.95|RUS|4
+Chita|تشيتا|52.03|113.50|RUS|4
+Ulan-Ude|أولان أودي|51.83|107.61|RUS|4
+Blagoveshchensk|بلاغوفيشتشينسك|50.26|127.53|RUS|4
+Magadan|ماغادان|59.56|150.80|RUS|4
+Yuzhno-Sakhalinsk|يوجنو ساخالينسك|46.96|142.73|RUS|4
+Anadyr|أنادير|64.73|177.51|RUS|4
+Vorkuta|فوركوتا|67.50|64.03|RUS|4
+Batumi|باتومي|41.64|41.64|GEO|4
+Kutaisi|كوتايسي|42.27|42.70|GEO|4
+Sukhumi|سوخومي|43.00|41.02|GEO|4
+Gyumri|غيومري|40.79|43.85|ARM|4
+Ganja|كنجة|40.68|46.36|AZE|4
+Stepanakert|ستيباناكيرت|39.82|46.75|AZE|4
+Nakhchivan|نخجوان|39.21|45.41|AZE|4
+Karaganda|كاراغاندا|49.80|73.10|KAZ|4
+Shymkent|شيمكنت|42.32|69.60|KAZ|4
+Aktau|أكتاو|43.65|51.16|KAZ|4
+Baikonur|بايكونور|45.62|63.31|KAZ|4
+Bukhara|بخارى|39.77|64.42|UZB|4
+Termez|ترمذ|37.22|67.28|UZB|4
+Osh|أوش|40.53|72.80|KGZ|4
+Khujand|خوجند|40.28|69.62|TJK|4
+Turkmenbashi|تركمانباشي|40.02|52.97|TKM|4
+Herat|هرات|34.35|62.20|AFG|4
+Mazar-i-Sharif|مزار شريف|36.71|67.11|AFG|4
+Jalalabad|جلال آباد|34.43|70.45|AFG|4
+Kunduz|قندوز|36.73|68.86|AFG|4
+Bagram|باغرام|34.95|69.26|AFG|4
+Lashkar Gah|لشكر كاه|31.59|64.37|AFG|4
+Rawalpindi|راولبندي|33.60|73.05|PAK|4
+Faisalabad|فيصل آباد|31.42|73.08|PAK|4
+Multan|ملتان|30.20|71.47|PAK|4
+Hyderabad (Sindh)|حيدر آباد|25.40|68.37|PAK|4
+Muzaffarabad|مظفر آباد|34.37|73.47|PAK|4
+Gilgit|جلجت|35.92|74.31|PAK|4
+Jaipur|جايبور|26.91|75.79|IND|4
+Lucknow|لكناو|26.85|80.95|IND|4
+Pune|بونه|18.52|73.86|IND|4
+Amritsar|أمريتسار|31.63|74.87|IND|4
+Jammu|جامو|32.73|74.86|IND|4
+Leh|ليه|34.15|77.58|IND|4
+Guwahati|غواهاتي|26.14|91.74|IND|4
+Patna|باتنا|25.59|85.14|IND|4
+Bhopal|بوبال|23.26|77.41|IND|4
+Nagpur|ناغبور|21.15|79.09|IND|4
+Kochi|كوتشي|9.93|76.27|IND|4
+Goa|غوا|15.49|73.83|IND|4
+Port Blair|بورت بلير|11.62|92.73|IND|4
+Pokhara|بوخارا|28.21|83.99|NPL|4
+Sylhet|سيلهيت|24.90|91.87|BGD|4
+Jaffna|جافنا|9.66|80.01|LKA|4
+Trincomalee|ترينكومالي|8.59|81.21|LKA|4
+Hangzhou|هانغتشو|30.27|120.16|CHN|4
+Suzhou|سوتشو|31.30|120.62|CHN|4
+Zhengzhou|تشنغتشو|34.75|113.63|CHN|4
+Changsha|تشانغشا|28.23|112.94|CHN|4
+Shenyang|شنيانغ|41.81|123.43|CHN|4
+Jinan|جينان|36.65|117.12|CHN|4
+Hefei|خفي|31.82|117.23|CHN|4
+Nanning|نانينغ|22.82|108.32|CHN|4
+Lanzhou|لانتشو|36.06|103.83|CHN|4
+Hohhot|هوهوت|40.84|111.75|CHN|4
+Kashgar|كاشغر|39.47|75.99|CHN|4
+Ningbo|نينغبو|29.87|121.54|CHN|4
+Zhanjiang|تشانجيانغ|21.27|110.36|CHN|4
+Haikou|هايكو|20.04|110.20|CHN|4
+Wenzhou|ونتشو|28.00|120.67|CHN|4
+Changchun|تشانغتشون|43.82|125.32|CHN|4
+Taiyuan|تاييوان|37.87|112.55|CHN|4
+Guiyang|غوييانغ|26.65|106.63|CHN|4
+Xining|شينينغ|36.62|101.78|CHN|4
+Yinchuan|ينتشوان|38.49|106.23|CHN|4
+Dandong|داندونغ|40.12|124.38|CHN|4
+Macau|ماكاو|22.20|113.55|CHN|4
+Hualien|هوالين|23.99|121.60|TWN|4
+Tainan|تاينان|22.99|120.21|TWN|4
+Keelung|كيلونغ|25.13|121.74|TWN|4
+Kinmen|كينمن|24.44|118.32|TWN|4
+Daegu|دايغو|35.87|128.60|KOR|4
+Gwangju|غوانغجو|35.16|126.85|KOR|4
+Daejeon|دايجون|36.35|127.38|KOR|4
+Pyeongtaek|بيونغتايك|36.99|127.11|KOR|4
+Jeju|جيجو|33.50|126.53|KOR|4
+Paju|باجو|37.76|126.78|KOR|4
+Kaesong|كايسونغ|37.97|126.55|PRK|4
+Hamhung|هامهونغ|39.92|127.54|PRK|4
+Chongjin|تشونغجين|41.80|129.78|PRK|4
+Sinuiju|سينويجو|40.10|124.40|PRK|4
+Yongbyon|يونغبيون|39.80|125.76|PRK|4
+Nampo|نامبو|38.74|125.41|PRK|4
+Hiroshima|هيروشيما|34.39|132.46|JPN|4
+Kyoto|كيوتو|35.01|135.77|JPN|4
+Sendai|سنداي|38.27|140.87|JPN|4
+Kobe|كوبي|34.69|135.20|JPN|4
+Nagasaki|ناغازاكي|32.75|129.88|JPN|4
+Sasebo|ساسيبو|33.18|129.72|JPN|4
+Misawa|ميساوا|40.68|141.37|JPN|4
+Kagoshima|كاغوشيما|31.60|130.56|JPN|4
+Niigata|نييغاتا|37.92|139.04|JPN|4
+Ishigaki|إيشيغاكي|24.34|124.16|JPN|4
+Erdenet|إردينيت|49.03|104.08|MNG|4
+Haiphong|هايفونغ|20.86|106.68|VNM|4
+Hue|هوي|16.46|107.59|VNM|4
+Cam Ranh|كام رانه|11.92|109.16|VNM|4
+Can Tho|كان ثو|10.04|105.79|VNM|4
+Chiang Mai|شيانغ ماي|18.79|98.98|THA|4
+Phuket|بوكيت|7.88|98.39|THA|4
+Pattaya|باتايا|12.93|100.88|THA|4
+Siem Reap|سيم ريب|13.36|103.86|KHM|4
+Ream|ريام|10.51|103.62|KHM|4
+Mandalay|ماندالاي|21.97|96.08|MMR|4
+Sittwe|سيتوي|20.15|92.90|MMR|4
+Penang|بينانغ|5.41|100.33|MYS|4
+Kota Kinabalu|كوتا كينابالو|5.98|116.07|MYS|4
+Kuching|كوتشينغ|1.55|110.36|MYS|4
+Johor Bahru|جوهور بارو|1.49|103.74|MYS|4
+Bandung|باندونغ|-6.91|107.61|IDN|4
+Makassar|ماكاسار|-5.15|119.43|IDN|4
+Denpasar|دينباسار|-8.65|115.22|IDN|4
+Jayapura|جايابورا|-2.53|140.72|IDN|4
+Balikpapan|باليكبابان|-1.24|116.85|IDN|4
+Palembang|باليمبانغ|-2.99|104.76|IDN|4
+Banda Aceh|باندا آتشيه|5.55|95.32|IDN|4
+Nusantara|نوسانتارا|-0.97|116.70|IDN|4
+Subic Bay|خليج سوبيك|14.82|120.27|PHL|4
+Zamboanga|زامبوانغا|6.91|122.08|PHL|4
+Puerto Princesa|بويرتو برنسيسا|9.74|118.74|PHL|4
+Laoag|لاواغ|18.20|120.59|PHL|4
+Adelaide|أديلايد|-34.93|138.60|AUS|4
+Hobart|هوبارت|-42.88|147.33|AUS|4
+Townsville|تاونزفيل|-19.26|146.82|AUS|4
+Cairns|كيرنز|-16.92|145.77|AUS|4
+Alice Springs|أليس سبرينغز|-23.70|133.88|AUS|4
+Tindal|تيندال|-14.52|132.38|AUS|4
+Christchurch|كرايستشيرش|-43.53|172.64|NZL|4
+Suva|سوفا|-18.14|178.44|FJI|4
+Noumea|نوميا|-22.27|166.46|FRA|4
+Honiara|هونيارا|-9.43|159.95|SLB|4
+Philadelphia|فيلادلفيا|39.95|-75.17|USA|4
+Phoenix|فينيكس|33.45|-112.07|USA|4
+Detroit|ديترويت|42.33|-83.05|USA|4
+Minneapolis|مينيابوليس|44.98|-93.27|USA|4
+St Louis|سانت لويس|38.63|-90.20|USA|4
+New Orleans|نيو أورلينز|29.95|-90.07|USA|4
+Las Vegas|لاس فيغاس|36.17|-115.14|USA|4
+Portland|بورتلاند|45.52|-122.68|USA|4
+Salt Lake City|سولت ليك سيتي|40.76|-111.89|USA|4
+Kansas City|كانساس سيتي|39.10|-94.58|USA|4
+Nashville|ناشفيل|36.16|-86.78|USA|4
+Charlotte|شارلوت|35.23|-80.84|USA|4
+Pittsburgh|بيتسبرغ|40.44|-80.00|USA|4
+Tampa|تامبا|27.95|-82.46|USA|4
+Jacksonville|جاكسونفيل|30.33|-81.66|USA|4
+San Antonio|سان أنطونيو|29.42|-98.49|USA|4
+Austin|أوستن|30.27|-97.74|USA|4
+Albuquerque|البوكيرك|35.08|-106.65|USA|4
+Omaha|أوماها|41.26|-95.94|USA|4
+Colorado Springs|كولورادو سبرينغز|38.83|-104.82|USA|4
+Fort Bragg|فورت براغ|35.14|-79.00|USA|4
+Whiteman AFB|قاعدة وايتمان|38.73|-93.55|USA|4
+Barksdale AFB|قاعدة باركسديل|32.50|-93.66|USA|4
+Cheyenne|شايان|41.14|-104.82|USA|4
+Fairbanks|فيربانكس|64.84|-147.72|USA|4
+El Paso|إل باسو|31.76|-106.49|USA|4
+Sacramento|ساكرامنتو|38.58|-121.49|USA|4
+Cleveland|كليفلاند|41.50|-81.69|USA|4
+Winnipeg|وينيبيغ|49.90|-97.14|CAN|4
+Edmonton|إدمونتون|53.55|-113.49|CAN|4
+Quebec City|كيبيك|46.81|-71.21|CAN|4
+St John's|سانت جونز|47.56|-52.71|CAN|4
+Iqaluit|إيكالويت|63.75|-68.52|CAN|4
+Yellowknife|يلونايف|62.45|-114.37|CAN|4
+Whitehorse|وايتهورس|60.72|-135.06|CAN|4
+Puebla|بويبلا|19.04|-98.21|MEX|4
+Cancun|كانكون|21.16|-86.85|MEX|4
+Merida|ميريدا|20.97|-89.62|MEX|4
+Ciudad Juarez|سيوداد خواريز|31.69|-106.42|MEX|4
+Veracruz|فيراكروز|19.17|-96.13|MEX|4
+Acapulco|أكابولكو|16.85|-99.82|MEX|4
+Culiacan|كولياكان|24.81|-107.39|MEX|4
+Santiago de Cuba|سانتياغو دي كوبا|20.02|-75.82|CUB|4
+San Juan|سان خوان|18.47|-66.11|USA|4
+Nassau|ناسو|25.05|-77.35|BHS|4
+Port of Spain|بورت أوف سبين|10.65|-61.51|TTO|4
+Colon|كولون|9.36|-79.90|PAN|4
+Valencia (Venezuela)|بلنسية|10.16|-68.00|VEN|4
+Barquisimeto|باركيسيميتو|10.07|-69.32|VEN|4
+Ciudad Guayana|سيوداد غويانا|8.35|-62.64|VEN|4
+Cali|كالي|3.45|-76.53|COL|4
+Barranquilla|بارانكيا|10.96|-74.80|COL|4
+Cartagena|قرطاجنة|10.39|-75.48|COL|4
+Cucuta|كوكوتا|7.89|-72.51|COL|4
+Cusco|كوسكو|-13.53|-71.97|PER|4
+Arequipa|أريكيبا|-16.41|-71.54|PER|4
+Iquitos|إكيتوس|-3.75|-73.25|PER|4
+Santa Cruz|سانتا كروز|-17.78|-63.18|BOL|4
+Antofagasta|أنتوفاغاستا|-23.65|-70.40|CHL|4
+Valparaiso|فالباريسو|-33.05|-71.62|CHL|4
+Punta Arenas|بونتا أريناس|-53.16|-70.91|CHL|4
+Rosario|روساريو|-32.95|-60.64|ARG|4
+Mendoza|مندوزا|-32.89|-68.83|ARG|4
+Mar del Plata|مار دل بلاتا|-38.00|-57.56|ARG|4
+Comodoro Rivadavia|كومودورو ريفادافيا|-45.86|-67.48|ARG|4
+Belo Horizonte|بيلو هوريزونتي|-19.92|-43.94|BRA|4
+Porto Alegre|بورتو أليغري|-30.03|-51.23|BRA|4
+Fortaleza|فورتاليزا|-3.73|-38.53|BRA|4
+Curitiba|كوريتيبا|-25.43|-49.27|BRA|4
+Belem|بيليم|-1.46|-48.49|BRA|4
+Natal|ناتال|-5.79|-35.21|BRA|4
+Cuiaba|كويابا|-15.60|-56.10|BRA|4
+Boa Vista|بوا فيستا|2.82|-60.67|BRA|4
+Cayenne|كايين|4.92|-52.31|FRA|4
+Kourou|كورو|5.16|-52.65|FRA|4
+Dire Dawa|دير داوا|9.59|41.87|ETH|4
+Mekelle|مقلي|13.50|39.47|ETH|4
+Gondar|غوندار|12.61|37.47|ETH|4
+Bahir Dar|بحر دار|11.59|37.39|ETH|4
+Massawa|مصوع|15.61|39.45|ERI|4
+Assab|عصب|13.01|42.74|ERI|4
+Berbera|بربرة|10.44|45.01|SOM|4
+Kismayo|كيسمايو|-0.36|42.55|SOM|4
+Bosaso|بوصاصو|11.28|49.18|SOM|4
+Baidoa|بيدوا|3.11|43.65|SOM|4
+Kisumu|كيسومو|-0.09|34.77|KEN|4
+Garissa|غاريسا|-0.45|39.65|KEN|4
+Gulu|غولو|2.77|32.30|UGA|4
+Bukavu|بوكافو|-2.51|28.86|COD|4
+Mbuji-Mayi|مبوجي مايي|-6.14|23.59|COD|4
+Kananga|كانانغا|-5.90|22.42|COD|4
+Zanzibar|زنجبار|-6.17|39.20|TZA|4
+Arusha|أروشا|-3.39|36.68|TZA|4
+Mwanza|موانزا|-2.52|32.90|TZA|4
+Beira|بيرا|-19.83|34.84|MOZ|4
+Pemba|بيمبا|-12.97|40.52|MOZ|4
+Bulawayo|بولاوايو|-20.15|28.58|ZWE|4
+Ndola|ندولا|-12.96|28.64|ZMB|4
+Blantyre|بلانتاير|-15.79|35.01|MWI|4
+Benguela|بنغيلا|-12.58|13.41|AGO|4
+Cabinda|كابيندا|-5.55|12.20|AGO|4
+Pointe-Noire|بوانت نوار|-4.78|11.86|COG|4
+Douala|دوالا|4.05|9.70|CMR|4
+Port Harcourt|بورت هاركورت|4.82|7.03|NGA|4
+Ibadan|إبادان|7.38|3.95|NGA|4
+Maiduguri|مايدوغوري|11.85|13.16|NGA|4
+Kaduna|كادونا|10.52|7.44|NGA|4
+Kumasi|كوماسي|6.69|-1.62|GHA|4
+Tamale|تمالي|9.40|-0.84|GHA|4
+Gao|غاو|16.27|-0.04|MLI|4
+Kidal|كيدال|18.44|1.41|MLI|4
+Agadez|أغاديز|16.97|7.99|NER|4
+Bobo-Dioulasso|بوبو ديولاسو|11.18|-4.30|BFA|4
+Saint-Louis|سان لويس|16.03|-16.49|SEN|4
+Nouadhibou|نواذيبو|20.94|-17.04|MRT|4
+Abeche|أبشي|13.83|20.83|TCD|4
+Port Elizabeth|بورت إليزابيث|-33.96|25.60|ZAF|4
+Bloemfontein|بلومفونتين|-29.12|26.21|ZAF|4
+Simon's Town|سايمونز تاون|-34.19|18.43|ZAF|4
+Walvis Bay|والفيس باي|-22.96|14.51|NAM|4
+Francistown|فرانسيس تاون|-21.17|27.51|BWA|4
+Toamasina|تواماسينا|-18.15|49.40|MDG|4
+Port Louis|بورت لويس|-20.16|57.50|MUS|4
+Diego Garcia|دييغو غارسيا|-7.31|72.41|GBR|4
+Reunion|ريونيون|-20.88|55.45|FRA|4
+Seychelles|سيشل|-4.62|55.45|SYC|4
+Moroni|موروني|-11.70|43.26|COM|4
+Las Palmas|لاس بالماس|28.12|-15.43|ESP|4
+Ceuta|سبتة|35.89|-5.32|ESP|4
+Gibraltar|جبل طارق|36.14|-5.35|GBR|4
+Valletta|فاليتا|35.90|14.51|MLT|4
+Azores|الأزور|37.74|-25.67|PRT|4
+Svalbard|سفالبارد|78.22|15.65|NOR|4
+Thule|ثول|76.53|-68.70|DNK|4
+Akrotiri|أكروتيري|34.59|32.99|GBR|4
 `;
 
 export const CITIES = RAW.trim().split('\n').map(line => {

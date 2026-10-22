@@ -146,6 +146,7 @@
 
 /* Inspector */
 .insp-head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 12px 10px; margin: -14px -14px 0; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, color-mix(in srgb, var(--bloc) 22%, transparent), transparent); box-shadow: inset 0 3px 0 var(--bloc); }
+.insp-coat { width: 44px; height: 50px; object-fit: contain; filter: drop-shadow(0 0 6px rgba(255,255,255,.18)); background: radial-gradient(closest-side, rgba(255,255,255,.16), transparent); border-radius: 6px; }
 .insp-name { font: 700 22px/1.1 var(--font-hud); letter-spacing: .04em; }
 .tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .quick-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }

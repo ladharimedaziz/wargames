@@ -5,8 +5,8 @@ import * as geo from '../../server/geo-index.js';
 import { createWorldState, createCourtState } from '../../shared/engine/state.js';
 import { applyAction } from '../../shared/engine/reducer.js';
 import { parseCommand } from '../../shared/engine/command.js';
-import { atWar, relation } from '../../shared/engine/core.js';
-import { validateOrder } from '../../shared/engine/orders.js';
+import { atWar, relation, warClosures } from '../../shared/engine/core.js';
+import { validateOrder, autoUnits } from '../../shared/engine/orders.js';
 
 const gi = { ids: geo.atlasCountryIds(), name: geo.atlasName, anchor: geo.anchorOf, neighbors: geo.neighborsOf };
 const US = '840', RU = '643', UA = '804', FR = '250', SA = '682', JP = '392';
@@ -233,9 +233,11 @@ test('only countries with landing fleets can invade across the sea', () => {
   const IR = '364';
   assert.ok(Object.values(s.units).some(u => u.owner === SA && u.type === 'fleet' && u.loc.id === 'persian_gulf'));
   const saArmy = Object.values(s.units).find(u => u.owner === SA && u.type === 'army');
-  const v1 = validateOrder(s, { country: SA, type: 'invade', target: IR, units: [saArmy.id] });
-  assert.equal(v1.ok, false);
-  assert.match(v1.reason, /landing ships/);
+  // Saudi Arabia has no landing ships, so it flies troops in by strategic airlift instead of landing them.
+  const o1 = { country: SA, type: 'invade', target: IR, units: [saArmy.id] };
+  const v1 = validateOrder(s, o1);
+  assert.ok(v1.ok, v1.reason);
+  assert.ok(o1.airborne && !o1.amphibious);
   const usFleet = Object.values(s.units).find(u => u.owner === US && u.type === 'fleet');
   usFleet.loc = { kind: 'sea', id: 'persian_gulf' };
   const usArmy = Object.values(s.units).find(u => u.owner === US && u.type === 'army');
@@ -243,6 +245,42 @@ test('only countries with landing fleets can invade across the sea', () => {
   const v2 = validateOrder(s, o);
   assert.ok(v2.ok, v2.reason);
   assert.equal(o.zone, 'persian_gulf');
+});
+
+test('the US can drop paratroopers into landlocked Afghanistan', () => {
+  const { s, kronos } = world();
+  const AF = '004';
+  const p = parseCommand(s, 'us invade afghanistan', 'stage');
+  assert.ok(p.ok, p.error);
+  const o = p.actions[0].order;
+  assert.ok(validateOrder(s, autoUnits(s, { ...o, id: 'x' }, o.counts || {})).ok);
+  const r = kronos({ type: 'forceOrder', order: o });
+  assert.ok(r.ok, r.error);
+  assert.ok(s.lastResolution.events.some(e => e.kind === 'airdrop' && e.country === AF));
+  const q = parseCommand(s, 'us paratroopers afghanistan', 'stage');
+  assert.ok(q.ok, q.error); assert.equal(q.actions[0].order.type, 'airdrop');
+});
+
+test('a sea invasion sails the nearest warships in, and helicopters fly off them', () => {
+  const { s, kronos } = world();
+  const IR = '364';
+  for (const u of Object.values(s.units)) if (u.owner === US && u.loc.kind === 'sea' && ['persian_gulf', 'arabian_sea', 'gulf_oman'].includes(u.loc.id)) u.loc = { kind: 'sea', id: 'gulf_aden' };
+  const army = Object.values(s.units).find(u => u.owner === US && u.type === 'army');
+  const o = { country: US, type: 'invade', target: IR, units: [army.id] };
+  const v = validateOrder(s, o);
+  assert.ok(v.ok, v.reason);
+  assert.ok(o.amphibious && o.sail, 'a ship is sent to cover the landing');
+  kronos({ type: 'forceWar', a: US, b: IR });
+  kronos({ type: 'forceOrder', order: { country: US, type: 'invade', target: IR, counts: { n: 1 } } });
+  assert.ok(s.lastResolution.events.some(e => e.kind === 'fleet'));
+  assert.ok(s.lastResolution.events.some(e => e.kind === 'landing'));
+  // Venezuela has no US base next door: helicopters fly off a carrier in the Caribbean.
+  const VE = '862';
+  const carrier = Object.values(s.units).find(u => u.owner === US && u.type === 'carrier');
+  carrier.loc = { kind: 'sea', id: 'caribbean' };
+  const h = kronos({ type: 'forceOrder', order: { country: US, type: 'airassault', target: VE } });
+  assert.ok(h.ok, h.error);
+  assert.ok(s.lastResolution.events.some(e => e.kind === 'heli' && e.sea));
 });
 
 test('capable countries evacuate citizens (NEO), others cannot', () => {
@@ -328,4 +366,30 @@ test('civil war splits off a rebel faction with its own ground and army', () => 
   assert.ok(Object.values(s.units).some(u => u.owner === R.id && u.type === 'army'));
   assert.ok(Object.values(s.units).filter(u => u.owner === SY && u.type === 'army').length < armies || armies === 1);
   assert.ok(zeus({ type: 'resolveTurn' }).ok, 'the turn resolves with rebels on the map');
+});
+
+test('a war only closes airspace that is contested and within the enemy\'s reach', () => {
+  const { s } = world();
+  assert.deepEqual(warClosures(s, US, '004'), []); // no air force to fight over Afghanistan
+  assert.deepEqual(warClosures(s, US, '364'), ['364']); // Iran cannot reach the US
+  assert.deepEqual(warClosures(s, RU, UA).sort(), [RU, UA].sort());
+});
+
+test('US strike aircraft: the B-2 can carry the MOAB, nobody else can', () => {
+  const { s, kronos } = world();
+  const r = kronos({ type: 'forceOrder', order: { country: US, type: 'strike', target: '004', counts: { aircraft: 'b2', payload: 'moab' } } });
+  assert.ok(r.ok, r.error);
+  const e = s.lastResolution.events.find(x => x.kind === 'strike');
+  assert.equal(e.model, 'b2'); assert.equal(e.payload, 'moab');
+  const p = parseCommand(s, 'us b-52 strike iran', 'stage');
+  assert.ok(p.ok, p.error); assert.equal(p.actions[0].order.counts.aircraft, 'b52');
+  assert.equal(kronos({ type: 'forceOrder', order: { country: RU, type: 'strike', target: UA, counts: { aircraft: 'b2' } } }).ok, false);
+});
+
+test('the Zeus can show a coat of arms on the stage', () => {
+  const { s, zeus } = world();
+  assert.ok(zeus({ type: 'setCoat', on: true }).ok);
+  assert.equal(s.display.coat, true);
+  assert.ok(zeus({ type: 'setSetting', key: 'autoSnap', value: false }).ok);
+  assert.equal(s.settings.autoSnap, false);
 });

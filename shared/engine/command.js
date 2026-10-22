@@ -11,7 +11,8 @@ const VERBS = [
   ['nuke', ['nuke', 'nukes', 'nuclear strike', 'nuclear launch', 'launch nuclear']],
   ['alert', ['nuclear alert', 'alert']],
   ['helistrike', ['helicopter strike', 'helicopter strikes', 'helicopters strike', 'heli strike', 'helicopter attack', 'helicopters attack', 'gunship strike', 'gunships strike', 'gunships']],
-  ['airassault', ['air assault', 'air assaults', 'airborne assault', 'airborne landing', 'heliborne assault', 'drop troops behind', 'drops troops behind', 'land troops behind', 'lands troops behind', 'paratroopers into', 'paratroopers', 'airdrop', 'airdrops']],
+  ['airassault', ['air assault', 'air assaults', 'airborne assault', 'airborne landing', 'heliborne assault', 'drop troops behind', 'drops troops behind', 'land troops behind', 'lands troops behind', 'helicopter airlift', 'heli airlift', 'airlift troops', 'airlifts troops', 'airlift']],
+  ['airdrop', ['paratroopers into', 'paratroopers', 'paratroop', 'paradrop', 'parachute', 'airdrop', 'airdrops', 'drop paratroopers', 'drops paratroopers', 'airborne drop']],
   ['strike', ['strike', 'strikes', 'bomb', 'bombs', 'attack', 'attacks', 'hit', 'hits', 'airstrike', 'airstrikes', 'shell', 'shells']],
   ['neo', ['evacuate citizens from', 'evacuates citizens from', 'evacuate from', 'evacuates from', 'evacuate', 'evacuates', 'evacuation', 'evac', 'neo']],
   ['invade', ['invade', 'invades', 'invasion of', 'invasion', 'march into', 'marches into', 'push into', 'pushes into', 'send troops to', 'sends troops to', 'move troops to', 'moves troops to']],
@@ -193,7 +194,11 @@ export function parseCommand(state, text, role = 'stage') {
   const sys = system(state, raw, role);
   if (sys) return sys.error ? { ok: false, error: sys.error } : { ok: true, ...sys };
 
-  const toks = tokenize(state, raw);
+  // Named American aircraft ("us b-2 strike iran", "us f-117 iran radar", "us b2 moab afghanistan") are taken out
+  // before reading the rest, so "B-2" is not read as the number 2.
+  const lw = raw.toLowerCase();
+  const ac = /\bb-?2\b|\bspirit\b|\bmoab\b/.test(lw) ? 'b2' : /\bf-?117\b|\bnighthawk\b/.test(lw) ? 'f117' : /\bb-?52\b|\bstratofortress\b/.test(lw) ? 'b52' : /\bb-?1b?\b|\blancer\b/.test(lw) ? 'b1b' : null;
+  const toks = tokenize(state, ac ? raw.replace(/\b(b-?2|b-?52|b-?1b?|f-?117)\b(s\b)?/gi, ' ').replace(/\b(spirit|nighthawk|stratofortress|lancer|moab)s?\b/gi, ' ') : raw);
   const countries = toks.filter(t => t.country).map(t => t.country);
   const verbTok = toks.find(t => t.verb);
   let verb = verbTok?.verb;
@@ -208,6 +213,7 @@ export function parseCommand(state, text, role = 'stage') {
   // "lift" + "sanction" means lifting sanctions, not a blockade.
   if (verb === 'lift' && toks.some(t => t.verb === 'sanction')) verb = 'unsanction';
   if (verb === 'strike' && words.some(w => /^nuc/.test(w || ''))) verb = 'nuke';
+  if (!verb && ac) verb = 'strike';
   if (!verb && zone && unitToks.some(t => t.unit === 'fleet' || t.unit === 'carrier')) verb = 'fleet';
   if (!verb && kind && ['defensive', 'firm', 'forward'].includes(kind)) verb = 'roe';
   if (!verb) return { ok: false, error: 'What should happen? Try strike, invade, blockade, sail, sanction, war, ceasefire, peace, aid, arms, cyber, spy…' };
@@ -229,6 +235,7 @@ export function parseCommand(state, text, role = 'stage') {
       if (counts.type && !['bomber', 'missile', 'carrier', 'fighter'].includes(counts.type)) delete counts.type;
       if (mainNum) counts.n = Math.min(30, mainNum.num);
       if (escortIdx >= 0) counts.escort = Math.min(8, escortNum?.num || 1);
+      if (ac) { counts.aircraft = ac; delete counts.type; if (ac === 'b2' && /\bmoab\b|heavy bomb/.test(raw.toLowerCase())) counts.payload = 'moab'; }
       break;
     case 'invade': case 'rebase':
       order.target = target || (verb === 'rebase' ? actor : null);
@@ -247,7 +254,7 @@ export function parseCommand(state, text, role = 'stage') {
     case 'spy': order.target = target; order.kind = ['steal', 'sabotage', 'defector'].includes(kind) ? kind : (verbTok.word.startsWith('sabot') ? 'sabotage' : verbTok.word.startsWith('steal') ? 'steal' : 'sabotage'); break;
     case 'roe': order.kind = ['defensive', 'firm', 'forward'].includes(kind) ? kind : null; if (!order.kind) return { ok: false, error: 'ROE is defensive, firm or forward.' }; break;
     case 'propaganda': order.target = target; break;
-    case 'helistrike': case 'airassault': order.target = target; if (!target) return { ok: false, error: 'Against whom? e.g. "russia helicopter strike ukraine" or "russia air assault ukraine".' }; break;
+    case 'helistrike': case 'airassault': case 'airdrop': order.target = target; if (!target) return { ok: false, error: 'Against whom? e.g. "russia helicopter strike ukraine" or "russia air assault ukraine".' }; break;
     case 'neo': order.target = target; if (!target) return { ok: false, error: 'Evacuate from where? e.g. "us evacuate sudan".' }; break;
     default: order.target = target;
   }

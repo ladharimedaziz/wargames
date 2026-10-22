@@ -1,23 +1,25 @@
 // Turn resolution: every queued order resolves at once, then the economy, AI, news and endings update.
 import { SEA_ZONES, FLEET_MOVES_PER_TURN } from '../data/places.js';
+import { US_AIRCRAFT } from '../data/militaries.js';
 import { CITIES } from '../data/cities.js';
 import { distanceKm, countriesCrossed, seaRoute, zonesTouching } from '../geo.js';
 import {
   UNIT_TYPES, rand, chance, between, clamp, newId, atWar, sameSide, relation, shiftRelation, anchor, unitsAt, unitsOf,
-  enemiesOf, isActive, countryName, boundAllies,
+  enemiesOf, isActive, countryName, boundAllies, airContested, closesAirspace, warClosures,
 } from './core.js';
 import { validateOrder, blockedFor, describeOrder } from './orders.js';
 import { tickEconomy } from './economy.js';
-import { hasGeo, cellsOf, cellCenter, advance, holdings, releaseCells, occupyCells, heldCenter, behindLines, dropPocket } from './control.js';
+import { hasGeo, cellsOf, cellCenter, advance, holdings, releaseCells, occupyCells, heldCenter, behindLines, dropPocket, nearestHeld } from './control.js';
 import { planAI } from './ai.js';
 import { headlinesFrom } from './news.js';
 import { detectEndings } from './endings.js';
 import { snapshotStats } from './state.js';
 
 const PRIORITY = ['roe', 'overflight', 'war', 'alliance', 'ceasefire', 'peace', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'lift',
-  'rebase', 'cap', 'fleet', 'blockade', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'neo', 'strike', 'helistrike', 'invade', 'airassault', 'nuke', 'election'];
+  'rebase', 'cap', 'fleet', 'blockade', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'neo', 'strike', 'helistrike', 'invade', 'airdrop', 'airassault', 'nuke', 'election'];
 
-const ANIMATED = ['strike', 'battle', 'naval', 'fleet', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo', 'heli', 'civil_war'];
+const ANIMATED = ['strike', 'battle', 'naval', 'fleet', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo', 'heli', 'civil_war', 'airdrop',
+  'ceasefire', 'peace', 'alliance', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'overflight', 'cyber', 'intel', 'spy', 'satellite', 'propaganda', 'alert', 'lift', 'roe', 'election'];
 
 const pt = c => ({ lat: c.lat, lon: c.lon });
 // A country's fighting quality in a domain (land, air or sea).
@@ -90,7 +92,9 @@ function resolveStrike(state, o, ctx, ev, salvos) {
   if (!atWar(state, o.country, o.target)) declareWar(state, o.country, o.target, ev, 'strike');
   const category0 = o.category || 'military';
   const escorts = (o.escort || []).map(id => state.units[id]).filter(Boolean);
-  const category = o.category || 'military';
+  const spec = o.aircraft && US_AIRCRAFT[o.aircraft];
+  const moab = spec && o.payload === 'moab';
+  const category = moab ? 'military' : o.category || 'military';
   salvos[o.target] = (salvos[o.target] || 0);
   for (const id of o.units) {
     const u = state.units[id];
@@ -117,7 +121,8 @@ function resolveStrike(state, o, ctx, ev, salvos) {
       if (isMissile) p *= 0.35;
       else {
         p = Math.max(0, p - Math.min(0.28, 0.07 * escorts.length));
-        if (u.type === 'bomber' && atk.stealth) p *= 0.55;
+        if (spec) p *= spec.stealth;
+        else if (u.type === 'bomber' && atk.stealth) p *= 0.55;
         if (u.type === 'carrier') p *= 0.8;
       }
       if (interceptedOver === null && chance(state, p)) interceptedOver = cid;
@@ -129,7 +134,8 @@ function resolveStrike(state, o, ctx, ev, salvos) {
       if (isMissile) { salvos[o.target]++; p = (p * 0.75) / (1 + 0.35 * (salvos[o.target] - 1)); }
       else {
         p = Math.max(0, p - Math.min(0.28, 0.07 * escorts.length));
-        if (u.type === 'bomber' && atk.stealth) p *= 0.55;
+        if (spec) p *= spec.stealth;
+        else if (u.type === 'bomber' && atk.stealth) p *= 0.55;
       }
       if (chance(state, p)) interceptedOver = o.target;
     }
@@ -144,18 +150,19 @@ function resolveStrike(state, o, ctx, ev, salvos) {
     if (interceptedOver) {
       const host = state.countries[interceptedOver];
       const at = interceptedOver === o.target ? to : pt(host);
-      ev.push({ kind: 'strike', owner: o.country, target: o.target, unitType: u.type, category, from, to, intercepted: true, by: interceptedOver, at, escort: escorts.length });
+      ev.push({ kind: 'strike', owner: o.country, target: o.target, unitType: u.type, model: o.aircraft || null, payload: o.payload || null, category, from, to, intercepted: true, by: interceptedOver, at, escort: escorts.length });
       if (!isMissile) damageUnit(state, u, between(state, 35, 70), ev, 'shot down');
       else if (u.strength <= 0) { delete state.units[u.id]; }
       if (interceptedOver !== o.target && !atWar(state, interceptedOver, o.country)) shiftRelation(state, interceptedOver, o.country, -10);
       continue;
     }
     // Hit.
-    const power = (u.type === 'bomber' ? 0.07 : u.type === 'missile' ? 0.045 : u.type === 'carrier' ? 0.05 : 0.03) * (u.strength / 100 + 0.3) * (isMissile ? 1 : Math.sqrt(Q(state, o.country, 'air')));
+    const base = moab ? 0.17 : spec ? spec.power : u.type === 'bomber' ? 0.07 : u.type === 'missile' ? 0.045 : u.type === 'carrier' ? 0.05 : 0.03;
+    const power = base * (u.strength / 100 + 0.3) * (isMissile ? 1 : Math.sqrt(Q(state, o.country, 'air')));
     applyStrikeDamage(state, tgt, category, power, ev, o.country);
     tgt.lastStruck = state.meta.turn;
-    state.global.closedAirspace[o.target] = state.global.closedAirspace[o.target] || { turn: state.meta.turn, at: ctx.now };
-    ev.push({ kind: 'strike', owner: o.country, target: o.target, unitType: u.type, category, from, to, intercepted: false, at: to, power: Math.round(power * 100), escort: escorts.length });
+    if (airContested(state, o.country, o.target)) state.global.closedAirspace[o.target] = state.global.closedAirspace[o.target] || { turn: state.meta.turn, at: ctx.now };
+    ev.push({ kind: 'strike', owner: o.country, target: o.target, unitType: u.type, model: o.aircraft || null, payload: o.payload || null, category, from, to, intercepted: false, at: to, power: Math.round(power * 100), escort: escorts.length });
     if (isMissile && u.strength <= 0) { ev.push({ kind: 'unit_lost', owner: u.owner, unitType: 'missile', at: from, why: 'stockpile spent' }); delete state.units[u.id]; }
   }
 }
@@ -194,7 +201,7 @@ function resolveInvasions(state, orders, ev) {
     // Peaceful moves just relocate.
     for (const o of os.filter(x => !hostile.includes(x))) for (const id of o.units) {
       const u = state.units[id]; if (!u) continue;
-      ev.push({ kind: 'move', owner: o.country, unitType: 'army', from: anchor(state, u.loc), to: pt(T) });
+      ev.push(o.airborne ? { kind: 'airdrop', owner: o.country, country: target, from: anchor(state, u.loc), to: pt(T), n: 1, lost: 0 } : { kind: 'move', owner: o.country, unitType: 'army', from: anchor(state, u.loc), to: pt(T) });
       u.loc = { kind: 'country', id: target };
     }
     if (!hostile.length) continue;
@@ -205,7 +212,19 @@ function resolveInvasions(state, orders, ev) {
     const lead = hostile[0].country;
     // A landing comes ashore from the sea zone the fleet holds; enemy warships there make it costly.
     const sea = hostile.find(o => o.amphibious && o.zone && SEA_ZONES[o.zone]);
-    const origin = sea ? { lat: SEA_ZONES[sea.zone].lat, lon: SEA_ZONES[sea.zone].lon } : anchor(state, attackers[0].u.loc);
+    // Paratroopers drop onto an airfield near the capital, losing some aircraft to air defences on the way in.
+    const air = !sea && hostile.find(o => o.airborne);
+    const drop = air ? (nearestHeld(state, target, pt(T))?.at || pt(T)) : null;
+    if (air) {
+      let lost = 0;
+      for (const { u, o } of attackers) if (o.airborne) {
+        const hit = clamp(T.airDefense * 2.2 / Q(state, o.country, 'air'), 2, 30) * between(state, 0.5, 1.4);
+        if (hit > 14) lost++;
+        damageUnit(state, u, hit, ev, 'transports shot down');
+      }
+      ev.push({ kind: 'airdrop', owner: lead, country: target, from: anchor(state, attackers[0].u.loc), to: drop, n: attackers.length, lost });
+    }
+    const origin = sea ? { lat: SEA_ZONES[sea.zone].lat, lon: SEA_ZONES[sea.zone].lon } : drop || anchor(state, attackers[0].u.loc);
     let landingPenalty = 1;
     if (sea) {
       const ships = unitsAt(state, 'sea', sea.zone).filter(u => u.strength > 0 && (u.type === 'fleet' || u.type === 'carrier'));
@@ -215,7 +234,7 @@ function resolveInvasions(state, orders, ev) {
       ev.push({ kind: 'landing', owner: lead, country: target, zone: sea.zone, from: origin, to: pt(T), contested: theirs > 0, n: attackers.length });
     }
     const airBonus = Math.min(0.3, 0.1 * ev.filter(e => e.kind === 'strike' && e.target === target && !e.intercepted && sameSide(state, e.owner, lead)).length);
-    let A = attackers.reduce((s, { u, o }) => s + u.strength * Q(state, u.owner, 'land') * supplyFactor(state, u.owner, target) * (o.amphibious ? 0.75 * landingPenalty : 1), 0) * (1 + airBonus) * between(state, 0.8, 1.2);
+    let A = attackers.reduce((s, { u, o }) => s + u.strength * Q(state, u.owner, 'land') * supplyFactor(state, u.owner, target) * (o.amphibious ? 0.75 * landingPenalty : o.airborne ? 0.65 : 1), 0) * (1 + airBonus) * between(state, 0.8, 1.2);
     const garrison = T.occupiedBy ? 10 : 20 + T.airDefense * 3 + (T.major ? 15 : 0);
     let D = (defenders.reduce((s, u) => s + u.strength * Q(state, u.owner, 'land'), 0) + garrison) * 1.35 * between(state, 0.8, 1.2) * (T.stability / 100 * 0.4 + 0.8);
     const at = pt(T);
@@ -322,14 +341,24 @@ function frontDelta(mode, engine, push) {
 // and takes a pocket of ground. Air defences can shoot them down.
 function resolveHelicopters(state, o, ev) {
   const T = state.countries[o.target], A = state.countries[o.country];
-  const geo = hasGeo() ? behindLines(state, o.country, o.target, o.type === 'airassault' ? 7 : 3, () => rand(state)) : null;
-  const from = geo?.from || pt(A), to = geo?.to || pt(T);
+  if (!atWar(state, o.country, o.target)) declareWar(state, o.country, o.target, ev, 'strike');
+  let geo = hasGeo() && !o.fromSea ? behindLines(state, o.country, o.target, o.type === 'airassault' ? 7 : 3, () => rand(state)) : null;
+  // Flying off a ship: the helicopters cross the beach nearest the strike group.
+  const deck = o.fromSea && SEA_ZONES[o.fromSea] ? { lat: SEA_ZONES[o.fromSea].lat, lon: SEA_ZONES[o.fromSea].lon } : null;
+  if (deck && hasGeo()) { const n = nearestHeld(state, o.target, deck); if (n) geo = { from: deck, to: n.at, key: n.key }; }
+  if (!geo && !deck && hasGeo()) {
+    // No front yet: fly from the nearest base next door across the border.
+    const base = Object.values(state.units).find(u => u.owner === o.country && u.loc.kind === 'country' && (state.adjacency[u.loc.id] || []).includes(o.target));
+    const src = base ? pt(state.countries[base.loc.id]) : pt(A), n = nearestHeld(state, o.target, src);
+    if (n) geo = { from: src, to: n.at, key: n.key };
+  }
+  const from = geo?.from || deck || pt(A), to = geo?.to || pt(T);
   const lost = chance(state, clamp(T.airDefense * 0.035 / Q(state, o.country, 'air'), 0.03, 0.4));
   if (o.type === 'helistrike') {
     const def = unitsAt(state, 'country', o.target).filter(u => u.type === 'army' && u.owner === o.target);
     if (!lost && def.length) damageUnit(state, def[Math.floor(rand(state) * def.length)], between(state, 8, 18) * Q(state, o.country, 'air'), ev, 'helicopter strike');
     if (!lost && T.front?.by === o.country) moveFront(state, T, 3, ev);
-    ev.push({ kind: 'heli', mode: 'strike', owner: o.country, target: o.target, from, to, lost });
+    ev.push({ kind: 'heli', mode: 'strike', owner: o.country, target: o.target, from, to, lost, sea: !!deck });
     return;
   }
   // Air assault: one army group flies in. If it gets through it holds a pocket behind the line.
@@ -341,7 +370,7 @@ function resolveHelicopters(state, o, ev) {
     u.loc = { kind: 'country', id: o.target };
     syncFront(state, T, ev);
   } else if (lost && u) damageUnit(state, u, between(state, 25, 45), ev, 'helicopters shot down');
-  ev.push({ kind: 'heli', mode: 'assault', owner: o.country, target: o.target, from, to, lost, pocket });
+  ev.push({ kind: 'heli', mode: 'assault', owner: o.country, target: o.target, from, to, lost, pocket, sea: !!deck });
 }
 
 // A push is measured against the country, but capped at the size of a large theatre, so "+10" in Russia takes
@@ -456,13 +485,21 @@ export function pushFrontNow(state, countryId, by, delta, ctx) {
   return null;
 }
 
+// An invasion with no fleet off the coast yet: the chosen warships sail there first to cover the landing.
+function sailToCover(state, o, ev) {
+  const u = state.units[o.sail]; if (!u || u.loc.kind !== 'sea') return;
+  const route = seaRoute(u.loc.id, o.zone, blockedFor(state, o.country)); if (!route) return;
+  ev.push({ kind: 'fleet', owner: o.country, unitType: u.type, path: route.map(z => ({ lat: SEA_ZONES[z].lat, lon: SEA_ZONES[z].lon })) });
+  u.loc = { kind: 'sea', id: o.zone };
+}
+
 function moveFleet(state, o, ev) {
   for (const id of o.units) {
     const u = state.units[id]; if (!u) continue;
     const route = seaRoute(u.loc.id, o.zone, blockedFor(state, o.country));
     if (!route) continue;
     const steps = route.slice(0, FLEET_MOVES_PER_TURN * 2 + 1);
-    ev.push({ kind: 'fleet', owner: o.country, unitType: u.type, path: steps.map(z => ({ lat: SEA_ZONES[z].lat, lon: SEA_ZONES[z].lon })) });
+    ev.push({ kind: 'fleet', owner: o.country, unitType: u.type, blockade: o.type === 'blockade' && steps[steps.length - 1] === o.zone, path: steps.map(z => ({ lat: SEA_ZONES[z].lat, lon: SEA_ZONES[z].lon })) });
     u.loc = { kind: 'sea', id: steps[steps.length - 1] };
     if (o.type === 'blockade') u.blockade = steps[steps.length - 1] === o.zone;
   }
@@ -568,7 +605,8 @@ function runOrders(state, list, ctx, ev) {
     o.status = 'done';
     switch (o.type) {
       case 'strike': resolveStrike(state, o, ctx, ev, salvos); break;
-      case 'invade': invasions.push(o); break;
+      case 'invade': if (o.sail) sailToCover(state, o, ev); invasions.push(o); break;
+      case 'airdrop': invasions.push(o); break;
       case 'rebase': for (const id of o.units) { const u = state.units[id]; if (u) { ev.push({ kind: 'move', owner: o.country, unitType: u.type, from: anchor(state, u.loc), to: pt(state.countries[o.target]) }); u.loc = { kind: 'country', id: o.target }; } } break;
       case 'fleet': case 'blockade': moveFleet(state, o, ev); break;
       case 'lift': for (const u of unitsOf(state, o.country)) u.blockade = false; ev.push({ kind: 'lift', a: o.country }); break;
@@ -634,13 +672,14 @@ export function resolveTurn(state, ctx) {
     }
   }
 
-  // Airspace: countries at war stay closed; others reopen after two quiet turns.
+  // Airspace: countries in a war fought in the air stay closed; others reopen after two quiet turns. One-sided wars
+  // (no enemy air force or air defences worth the name) leave the skies open.
   for (const id of Object.keys(state.global.closedAirspace)) {
-    const atWarNow = enemiesOf(state, id).length > 0;
-    const c = state.countries[id];
-    if (!atWarNow && c && turn - Math.max(c.lastStruck || 0, state.global.closedAirspace[id].turn) >= 2) delete state.global.closedAirspace[id];
+    const c = state.countries[id], cl = state.global.closedAirspace[id];
+    if (cl.forced || !c || closesAirspace(state, id)) continue;
+    if (cl.war || turn - Math.max(c.lastStruck || 0, cl.turn) >= 2) delete state.global.closedAirspace[id];
   }
-  for (const w of state.wars) for (const id of [w.a, w.b]) if (!state.global.closedAirspace[id]) state.global.closedAirspace[id] = { turn, at: ctx.now };
+  for (const w of state.wars) for (const id of warClosures(state, w.a, w.b)) if (!state.global.closedAirspace[id]) state.global.closedAirspace[id] = { turn, at: ctx.now, war: true };
 
   tickEconomy(state, ev, ctx);
   updateTension(state, ev);
@@ -687,7 +726,7 @@ export function resolveNow(state, orders, ctx) {
   const invasions = runOrders(state, orders, ctx, ev);
   resolveInvasions(state, invasions, ev);
   updateChokepoints(state, ev);
-  for (const w of state.wars) for (const id of [w.a, w.b]) if (!state.global.closedAirspace[id]) state.global.closedAirspace[id] = { turn: state.meta.turn, at: ctx.now };
+  for (const w of state.wars) for (const id of warClosures(state, w.a, w.b)) if (!state.global.closedAirspace[id]) state.global.closedAirspace[id] = { turn: state.meta.turn, at: ctx.now, war: true };
   state.lastResolution = { turn: state.meta.turn, at: ctx.now, instant: true, events: ev.filter(e => ANIMATED.includes(e.kind)) };
   publish(state, ev, ctx);
   return ev;

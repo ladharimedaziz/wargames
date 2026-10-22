@@ -78,6 +78,30 @@ export const ACT_FX = {
     ctx.restore();
   },
 
+  // --- lasting conditions ---
+  // Blackouts and outbreaks Kronos started stay on the map until they end: a blacked-out country sits in the dark,
+  // an outbreak tints the country and pulses over its cities, stronger the worse it is.
+  drawConditions(ctx, time) {
+    const s = this.state; if (!s?.countries) return;
+    for (const c of Object.values(s.countries)) {
+      if (c.blackout) this.clipTo(ctx, c.id, () => { ctx.fillStyle = `rgba(0,2,10,${this.night ? 0.6 : 0.42})`; ctx.fillRect(0, 0, this.w, this.h); });
+      const lvl = (c.outbreak?.level || 0) / 100; if (!lvl) continue;
+      this.clipTo(ctx, c.id, () => {
+        ctx.globalCompositeOperation = 'screen';
+        ctx.fillStyle = `rgba(90,200,60,${(0.06 + lvl * 0.16) * (0.75 + 0.25 * Math.sin(time * 1.6 + c.lon))})`;
+        ctx.fillRect(0, 0, this.w, this.h);
+      });
+      const cities = (this._obCache ||= {})[c.id] ||= this.citiesOf(c.id).slice(0, 10);
+      const n = Math.max(1, Math.round(cities.length * Math.min(1, lvl * 1.4)));
+      for (let i = 0; i < n; i++) {
+        const p = this.p(cities[i].lon, cities[i].lat); if (!p) continue;
+        const v = (time * 0.6 + i * 0.37) % 1;
+        ctx.strokeStyle = `rgba(190,255,110,${(1 - v) * (0.3 + lvl * 0.5)})`; ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.arc(p[0], p[1], 2 + v * (6 + lvl * 10), 0, TAU); ctx.stroke();
+      }
+    }
+  },
+
   // --- dispatch ---
   fx_act(ctx, fx, u, now) {
     const e = fx.e, q = this.pt(e.at) || this.countryPoint(e.country);

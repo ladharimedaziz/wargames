@@ -111,7 +111,7 @@ export function createHub(server, store, geo) {
         const state = store.get(id);
         const ctx = { role: user.role, user: user.username, now: Date.now(), geo };
         const def = m.action?.type === 'resolveTurn';
-        if (def) store.snapshot(id, `Start of turn ${state.meta.turn}`, user.username);
+        if (def && state.settings?.autoSnap !== false) store.snapshot(id, `Start of turn ${state.meta.turn}`, user.username);
         const r = applyAction(state, m.action, ctx);
         ack(r.ok, { error: r.error, result: r.ok ? strip(r) : undefined });
         if (r.ok && !r.readOnly) {
@@ -150,6 +150,13 @@ export function createHub(server, store, geo) {
         if (st.mode === 'court' && !st.court) return ack(false, { error: 'That save is incomplete.' });
         store.replace(id, st, user.username);
         broadcastState(id, { rewound: true });
+        sendSnapshots(id);
+        return ack(true);
+      }
+      case 'deleteSnapshot': {
+        const id = m.committee || c.committee;
+        if (!id || !canAccess(user, id)) return ack(false, { error: 'No access.' });
+        if (!store.deleteSnapshot(id, m.snapId)) return ack(false, { error: 'That save point is gone.' });
         sendSnapshots(id);
         return ack(true);
       }
