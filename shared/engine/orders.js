@@ -30,6 +30,8 @@ export const ORDER_TYPES = {
   satellite:  { label: 'Blind enemy satellites', group: 'covert', needs: ['target'] },
   propaganda: { label: 'Propaganda campaign', group: 'covert', needs: [] },
   neo:        { label: 'Evacuate citizens (NEO)', group: 'military', needs: ['target'] },
+  helistrike: { label: 'Helicopter strike', group: 'military', needs: ['target'] },
+  airassault: { label: 'Air assault behind the lines', group: 'military', needs: ['target'] },
   roe:        { label: 'Rules of engagement', group: 'military', needs: ['kind'] },
   election:   { label: 'Call an election', group: 'politics', needs: [] },
 };
@@ -126,6 +128,17 @@ export function validateOrder(state, o) {
     case 'neo': {
       if (!canEvacuate(state, o.country)) return fail(`${c.name} does not have the long-range airlift or ships for an evacuation.`);
       if (atWar(state, o.country, o.target)) return fail(`${c.name} is at war with ${T.name}; its citizens cannot be flown out.`);
+      return { ok: true };
+    }
+    case 'helistrike': case 'airassault': {
+      // Helicopters fly from the front line: the two sides must touch on land, or one must hold ground in the other.
+      if (!atWar(state, o.country, o.target)) return fail(`${c.name} is not at war with ${T.name}.`);
+      const touch = (state.adjacency[o.country] || []).includes(o.target) || T.front?.by === o.country || c.front?.by === o.target
+        || Object.values(state.units).some(u => u.owner === o.country && u.type === 'army' && u.loc.kind === 'country' && u.loc.id === o.target);
+      if (!touch) return fail(`${c.name} has no front line with ${T.name} for helicopters to cross.`);
+      const army = Object.values(state.units).filter(u => u.owner === o.country && u.type === 'army' && u.strength > 20);
+      if (!army.length) return fail(`${c.name} has no army aviation left.`);
+      if (o.type === 'airassault') o.units = [army.find(u => u.loc.id === o.target)?.id || army[0].id];
       return { ok: true };
     }
     case 'lift': case 'cap': case 'propaganda': case 'election': case 'intel': case 'satellite':
@@ -226,6 +239,8 @@ export function describeOrder(state, o, lang = 'en') {
     case 'spy': return `${c} spy operation in ${t}: ${o.kind}`;
     case 'satellite': return `${c} blinds ${t}'s satellites`;
     case 'neo': return `${c} evacuates its citizens from ${t}`;
+    case 'helistrike': return `${c} attack helicopters strike ${t}'s forces behind the front`;
+    case 'airassault': return `${c} lands troops by helicopter behind ${t}'s lines`;
     case 'propaganda': return o.target ? `${c} runs propaganda against ${t}` : `${c} runs a propaganda campaign at home`;
     case 'roe': return `${c} sets rules of engagement to ${o.kind}`;
     case 'election': return `${c} holds an election`;

@@ -15,6 +15,7 @@
   },
   "dependencies": {
     "d3-array": "^3.2.4",
+    "d3-contour": "^4.0.2",
     "d3-geo": "^3.1.1",
     "htm": "^3.1.1",
     "preact": "^11.0.1",

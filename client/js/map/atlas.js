@@ -2,6 +2,7 @@
 import { feature, mesh } from 'topojson-client';
 import { geoBounds, geoContains, geoArea, geoCentroid, geoPath, geoEquirectangular } from 'd3-geo';
 import { featureCountryId } from '/shared/data/places.js';
+import { buildCellRaster } from '/shared/engine/control.js';
 
 let loading = null;
 
@@ -23,7 +24,9 @@ async function load(url) {
   });
   const borders = mesh(topo, topo.objects.countries, (a, b) => a !== b);
   const coast = mesh(topo, topo.objects.countries, (a, b) => a === b);
-  return { countries, byId: new Map(countries.map(c => [c.id, c])), borders, coast, topo, pairs: new Map() };
+  // The coarse atlas also defines the territory grid fronts are held on (identical to the server's).
+  const cells = /110m/.test(url) ? buildCellRaster(fc.features.map(f => ({ id: featureCountryId(f), geometry: f.geometry }))) : null;
+  return { countries, byId: new Map(countries.map(c => [c.id, c])), borders, coast, topo, pairs: new Map(), cells };
 }
 
 // The land border two countries share, as a MultiLineString (empty when they do not touch). Cached per pair.

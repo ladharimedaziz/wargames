@@ -6,7 +6,8 @@ import {
   UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive,
 } from './core.js';
 import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.js';
-import { resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow } from './resolve.js';
+import { resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
+import { bindGeo, hasGeo, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter } from './control.js';
 import { courtActions } from './court.js';
 
 const SCENES = ['map', 'disguise', 'intro', 'reveal', 'ending', 'report', 'blank', 'pause', 'vote', 'treaty', 'polls', 'web', 'court'];
@@ -23,6 +24,20 @@ const DISASTERS = {
 const err = error => ({ ok: false, error });
 const ok = (result = {}) => ({ ok: true, ...result });
 const C = (s, id) => s.countries?.[id];
+const at = c => ({ lat: c.lat, lon: c.lon });
+
+// Sandbox powers play an animation on every map without adding headlines of their own.
+function sandboxFx(s, ctx, events) {
+  s.lastResolution = { turn: s.meta.turn, at: ctx.now, instant: true, events };
+}
+
+// A random point inside a country, for where an act of god strikes.
+function spotIn(s, c) {
+  const cells = hasGeo() ? cellsOf(c.id) : [];
+  if (!cells.length) return at(c);
+  const [lon, lat] = cellCenter(cells[Math.floor(Math.random() * cells.length)]);
+  return { lat, lon };
+}
 
 function log(s, ctx, text) {
   s.log.push({ turn: s.meta.turn, at: ctx.now, by: ctx.user, text });
@@ -229,7 +244,7 @@ const WORLD = {
   setSetting: { perm: 'zeus', run(s, a) {
     const st = s.settings;
     if (a.key === 'lang' && ['en', 'ar', 'both'].includes(a.value)) st.lang = a.value;
-    else if (['sfx', 'autoAir'].includes(a.key)) st[a.key] = !!a.value;
+    else if (['sfx', 'autoAir', 'night', 'showStrikes'].includes(a.key)) st[a.key] = !!a.value;
     else if (a.key === 'layer' && a.layer in st.layers) st.layers[a.layer] = !!a.value;
     else if (a.key === 'fog') st.fog = a.value === 'public' || a.value === 'all' || C(s, a.value) ? a.value : 'public';
     else if (a.key === 'volume') st.volume = clamp(Number(a.value) || 0, 0, 1);
@@ -327,7 +342,15 @@ const WORLD = {
   noteAdd: { perm: 'zeus', run(s, a, ctx) { log(s, ctx, String(a.text || '').slice(0, 300)); return ok(); } },
 
   // ---------- Kronos sandbox ----------
-  setTension: { perm: 'kronos', run(s, a, ctx) { s.global.tension = clamp(Math.round(Number(a.value) * 2) / 2, 0, 10); log(s, ctx, `Kronos set tension to ${s.global.tension}`); return ok(); } },
+  setTension: { perm: 'zeus', run(s, a, ctx) {
+    const from = s.global.tension, to = clamp(Math.round(Number(a.value) * 2) / 2, 0, 10);
+    if (!Number.isFinite(to)) return err('Pick a tension level from 0 to 10.');
+    s.global.tension = to;
+    log(s, ctx, `${ctx.role === 'kronos' ? 'Kronos' : 'Zeus'} set world tension to ${to}`);
+    if (to === from) return ok();
+    sandboxFx(s, ctx, [{ kind: 'tension', from, to }]);
+    return ok({ broadcastAnim: true });
+  } },
   setOil: { perm: 'kronos', run(s, a) { s.global.oilPrice = clamp(Number(a.value) || 82, 10, 400); return ok(); } },
   setStat: { perm: 'kronos', run(s, a, ctx) {
     const c = C(s, a.country), r = STAT_FIELDS[a.field]; if (!c || !r) return err('Unknown country or field.');
@@ -351,7 +374,9 @@ const WORLD = {
     const n = clamp(Math.round(Number(a.count) || 1), 1, 20);
     for (let i = 0; i < n; i++) { const id = newId(s, 'u'); s.units[id] = { id, type: a.unitType, owner: c.id, loc: { ...loc }, strength: 100, blockade: false, cap: false }; }
     log(s, ctx, `Kronos spawned ${n} ${UNIT_TYPES[a.unitType].name.toLowerCase()} for ${c.name}`);
-    return ok();
+    const spot = sea ? { lat: SEA_ZONES[loc.id].lat, lon: SEA_ZONES[loc.id].lon } : at(C(s, loc.id));
+    sandboxFx(s, ctx, [{ kind: 'spawn', country: c.id, unitType: a.unitType, n, at: spot }]);
+    return ok({ broadcastAnim: true });
   } },
   removeUnit: { perm: 'kronos', run(s, a) { if (!s.units[a.id]) return err('Unknown unit.'); delete s.units[a.id]; return ok(); } },
   moveUnit: { perm: 'kronos', run(s, a) {
@@ -372,25 +397,99 @@ const WORLD = {
     const ev = []; declareWar(s, a.a, a.b, ev, 'declared');
     for (const id of [a.a, a.b]) s.global.closedAirspace[id] ||= { turn: s.meta.turn, at: ctx.now };
     news(s, ctx, `BREAKING: ${C(s, a.a).name} declares war on ${C(s, a.b).name}`, `عاجل: ${C(s, a.a).ar} تعلن الحرب على ${C(s, a.b).ar}`, 6);
-    return ok();
+    sandboxFx(s, ctx, ev.filter(e => e.kind === 'war').length ? ev.filter(e => e.kind === 'war') : [{ kind: 'war', a: a.a, b: a.b }]);
+    return ok({ broadcastAnim: true });
   } },
   forcePeace: { perm: 'kronos', run(s, a, ctx) {
     const pairs = a.all ? s.wars.map(w => [w.a, w.b]) : [[a.a, a.b]];
     for (const [x, y] of pairs) {
       s.wars = s.wars.filter(w => !((w.a === x && w.b === y) || (w.a === y && w.b === x))); shiftRelation(s, x, y, 40);
-      for (const [p, q] of [[x, y], [y, x]]) if (s.countries[p]?.front?.by === q) s.countries[p].front = null;
+      for (const [p, q] of [[x, y], [y, x]]) if (s.countries[p]?.front?.by === q) clearFront(s, s.countries[p], q);
     }
     log(s, ctx, a.all ? 'Kronos ended every war' : `Kronos ended the war between ${C(s, a.a)?.name} and ${C(s, a.b)?.name}`);
-    return ok();
+    sandboxFx(s, ctx, pairs.slice(0, 30).map(([x, y]) => ({ kind: 'peace', a: x, b: y })));
+    return ok({ broadcastAnim: true });
   } },
   setFront: { perm: 'kronos', run(s, a, ctx) {
     const c = C(s, a.country), by = C(s, a.by); if (!c || !by || c === by) return err('Pick two countries.');
     const pct = clamp(Number(a.pct) || 0, 0, 99);
-    if (!pct) { c.front = null; return ok(); }
-    const prev = c.front?.by === a.by ? c.front.pct : 0;
-    c.front = { by: a.by, pct, prev, from: c.front?.by === a.by ? c.front.from : { lat: by.lat, lon: by.lon }, turn: s.meta.turn, mode: c.front?.mode || 'auto' };
+    if (!hasGeo()) {
+      if (!pct) { c.front = null; return ok(); }
+      const prev = c.front?.by === a.by ? c.front.pct : 0;
+      c.front = { by: a.by, pct, prev, from: c.front?.by === a.by ? c.front.from : { lat: by.lat, lon: by.lon }, turn: s.meta.turn, mode: c.front?.mode || 'auto' };
+      return ok();
+    }
+    // Sets the share exactly: grow or shrink the attacker's ground until it covers pct of the country.
+    const total = cellsOf(c.id).length, want = Math.round((pct / 100) * total), have = holdings(s, c.id).held[a.by] || 0;
+    if (want > have) advance(s, a.by, c.id, want - have, { target: c.id, from: { lat: by.lat, lon: by.lon }, toward: { lat: c.lat, lon: c.lon } });
+    else if (want < have) advance(s, c.id, a.by, have - want, { liberateOnly: true, toward: { lat: by.lat, lon: by.lon } });
+    const ev = []; syncFront(s, c, ev);
+    publishInstant(s, ev, ctx);
     log(s, ctx, `Kronos set ${by.name}'s hold on ${c.name} to ${pct}%`);
-    return ok();
+    return ok({ broadcastAnim: true });
+  } },
+  // A Zeus paints ground by hand: 'take' hands the cells to a side, 'restore' gives them back to their country.
+  paintControl: { perm: 'zeus', run(s, a, ctx) {
+    const owner = C(s, a.owner); if (!owner && a.mode !== 'restore') return err('Pick which side takes the ground.');
+    if (!hasGeo()) return err('Territory painting is not available here.');
+    const keys = Array.isArray(a.keys) ? a.keys : [];
+    const touched = paintCells(s, a.owner, keys, a.mode === 'restore' ? 'restore' : 'take');
+    if (!touched.length) return err(a.mode === 'restore' ? 'Nothing to give back there.' : `${owner.name} can only take ground from countries it is at war with.`);
+    const ev = [];
+    for (const id of touched) syncFront(s, C(s, id), ev);
+    publishInstant(s, ev, ctx);
+    log(s, ctx, a.mode === 'restore' ? `Ground handed back in ${touched.map(id => C(s, id).name).join(', ')}` : `${owner.name} takes ground in ${touched.map(id => C(s, id).name).join(', ')}`);
+    return ok({ broadcastAnim: true });
+  } },
+  // Civil war: part of a country's army breaks away as a rebel faction that holds its own ground.
+  civilWar: { perm: 'zeus', run(s, a, ctx) {
+    const P = C(s, a.country); if (!P) return err('Pick the country that splits.');
+    if (P.rebelOf) return err('Rebels cannot split again.');
+    const id = `${P.id}r`;
+    if (s.countries[id] && s.countries[id].control !== 'inactive' && atWar(s, id, P.id)) return err(`${P.name} is already in a civil war.`);
+    const share = clamp(Number(a.share) || 30, 5, 80);
+    const name = String(a.name || '').trim().slice(0, 40) || `${P.name} Rebels`;
+    const ar = String(a.ar || '').trim().slice(0, 40) || `متمردو ${P.ar}`;
+    const bloc = BLOCS.includes(a.bloc) ? a.bloc : (P.bloc === 'A' ? 'B' : P.bloc === 'B' ? 'A' : 'C');
+    const R = {
+      ...structuredClone(P), id, a3: `${P.a3}-R`, name, ar, rebelOf: P.id, bloc, control: 'ai', delegate: '',
+      base: { ...P.base, gdp: P.base.gdp * share / 100, pop: P.base.pop * share / 100 }, gdp: P.gdp * share / 100, treasury: Math.round(Math.max(0, P.treasury) * 0.1),
+      support: 60, stability: 40, alliances: [], veto: false, nuclear: { has: false, alert: false }, influence: Math.round(P.influence * 0.4),
+      front: null, occupiedBy: null, capitulated: false, sanctions: [], overflight: [], intel: {}, cyber: {}, casualties: 0, refugees: 0, damage: 0, warWeariness: 0, airDefense: Math.max(1, Math.round(P.airDefense / 3)),
+    };
+    s.countries[id] = R;
+    // Rebels border everything the country borders, and the country itself.
+    s.adjacency[id] = [...new Set([P.id, ...(s.adjacency[P.id] || [])])];
+    for (const n of s.adjacency[id]) if (s.adjacency[n] && !s.adjacency[n].includes(id)) s.adjacency[n].push(id);
+    // A share of the army defects.
+    const armies = Object.values(s.units).filter(u => u.owner === P.id && u.type === 'army' && u.loc.kind === 'country' && u.loc.id === P.id);
+    armies.slice(0, Math.max(1, Math.round(armies.length * share / 100))).forEach(u => { u.owner = id; });
+    const jets = Object.values(s.units).filter(u => u.owner === P.id && u.type === 'fighter');
+    jets.slice(0, Math.floor(jets.length * share / 200)).forEach(u => { u.owner = id; });
+    s.wars.push({ a: id, b: P.id, since: s.meta.turn, civil: true });
+    shiftRelation(s, id, P.id, -100);
+    P.stability = clamp(P.stability - 25, 0, 100); P.support = clamp(P.support - 10, 0, 100);
+    s.global.closedAirspace[P.id] ||= { turn: s.meta.turn, at: ctx.now };
+    const ev = [{ kind: 'civil_war', country: P.id, rebels: id }];
+    // The rebels rise far from the capital, or where the Zeus clicked.
+    if (hasGeo()) {
+      const cells = cellsOf(P.id);
+      let seed = a.at && Number.isFinite(a.at.lat) ? a.at : null;
+      if (!seed && cells.length) {
+        let best = null, bd = -1;
+        for (const k of cells) { const [lon, lat] = cellCenter(k); const d = (lon - P.lon) ** 2 + (lat - P.lat) ** 2; if (d > bd) { bd = d; best = { lat, lon }; } }
+        seed = best;
+      }
+      const n = Math.max(1, Math.round(cells.length * share / 100));
+      advance(s, id, P.id, n, { target: P.id, from: seed, toward: seed });
+      const c = heldCenter(s, P.id, id); if (c) { R.lat = c.lat; R.lon = c.lon; }
+      syncFront(s, P, ev);
+    } else {
+      P.front = { by: id, pct: share, prev: 0, from: { lat: P.lat, lon: P.lon }, turn: s.meta.turn, mode: 'auto' };
+    }
+    publishInstant(s, ev, ctx);
+    log(s, ctx, `Civil war: ${name} break away from ${P.name}`);
+    return ok({ broadcastAnim: true });
   } },
   setRelation: { perm: 'kronos', run(s, a) { if (!C(s, a.a) || !C(s, a.b)) return err('Pick two countries.'); s.relations[[a.a, a.b].sort().join('|')] = clamp(Number(a.value) || 0, -100, 100); return ok(); } },
   setChokepoint: { perm: 'kronos', run(s, a) {
@@ -406,10 +505,12 @@ const WORLD = {
     if (a.closed) s.global.closedAirspace[a.country] = { turn: s.meta.turn, at: ctx.now, forced: true }; else delete s.global.closedAirspace[a.country];
     return ok();
   } },
-  setWeather: { perm: 'kronos', run(s, a) {
+  setWeather: { perm: 'kronos', run(s, a, ctx) {
     if (!C(s, a.country)) return err('Unknown country.');
     if (a.kind === 'storm') s.global.weather[a.country] = 'storm'; else delete s.global.weather[a.country];
-    return ok();
+    if (a.kind !== 'storm') return ok();
+    sandboxFx(s, ctx, [{ kind: 'act', act: 'storm', country: a.country, at: at(C(s, a.country)) }]);
+    return ok({ broadcastAnim: true });
   } },
   setNukeOverride: { perm: 'kronos', run(s, a, ctx) { s.global.nukeOverride = !!a.value; log(s, ctx, `Kronos ${a.value ? 'unlocked' : 'locked'} nuclear weapons below tension 10`); return ok(); } },
   setAiNukes: { perm: 'kronos', run(s, a) { s.settings.aiNukes = !!a.value; return ok(); } },
@@ -422,9 +523,14 @@ const WORLD = {
     if (d.stability) c.stability = clamp(c.stability - d.stability, 0, 100);
     if (a.kind === 'coup') { c.roe = 'forward'; c.support = 35; }
     if (a.kind === 'discovery') c.oilNet = round1((c.oilNet || 0) + 2);
-    news(s, ctx, `${d.en} ${c.name}`, `${d.ar} ${c.ar}`, 5);
+    const mag = a.kind === 'earthquake' ? round1(6.6 + Math.random() * 1.6) : null;
+    const en = mag ? `A magnitude ${mag} earthquake strikes` : d.en, ar = mag ? `زلزال بقوة ${mag} درجات يضرب` : d.ar;
+    news(s, ctx, `${en} ${c.name}`, `${ar} ${c.ar}`, 5);
     log(s, ctx, `Kronos event: ${a.kind} in ${c.name}`);
-    return ok();
+    // Earthquakes and floods hit somewhere in the country; the rest centre on the capital.
+    const where = ['earthquake', 'flood', 'discovery'].includes(a.kind) ? spotIn(s, c) : at(c);
+    sandboxFx(s, ctx, [{ kind: 'act', act: a.kind, country: c.id, at: where, mag }]);
+    return ok({ broadcastAnim: true });
   } },
   smite: { perm: 'kronos', run(s, a, ctx) {
     // A strike with no units behind it: for when the story needs something to happen now.
@@ -432,7 +538,7 @@ const WORLD = {
     const ev = [];
     applyStrikeDamage(s, T, a.category || 'military', clamp(Number(a.power) || 1, 1, 5) * 0.08, ev, C(s, a.from) ? a.from : null);
     T.lastStruck = s.meta.turn;
-    s.lastResolution = { turn: s.meta.turn, at: ctx.now, instant: true, events: [{ kind: 'strike', owner: a.from || null, target: T.id, from: C(s, a.from) ? { lat: C(s, a.from).lat, lon: C(s, a.from).lon } : null, to: { lat: T.lat, lon: T.lon }, intercepted: false, unitType: 'missile' }] };
+    s.lastResolution = { turn: s.meta.turn, at: ctx.now, instant: true, events: [{ kind: 'strike', owner: a.from || null, target: T.id, from: C(s, a.from) ? { lat: C(s, a.from).lat, lon: C(s, a.from).lon } : null, to: { lat: T.lat, lon: T.lon }, intercepted: false, unitType: 'missile', divine: true }] };
     return ok({ broadcastAnim: true });
   } },
   forceOrder: { perm: 'kronos', run(s, a, ctx) {
@@ -476,6 +582,7 @@ export function applyAction(state, action, ctx) {
   if (!def) return err(`Unknown action "${action?.type}".`);
   if (def.perm === 'kronos' && ctx.role !== 'kronos') return err('Only Kronos can do that.');
   if (state.kronos.locked && ctx.role !== 'kronos' && !def.readOnly) return err('Kronos has locked this panel.');
+  bindGeo(ctx.geo);
   try {
     const r = def.run(state, action, ctx);
     if (r.ok && !def.readOnly) state.version = (state.version || 0) + 1;

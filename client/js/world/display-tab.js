@@ -79,6 +79,21 @@ export function DisplayTab({ conn, state, committee }) {
       <div class="row"><div class="grow"><${CountrySelect} state=${state} value=${d.focus?.kind === 'country' ? d.focus.id : null} onChange=${v => run(conn, { type: 'setFocus', country: v })} placeholder="Whole world" /></div></div>
       <div class="row" style="margin-top:6px"><div class="grow"><${ZoneSelect} value=${d.focus?.kind === 'sea' ? d.focus.id : null} onChange=${v => run(conn, { type: 'setFocus', zone: v })} /></div><button class="btn sm" onClick=${() => run(conn, { type: 'setFocus' })}>World</button></div>
 
+      <div class="sub-h">World tension</div>
+      <div class="row">
+        <button class="btn sm" disabled=${state.global.tension <= 0} onClick=${() => run(conn, { type: 'setTension', value: Math.max(0, state.global.tension - 1) })}>▼</button>
+        <input type="range" min="0" max="10" step="0.5" value=${state.global.tension} class="grow" onChange=${e => run(conn, { type: 'setTension', value: +e.target.value })} />
+        <button class="btn sm" disabled=${state.global.tension >= 10} onClick=${() => run(conn, { type: 'setTension', value: Math.min(10, state.global.tension + 1) })}>▲</button>
+        <b class="mono" style="width:34px;text-align:right">${state.global.tension}</b>
+      </div>
+      <p class="pane-hint">Changing it plays the tension meter on the display. Nuclear weapons unlock only at 10.</p>
+
+      <div class="sub-h">Map look</div>
+      <div class="row wrap">
+        <button class=${cls('btn sm', st.night && 'on')} onClick=${() => run(conn, { type: 'setSetting', key: 'night', value: !st.night })} title="Dark map with glowing city lights">☾ Night mode</button>
+        <button class=${cls('btn sm', st.showStrikes !== false && 'on')} onClick=${() => run(conn, { type: 'setSetting', key: 'showStrikes', value: st.showStrikes === false })} title="Jets fly precision strikes along active fronts every few seconds, for show only">✈ Show strikes</button>
+      </div>
+
       <div class="sub-h">Map layers on stage</div>
       <div class="row wrap">${[['air', '✈ Air traffic'], ['naval', '⛴ Shipping'], ['units', '▲ Forces'], ['relations', '◎ Relations'], ['labels', 'Aa Labels']].map(([k, l]) => html`<button class=${cls('btn sm', st.layers[k] && 'on')} onClick=${() => run(conn, { type: 'setSetting', key: 'layer', layer: k, value: !st.layers[k] })}>${l}</button>`)}</div>
       <label class="field" style="margin-top:8px">Fog of war

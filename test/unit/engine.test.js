@@ -34,9 +34,26 @@ test('a fresh world has countries, units and open chokepoints', () => {
 
 test('Zeus cannot use Kronos powers, Kronos can', () => {
   const { s, zeus, kronos } = world();
-  assert.equal(zeus({ type: 'setTension', value: 9 }).ok, false);
-  assert.equal(kronos({ type: 'setTension', value: 9 }).ok, true);
-  assert.equal(s.global.tension, 9);
+  assert.equal(zeus({ type: 'setOil', value: 150 }).ok, false);
+  assert.equal(kronos({ type: 'setOil', value: 150 }).ok, true);
+  assert.equal(s.global.oilPrice, 150);
+});
+
+test('Zeus can set world tension, and it animates', () => {
+  const { s, zeus } = world();
+  assert.equal(zeus({ type: 'setTension', value: 7.5 }).ok, true);
+  assert.equal(s.global.tension, 7.5);
+  assert.deepEqual(s.lastResolution.events[0], { kind: 'tension', from: s.lastResolution.events[0].from, to: 7.5 });
+});
+
+test('acts of god play an animation at a spot in the country', () => {
+  const { s, kronos } = world();
+  for (const kind of ['earthquake', 'flood', 'pandemic', 'blackout', 'coup', 'discovery']) {
+    assert.equal(kronos({ type: 'disaster', country: '682', kind }).ok, true);
+    const e = s.lastResolution.events[0];
+    assert.equal(e.kind, 'act'); assert.equal(e.act, kind); assert.equal(e.country, '682');
+    assert.ok(Number.isFinite(e.at.lat) && Number.isFinite(e.at.lon));
+  }
 });
 
 test('a Kronos freeze blocks Zeus changes but not reads', () => {
@@ -194,7 +211,7 @@ test('the Zeus decides whether a front advances, holds or falls back', () => {
   kronos({ type: 'setFront', country: UA, by: RU, pct: 30 });
   kronos({ type: 'frontMode', country: UA, mode: 'hold' });
   kronos({ type: 'resolveTurn' });
-  assert.equal(s.countries[UA].front.pct, 30, 'hold keeps the line');
+  assert.ok(Math.abs(s.countries[UA].front.pct - 30) < 1, 'hold keeps the line');
   kronos({ type: 'frontMode', country: UA, mode: 'advance' });
   kronos({ type: 'resolveTurn' });
   assert.ok(s.countries[UA].front.pct > 30, 'advance pushes forward');
@@ -268,4 +285,47 @@ test('strikes aim at bases and cities, and only capital strikes hit the capital'
   const military = strikes.filter(e => e.category === 'military'), capital = strikes.filter(e => e.category === 'capital');
   assert.ok(military.length >= 2 && military.some(e => !atCap(e)), 'military strikes spread across the country');
   assert.ok(capital.length && capital.every(atCap), 'capital strikes hit the capital');
+});
+
+test('fronts are ground held cell by cell, and both sides push the same line', () => {
+  const { s, kronos } = world();
+  kronos({ type: 'forceWar', a: RU, b: UA });
+  kronos({ type: 'setFront', country: UA, by: RU, pct: 20 });
+  const cells = Object.entries(s.control).filter(([, o]) => o === RU).length;
+  assert.ok(cells > 50, 'Russia holds real cells in Ukraine');
+  // Ukraine counter-attacks into Russia: Russian land changes hands, Ukraine's own losses stay where they are.
+  assert.ok(kronos({ type: 'frontPush', country: RU, by: UA, delta: 5 }).ok);
+  assert.ok(s.countries[RU].front?.by === UA && s.countries[RU].front.pct > 0);
+  assert.ok(Object.values(s.control).filter(o => o === RU).length === cells);
+  // Falling back gives back Ukraine's ground only.
+  assert.ok(kronos({ type: 'frontPush', country: UA, delta: -10 }).ok);
+  assert.ok(Object.values(s.control).filter(o => o === RU).length < cells);
+});
+
+test('a Zeus paints ground for a side and hands it back', () => {
+  const { s, zeus, kronos } = world();
+  const keys = [];
+  for (let lon = 30; lon < 32; lon += 0.3) for (let lat = 48; lat < 49.5; lat += 0.3) keys.push(Math.floor((90 - lat) / 0.3) * 1200 + Math.floor((lon + 180) / 0.3));
+  assert.equal(zeus({ type: 'paintControl', owner: RU, keys, mode: 'take' }).ok, false, 'not at war: nothing to take');
+  kronos({ type: 'forceWar', a: RU, b: UA });
+  assert.ok(zeus({ type: 'paintControl', owner: RU, keys, mode: 'take' }).ok);
+  assert.ok(s.countries[UA].front?.by === RU && s.countries[UA].front.pct > 0);
+  assert.ok(zeus({ type: 'paintControl', keys, mode: 'restore' }).ok);
+  assert.equal(s.countries[UA].front, null);
+});
+
+test('civil war splits off a rebel faction with its own ground and army', () => {
+  const { s, zeus } = world();
+  const SY = '760';
+  const armies = Object.values(s.units).filter(u => u.owner === SY && u.type === 'army').length;
+  const r = zeus({ type: 'civilWar', country: SY, share: 40, name: 'Free Army' });
+  assert.ok(r.ok, r.error);
+  const R = s.countries[SY + 'r'];
+  assert.equal(R.name, 'Free Army');
+  assert.ok(atWar(s, R.id, SY));
+  assert.equal(s.countries[SY].front.by, R.id);
+  assert.ok(s.countries[SY].front.pct > 25 && s.countries[SY].front.pct < 55);
+  assert.ok(Object.values(s.units).some(u => u.owner === R.id && u.type === 'army'));
+  assert.ok(Object.values(s.units).filter(u => u.owner === SY && u.type === 'army').length < armies || armies === 1);
+  assert.ok(zeus({ type: 'resolveTurn' }).ok, 'the turn resolves with rebels on the map');
 });

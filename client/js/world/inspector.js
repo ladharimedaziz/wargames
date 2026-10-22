@@ -17,7 +17,7 @@ export function Inspector(props) {
   return html`<${WorldOverview} ...${props} />`;
 }
 
-function CountryCard({ conn, state, selected: id, setSelected, startOrder, kronos }) {
+function CountryCard({ conn, state, selected: id, setSelected, startOrder, kronos, setBrush }) {
   const c = state.countries[id];
   const [brief, setBrief] = useState(false);
   const enemies = state.wars.filter(w => w.a === id || w.b === id).map(w => (w.a === id ? w.b : w.a));
@@ -54,11 +54,12 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
         ${c.bankrupt && html`<span class="chip red">Bankrupt</span>`}
       </div>
 
-      <${Fronts} conn=${conn} state=${state} id=${id} enemies=${enemies} setSelected=${setSelected} />
+      <${Fronts} conn=${conn} state=${state} id=${id} enemies=${enemies} setSelected=${setSelected} setBrush=${setBrush} />
+      <${CivilWar} conn=${conn} state=${state} c=${c} setSelected=${setSelected} />
 
       <div class="sub-h">Quick orders</div>
       <div class="quick-grid">
-        ${[['strike', '✦ Strike'], ['invade', '➤ Invade'], ['fleet', '⛴ Fleet'], ['blockade', '⛓ Blockade'], ['war', '⚔ War'], ['ceasefire', '✋ Ceasefire'], ['peace', '☮ Peace'], ['sanction', '$ Sanction'], ['aid', '+ Aid'], ['arms', '⇄ Arms'], ['cyber', '⌁ Cyber'], ['spy', '◐ Spy'], ['neo', '✈ Evacuate']].map(([t, l]) => html`<button class="btn xs" onClick=${() => startOrder(t)}>${l}</button>`)}
+        ${[['strike', '✦ Strike'], ['invade', '➤ Invade'], ['fleet', '⛴ Fleet'], ['blockade', '⛓ Blockade'], ['war', '⚔ War'], ['ceasefire', '✋ Ceasefire'], ['peace', '☮ Peace'], ['sanction', '$ Sanction'], ['aid', '+ Aid'], ['arms', '⇄ Arms'], ['cyber', '⌁ Cyber'], ['spy', '◐ Spy'], ['neo', '✈ Evacuate'], ['helistrike', '🚁 Heli strike'], ['airassault', '⇣ Air assault']].map(([t, l]) => html`<button class="btn xs" onClick=${() => startOrder(t)}>${l}</button>`)}
       </div>
       <div class="row" style="margin-top:6px"><span class="dim small">Posture</span><div class="seg sm">${ROE.map(r => html`<button class=${c.roe === r ? 'on' : ''} onClick=${() => run(conn, { type: 'setRoe', country: id, roe: r })}>${r}</button>`)}</div></div>
 
@@ -188,19 +189,48 @@ function WorldOverview({ conn, state, setSelected }) {
 // War fronts: how much ground each attacker holds, and the Zeus's orders for each front.
 const MODES = [['auto', 'Battle decides', 'The engine moves the front from each turn\'s fighting'], ['advance', 'Advance', 'The attacker gains ground every turn'], ['hold', 'Hold', 'The line does not move'], ['retreat', 'Fall back', 'The defender retakes ground every turn']];
 
-function Fronts({ conn, state, id, enemies, setSelected }) {
+function Fronts({ conn, state, id, enemies, setSelected, setBrush }) {
   const c = state.countries[id];
   const mine = Object.values(state.countries).filter(o => o.front?.by === id);
   // Enemies this country is at war with but has no front in yet.
   const open = enemies.filter(e => state.countries[e].front?.by !== id && !state.countries[e].front);
   // Enemies that could open a front inside this country.
   const invaders = c.front ? [] : enemies;
-  if (!c.front && !mine.length && !open.length) return null;
+  if (!c.front && !mine.length && !open.length && !enemies.length) return null;
+  const draw = owner => setBrush?.({ owner, mode: 'take', r: 20 });
   return html`<div class="sub-h">War fronts</div>
     ${c.front && html`<${FrontRow} conn=${conn} state=${state} c=${c} setSelected=${setSelected} />`}
     ${mine.map(o => html`<${FrontRow} conn=${conn} state=${state} c=${o} setSelected=${setSelected} named />`)}
     ${open.length > 0 && html`<div class="row wrap small" style="gap:6px;margin-top:4px"><span class="dim">Push into</span>${open.map(e => html`<button class="btn xs" title=${`Open a front: ${c.name} takes ground in ${state.countries[e].name} right now`} onClick=${() => run(conn, { type: 'frontPush', country: e, by: id, delta: 10 })}>${state.countries[e].name} +10%</button>`)}</div>`}
-    ${invaders.length > 0 && html`<div class="row wrap small" style="gap:6px;margin-top:4px"><span class="dim">Advance here</span>${invaders.map(e => html`<button class="btn xs" title=${`Open a front: ${state.countries[e].name} takes ground in ${c.name} right now`} onClick=${() => run(conn, { type: 'frontPush', country: id, by: e, delta: 10 })}>${state.countries[e].name} +10%</button>`)}</div>`}`;
+    ${invaders.length > 0 && html`<div class="row wrap small" style="gap:6px;margin-top:4px"><span class="dim">Advance here</span>${invaders.map(e => html`<button class="btn xs" title=${`Open a front: ${state.countries[e].name} takes ground in ${c.name} right now`} onClick=${() => run(conn, { type: 'frontPush', country: id, by: e, delta: 10 })}>${state.countries[e].name} +10%</button>`)}</div>`}
+    ${setBrush && enemies.length > 0 && html`<div class="row wrap small" style="gap:6px;margin-top:6px"><span class="dim">Draw on the map</span>
+      <button class="btn xs gold" title=${`Paint ground ${c.name} takes`} onClick=${() => draw(id)}>✎ ${c.name}</button>
+      ${enemies.slice(0, 4).map(e => html`<button class="btn xs" title=${`Paint ground ${state.countries[e].name} takes`} onClick=${() => draw(e)}>✎ ${state.countries[e].name}</button>`)}
+      <button class="btn xs ghost" title="Paint over held ground to give it back" onClick=${() => setBrush({ owner: id, mode: 'restore', r: 20 })}>⌫ Give back</button>
+    </div>`}`;
+}
+
+// Civil war: part of the country breaks away under a rebel banner.
+function CivilWar({ conn, state, c, setSelected }) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [share, setShare] = useState(30);
+  const rebels = state.countries[`${c.id}r`];
+  if (c.rebelOf) return null;
+  if (rebels && state.wars.some(w => w.civil && (w.a === rebels.id || w.b === rebels.id))) {
+    return html`<div class="row small" style="margin-top:6px"><span class="chip gold">Civil war</span><b class="click" onClick=${() => setSelected(rebels.id)}>${rebels.name}</b><span class="dim">are fighting ${c.name}</span></div>`;
+  }
+  const go = async () => {
+    const r = await run(conn, { type: 'civilWar', country: c.id, share, name: name.trim() });
+    if (r.ok) { setOpen(false); setName(''); }
+  };
+  if (!open) return html`<div class="row" style="margin-top:6px"><button class="btn xs" onClick=${() => setOpen(true)} title="A rebel faction seizes part of the country, with defecting troops">✊ Start a civil war</button></div>`;
+  return html`<div class="civil-box col">
+    <div class="row between"><b class="small">Civil war in ${c.name}</b><button class="btn xs ghost" onClick=${() => setOpen(false)}>✕</button></div>
+    <input class="input sm" placeholder=${`Rebel name, e.g. Free ${c.name} Army`} value=${name} onInput=${e => setName(e.target.value)} />
+    <div class="row small"><span class="dim">Rebels take</span><div class="seg sm">${[15, 30, 45, 60].map(p => html`<button class=${share === p ? 'on' : ''} onClick=${() => setShare(p)}>${p}%</button>`)}</div></div>
+    <button class="btn sm danger" onClick=${go}>Start the civil war</button>
+  </div>`;
 }
 
 function FrontRow({ conn, state, c, setSelected, named }) {
@@ -210,7 +240,7 @@ function FrontRow({ conn, state, c, setSelected, named }) {
   const push = delta => run(conn, { type: 'frontPush', country: c.id, delta });
   return html`<div class="front-row">
     <div class="row between small">
-      <span><b style=${`color:${col}`} class="click" onClick=${() => setSelected(by.id)}>${by.name}</b> holds <b class=${named ? 'click' : ''} onClick=${() => named && setSelected(c.id)}>${Math.round(f.pct)}%</b> of ${named ? html`<b class="click" onClick=${() => setSelected(c.id)}>${c.name}</b>` : c.name}</span>
+      <span><b style=${`color:${col}`} class="click" onClick=${() => setSelected(by.id)}>${by.name}</b> holds <b class=${named ? 'click' : ''} onClick=${() => named && setSelected(c.id)}>${f.pct > 0 && f.pct < 1 ? '<1' : Math.round(f.pct)}%</b> of ${named ? html`<b class="click" onClick=${() => setSelected(c.id)}>${c.name}</b>` : c.name}</span>
       ${c.occupiedBy && html`<span class="chip red">occupied</span>`}
     </div>
     <div class="front-bar"><i style=${`width:${f.pct}%;background:${col}`}></i></div>
