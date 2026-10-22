@@ -152,6 +152,8 @@ const WORLD = {
     s.orders.push(o);
     if (s.orders.length > 3000) s.orders = s.orders.slice(-2500);
     log(s, ctx, `Queued: ${describeOrder(s, o)}`);
+    // "Force now": resolve straight away instead of waiting for the turn.
+    if (a.now && o.type !== 'nuke') return WORLD.executeNow.run(s, { id: o.id }, ctx);
     return ok({ order: o, text: describeOrder(s, o) });
   } },
   previewOrder: { perm: 'zeus', readOnly: true, run(s, a) {
@@ -166,13 +168,20 @@ const WORLD = {
     s.orders = s.orders.filter(x => x !== o); log(s, ctx, `Cancelled: ${describeOrder(s, o)}`); return ok();
   } },
   executeNow: { perm: 'zeus', run(s, a, ctx) {
-    // Diplomacy can be signed instantly; military orders wait for the turn unless Kronos forces them.
+    // Zeus can force any queued order now instead of waiting for the turn. A nuclear launch still waits for the turn.
     const o = s.orders.find(x => x.id === a.id && x.status === 'queued'); if (!o) return err('That order is no longer queued.');
-    const instant = ['war', 'ceasefire', 'peace', 'alliance', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'overflight', 'roe', 'election', 'propaganda', 'alert'];
-    if (!instant.includes(o.type) && ctx.role !== 'kronos') return err('Military orders resolve with the turn. Only Kronos can force them now.');
+    if (o.type === 'nuke') return err('A nuclear launch resolves with the turn.');
     s.orders = s.orders.filter(x => x !== o);
     const ev = resolveNow(s, [o], { ...ctx, countryAt: ctx.geo?.countryAt });
     log(s, ctx, `Executed now: ${describeOrder(s, o)}`);
+    return ok({ events: ev.length, broadcastAnim: true });
+  } },
+  executeAll: { perm: 'zeus', run(s, a, ctx) {
+    const list = s.orders.filter(x => x.status === 'queued' && x.type !== 'nuke');
+    if (!list.length) return err('No queued orders to force.');
+    s.orders = s.orders.filter(x => !list.includes(x));
+    const ev = resolveNow(s, list, { ...ctx, countryAt: ctx.geo?.countryAt });
+    log(s, ctx, `Forced ${list.length} queued order${list.length > 1 ? 's' : ''} without ending the turn`);
     return ok({ events: ev.length, broadcastAnim: true });
   } },
   resolveTurn: { perm: 'zeus', snapshot: true, run(s, a, ctx) {

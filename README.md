@@ -64,7 +64,7 @@ Kronos can rename committees, reset any committee as a world or court committee,
 | `us paratroopers afghanistan` · `us invade afghanistan` | Paratroop drop. An invasion with no land border falls back to sailing the nearest fleet in, or to an airborne drop for countries with strategic airlift |
 | `us b-2 strike iran` · `us b2 moab afghanistan` · `us strike iran with 2 f-117` · `us b-52 strike iran 3` · `us b-1b iran energy` | Named US aircraft, each with its own model and run. The B-2 and F-117 are stealthy precision strikes; only the B-2 can carry the MOAB |
 
-The bar shows what it understood before you press Enter. Orders wait in the queue until **Resolve turn**. Then the engine runs strikes, interceptions, invasions, the economy and the AI countries, and the display animates the result.
+The bar shows what it understood before you press Enter. Orders wait in the queue until **Resolve turn**, unless a Zeus forces them: **Force now** in the order composer, **Now** on a queued order, or **Force all now** for the whole queue resolves them straight away without ending the turn (a nuclear launch always waits for the turn). Then the engine runs strikes, interceptions, invasions, the economy and the AI countries, and the display animates the result.
 
 The engine writes the news and airs it on the stage straight away. Untick **Auto-air** in the News desk to review headlines before they air. Endings are suggested there too, and the Zeus decides whether to play one.
 

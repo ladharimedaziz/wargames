@@ -407,3 +407,18 @@ test('Kronos can end every outbreak at once', () => {
   assert.ok(kronos({ type: 'endAllOutbreaks' }).ok);
   assert.equal(Object.values(s.countries).filter(c => c.outbreak).length, 0);
 });
+
+test('Zeus forces orders without ending the turn', () => {
+  const { s, zeus } = world();
+  const turn = s.meta.turn;
+  let r = zeus({ type: 'queueOrder', order: { country: RU, type: 'war', target: UA }, now: true });
+  assert.ok(r.ok, r.error);
+  assert.ok(atWar(s, RU, UA));
+  r = zeus({ type: 'queueOrder', order: { country: RU, type: 'strike', target: UA, category: 'military', counts: { n: 2 } } });
+  assert.ok(r.ok, r.error);
+  r = zeus({ type: 'executeAll' });
+  assert.ok(r.ok, r.error);
+  assert.equal(s.meta.turn, turn);
+  assert.equal(s.orders.filter(o => o.status === 'queued').length, 0);
+  assert.ok(s.orders.some(o => o.type === 'strike' && o.status !== 'queued'));
+});
