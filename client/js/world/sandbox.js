@@ -43,6 +43,8 @@ export function SandboxTab({ conn, state, selected, selZone }) {
         <button class=${cls('btn sm', g.nukeOverride && 'solid-danger')} onClick=${() => k({ type: 'setNukeOverride', value: !g.nukeOverride })}>☢ ${g.nukeOverride ? 'Re-lock nukes' : 'Unlock nukes below 10'}</button>
         <button class=${cls('btn sm', state.settings.aiNukes && 'solid-danger')} onClick=${() => k({ type: 'setAiNukes', value: !state.settings.aiNukes })}>${state.settings.aiNukes ? 'Computer may NOT use nukes' : 'Let computer use nukes'}</button>
         <button class="btn sm good" onClick=${() => k({ type: 'forcePeace', all: true }, 'Every war is over')}>End every war</button>
+        <button class="btn sm good" disabled=${!Object.values(state.countries).some(c => c.outbreak)} onClick=${() => k({ type: 'endAllOutbreaks' }, 'Every outbreak is over')}>☣ End all outbreaks</button>
+        <button class="btn sm good" disabled=${!Object.values(state.countries).some(c => c.blackout)} onClick=${() => k({ type: 'restoreAllPower' }, 'Power is back everywhere')}>⚡ Restore all power</button>
       </div>
       <div class="row"><span class="dim small">Date</span><input class="input sm" type="date" value=${state.meta.clock} onChange=${e => k({ type: 'setClock', clock: e.target.value })} /><span class="dim small">Days per turn</span><input class="input sm" style="width:60px" type="number" min="1" max="90" value=${state.meta.turnDays} onChange=${e => k({ type: 'setClock', turnDays: +e.target.value })} /></div>
 
