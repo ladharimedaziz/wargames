@@ -10,6 +10,7 @@ export const ORDER_TYPES = {
   rebase:     { label: 'Rebase air wings', group: 'military', needs: ['target'] },
   fleet:      { label: 'Move fleet', group: 'military', needs: ['zone'] },
   blockade:   { label: 'Blockade a sea zone', group: 'military', needs: ['zone'] },
+  siege:      { label: 'Naval blockade of a country', group: 'military', needs: ['target'] },
   lift:       { label: 'Lift blockade', group: 'military', needs: [] },
   cap:        { label: 'Air patrol over home', group: 'military', needs: [] },
   alert:      { label: 'Nuclear alert', group: 'military', needs: [] },
@@ -119,6 +120,20 @@ export function validateOrder(state, o) {
         const route = seaRoute(u.loc.id, o.zone, blockedFor(state, o.country));
         if (!route) return fail(`No open sea route from ${SEA_ZONES[u.loc.id].name} to ${SEA_ZONES[o.zone].name}.`);
         if (route.length - 1 > FLEET_MOVES_PER_TURN * 2) return fail(`${SEA_ZONES[o.zone].name} is ${route.length - 1} zones away; a fleet can sail at most ${FLEET_MOVES_PER_TURN * 2} in one turn.`);
+      }
+      return { ok: true };
+    }
+    case 'siege': {
+      const coast = zonesTouching(o.target);
+      if (!coast.length) return fail(`${T.name} has no coastline to blockade.`);
+      if (sameSide(state, o.country, o.target)) return fail(`${T.name} is on the same side as ${c.name}.`);
+      const ships = units.filter(u => u.type === 'fleet' || u.type === 'carrier');
+      if (!ships.length) return fail(`${c.name} has no warships able to reach ${T.name}'s coast.`);
+      const blocked = blockedFor(state, o.country);
+      for (const u of ships) {
+        const best = coast.map(z => seaRoute(u.loc.id, z, blocked)).filter(Boolean).sort((a, b) => a.length - b.length)[0];
+        if (!best) return fail(`No open sea route from ${SEA_ZONES[u.loc.id].name} to ${T.name}'s coast.`);
+        if (best.length - 1 > FLEET_MOVES_PER_TURN * 2) return fail(`${T.name}'s coast is ${best.length - 1} zones from ${SEA_ZONES[u.loc.id].name}; a fleet can sail at most ${FLEET_MOVES_PER_TURN * 2} in one turn.`);
       }
       return { ok: true };
     }
@@ -271,6 +286,13 @@ export function autoUnits(state, o, counts = {}) {
     const blocked = blockedFor(state, o.country);
     const scored = ships.map(u => ({ u, r: seaRoute(u.loc.id, o.zone, blocked) })).filter(x => x.r).sort((a, b) => a.r.length - b.r.length);
     o.units = scored.slice(0, counts.n || 1).map(x => x.u.id);
+  } else if (o.type === 'siege' && T) {
+    // The nearest warships, each heading for the closest stretch of the target's coast.
+    const coast = zonesTouching(o.target), blocked = blockedFor(state, o.country);
+    const ships = unitsOf(state, o.country).filter(u => (u.type === 'fleet' || u.type === 'carrier') && u.loc.kind === 'sea' && !(counts.type && u.type !== counts.type));
+    const scored = ships.map(u => ({ u, r: coast.map(z => seaRoute(u.loc.id, z, blocked)).filter(Boolean).sort((a, b) => a.length - b.length)[0] }))
+      .filter(x => x.r && x.r.length - 1 <= FLEET_MOVES_PER_TURN * 2).sort((a, b) => a.r.length - b.r.length);
+    o.units = scored.slice(0, counts.n || 2).map(x => x.u.id);
   } else if (o.type === 'rebase' && T) {
     const type = counts.type || 'fighter';
     o.units = unitsOf(state, o.country, type).filter(u => u.loc.id !== o.target).slice(0, counts.n || 1).map(u => u.id);
@@ -291,6 +313,7 @@ export function describeOrder(state, o, lang = 'en') {
     case 'rebase': return `${c} rebases ${parts.join(', ')} to ${t}`;
     case 'fleet': return `${c} sails ${parts.join(', ')} to ${n(o.zone)}`;
     case 'blockade': return `${c} blockades ${n(o.zone)} with ${parts.join(', ')}`;
+    case 'siege': return `${c} blockades the coast of ${t} with ${parts.join(', ') || 'no warships'}`;
     case 'lift': return `${c} lifts its blockades`;
     case 'cap': return `${c} flies air patrols over its territory`;
     case 'alert': return `${c} puts its nuclear forces on alert`;

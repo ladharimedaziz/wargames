@@ -85,6 +85,7 @@ export function headlinesFrom(state, ev) {
       case 'liberation': push(5, `${N(e.country)} breaks the ${N(e.from)} occupation`, `${A(e.country)} تكسر احتلال ${A(e.from)}`); break;
       case 'occupation': push(5, `${N(e.country)} under ${N(e.by)} occupation`, `${A(e.country)} تحت احتلال ${A(e.by)}`); break;
       case 'capitulation': push(5, `${N(e.country)} capitulates`, `${A(e.country)} تستسلم`); break;
+      case 'siege': push(5, `${N(e.owner)} warships blockade the coast of ${N(e.target)}`, `سفن ${A(e.owner)} الحربية تفرض حصاراً على سواحل ${A(e.target)}`); break;
       case 'naval': push(4, `Naval battle in the ${SEA_ZONES[e.zone].name}: ${N(e.winner)} fleet prevails over ${N(e.loser)}`, `معركة بحرية في ${SEA_ZONES[e.zone].ar}: أسطول ${A(e.winner)} يتفوق على ${A(e.loser)}`); break;
       case 'chokepoint':
         if (e.status === 'closed') push(5, `${SEA_ZONES[e.zone].name} CLOSED by ${N(e.by)} blockade`, `إغلاق ${SEA_ZONES[e.zone].ar} بحصار من ${A(e.by)}`);

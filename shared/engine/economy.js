@@ -22,11 +22,18 @@ export function tradeWeb(state) {
   return web;
 }
 
+// Trade lost to blockades, per country: a blockade of a sea zone hurts the enemies on its shores; a blockade of a
+// country's coast hurts that country, more so the more of its coast is closed.
 function blockadedCountries(state) {
-  const out = new Set();
+  const out = new Map(), zonesOf = new Map();
   for (const u of Object.values(state.units)) {
-    if (!u.blockade || u.loc.kind !== 'sea') continue;
-    for (const coast of SEA_ZONES[u.loc.id].coasts) if (atWar(state, u.owner, coast)) out.add(coast);
+    if (!u.blockade || u.loc.kind !== 'sea' || u.strength <= 0) continue;
+    if (u.blockadeOf) { if (!zonesOf.has(u.blockadeOf)) zonesOf.set(u.blockadeOf, new Set()); zonesOf.get(u.blockadeOf).add(u.loc.id); continue; }
+    for (const coast of SEA_ZONES[u.loc.id].coasts) if (atWar(state, u.owner, coast)) out.set(coast, Math.max(out.get(coast) || 0, 0.25));
+  }
+  for (const [id, zs] of zonesOf) {
+    const all = Object.entries(SEA_ZONES).filter(([, z]) => z.coasts.includes(id)).length || 1;
+    out.set(id, Math.max(out.get(id) || 0, 0.25 + 0.3 * Math.min(1, zs.size / all)));
   }
   return out;
 }
@@ -89,7 +96,7 @@ export function tickEconomy(state, ev, ctx) {
       }
       tradeFactor = 1 - 0.28 * (1 - health);
     }
-    if (blockaded.has(c.id)) tradeFactor *= 0.75;
+    if (blockaded.has(c.id)) tradeFactor *= 1 - blockaded.get(c.id);
     const oilEffect = clamp(c.oilNet * oilShift * 0.012, -0.12, 0.25);
     const occ = c.occupiedBy ? 0.6 : 1 - 0.4 * (c.front?.pct || 0) / 100;
     const warDrag = atWarNow ? 0.03 : 0;

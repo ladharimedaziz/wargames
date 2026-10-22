@@ -1,6 +1,7 @@
 // Every change to a committee goes through here. The server calls applyAction for both Zeus accounts and Kronos;
 // actions tagged 'kronos' are sandbox powers only Kronos has.
 import { SEA_ZONES } from '../data/places.js';
+import { carrierName } from '../data/militaries.js';
 import { zonesTouching } from '../geo.js';
 import {
   UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures,
@@ -399,7 +400,10 @@ const WORLD = {
     if (sea) { const z = SEA_ZONES[a.zone] ? a.zone : zonesTouching(c.id)[0]; if (!z) return err(`${c.name} has no coastline. Pick a sea zone.`); loc = { kind: 'sea', id: z }; }
     else loc = { kind: 'country', id: C(s, a.at) ? a.at : c.id };
     const n = clamp(Math.round(Number(a.count) || 1), 1, 20);
-    for (let i = 0; i < n; i++) { const id = newId(s, 'u'); s.units[id] = { id, type: a.unitType, owner: c.id, loc: { ...loc }, strength: 100, blockade: false, cap: false }; }
+    for (let i = 0; i < n; i++) {
+      const id = newId(s, 'u'); s.units[id] = { id, type: a.unitType, owner: c.id, loc: { ...loc }, strength: 100, blockade: false, cap: false };
+      if (a.unitType === 'carrier') { const name = carrierName(s.units, c.a3); if (name) s.units[id].name = name; }
+    }
     log(s, ctx, `Kronos spawned ${n} ${UNIT_TYPES[a.unitType].name.toLowerCase()} for ${c.name}`);
     const spot = sea ? { lat: SEA_ZONES[loc.id].lat, lon: SEA_ZONES[loc.id].lon } : at(C(s, loc.id));
     sandboxFx(s, ctx, [{ kind: 'spawn', country: c.id, unitType: a.unitType, n, at: spot }]);

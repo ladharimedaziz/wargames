@@ -1,7 +1,7 @@
 // Builds fresh committee states for world (map) mode and court mode.
 import { COUNTRIES, minorCountry } from '../data/countries.js';
 import { alliancesOf, defaultBloc } from '../data/alliances.js';
-import { MILITARIES, DEPLOYMENTS, AIR_BASES } from '../data/militaries.js';
+import { MILITARIES, DEPLOYMENTS, AIR_BASES, carrierName } from '../data/militaries.js';
 import { ECONOMIES, ECONOMY_DEFAULT } from '../data/economies.js';
 import { SEA_ZONES } from '../data/places.js';
 import { zonesTouching } from '../geo.js';
@@ -48,7 +48,10 @@ export function createWorldState(opts, geoInfo) {
     };
   }
   s.units = {};
-  const place = (owner, type, loc) => { const uid = newId(s, 'u'); s.units[uid] = { id: uid, type, owner, loc, strength: 100, blockade: false, cap: false }; };
+  const place = (owner, type, loc) => {
+    const uid = newId(s, 'u'); s.units[uid] = { id: uid, type, owner, loc, strength: 100, blockade: false, cap: false };
+    if (type === 'carrier') { const name = carrierName(s.units, s.countries[owner].a3); if (name) s.units[uid].name = name; }
+  };
   const byA3 = Object.fromEntries(Object.values(s.countries).map(c => [c.a3, c.id]));
   for (const c of Object.values(s.countries)) {
     const f = c.forces0; delete c.forces0;
