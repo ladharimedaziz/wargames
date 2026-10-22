@@ -1,5 +1,6 @@
 // Order definitions, validation and unit selection. Used for live previews in the panel and again at resolution.
 import { SEA_ZONES, FLEET_MOVES_PER_TURN } from '../data/places.js';
+import { AMPHIBIOUS_A3, NEO_A3 } from '../data/militaries.js';
 import { distanceKm, seaRoute, zonesTouching } from '../geo.js';
 import { UNIT_TYPES, TARGET_TYPES, ROE, anchor, unitRange, unitsOf, atWar, sameSide, countryName, isActive } from './core.js';
 
@@ -28,6 +29,7 @@ export const ORDER_TYPES = {
   spy:        { label: 'Spy operation', group: 'covert', needs: ['target', 'kind'] },
   satellite:  { label: 'Blind enemy satellites', group: 'covert', needs: ['target'] },
   propaganda: { label: 'Propaganda campaign', group: 'covert', needs: [] },
+  neo:        { label: 'Evacuate citizens (NEO)', group: 'military', needs: ['target'] },
   roe:        { label: 'Rules of engagement', group: 'military', needs: ['kind'] },
   election:   { label: 'Call an election', group: 'politics', needs: [] },
 };
@@ -71,14 +73,17 @@ export function validateOrder(state, o) {
     case 'invade': {
       const armies = units.filter(u => u.type === 'army');
       if (!armies.length) return fail(`${c.name} has no army groups available.`);
+      const friendly = sameSide(state, o.country, o.target) || o.target === o.country || T.overflight.includes(o.country);
       for (const u of armies) {
         if (u.loc.kind !== 'country') return fail('Army is not on land.');
         const from = u.loc.id;
         if (from === o.target) return fail('That army is already there.');
         const adjacent = (state.adjacency[from] || []).includes(o.target);
-        const amphib = !adjacent && hasSeaLift(state, o.country, o.target);
-        if (!adjacent && !amphib) return fail(`${T.name} does not border ${countryName(state, from)}, and ${c.name} has no fleet off its coast for a landing.`);
-        if (!adjacent) o.amphibious = true;
+        if (adjacent) continue;
+        const zone = liftZone(state, o.country, o.target);
+        if (!zone) return fail(`${T.name} does not border ${countryName(state, from)}, and ${c.name} has no fleet off its coast for a landing.`);
+        if (!friendly && !canLandBySea(state, o.country)) return fail(`${c.name} does not have the landing ships for a sea invasion. Only large navies, or countries with a carrier group, can land troops on a defended coast.`);
+        o.amphibious = true; o.zone = zone;
       }
       if (sameSide(state, o.country, o.target) || o.target === o.country) return { ok: true, peaceful: true };
       if (T.overflight.includes(o.country)) return { ok: true, peaceful: true };
@@ -118,6 +123,11 @@ export function validateOrder(state, o) {
     case 'cyber': if (!CYBER_KINDS.includes(o.kind)) return fail('Pick grid, banks or radar.'); return { ok: true };
     case 'spy': if (!SPY_KINDS.includes(o.kind)) return fail('Pick steal, sabotage or defector.'); return { ok: true };
     case 'roe': if (!ROE.includes(o.kind)) return fail('Pick defensive, firm or forward.'); return { ok: true };
+    case 'neo': {
+      if (!canEvacuate(state, o.country)) return fail(`${c.name} does not have the long-range airlift or ships for an evacuation.`);
+      if (atWar(state, o.country, o.target)) return fail(`${c.name} is at war with ${T.name}; its citizens cannot be flown out.`);
+      return { ok: true };
+    }
     case 'lift': case 'cap': case 'propaganda': case 'election': case 'intel': case 'satellite':
     case 'alliance': case 'sanction': case 'unsanction': case 'trade': case 'overflight':
       return { ok: true };
@@ -125,9 +135,23 @@ export function validateOrder(state, o) {
   }
 }
 
-export function hasSeaLift(state, owner, target) {
-  const zones = zonesTouching(target);
-  return Object.values(state.units).some(u => u.owner === owner && u.strength > 0 && (u.type === 'fleet' || u.type === 'carrier') && zones.includes(u.loc.id));
+export function hasSeaLift(state, owner, target) { return !!liftZone(state, owner, target); }
+
+// The sea zone off `target` where `owner` has warships to cover a landing (the strongest group if several).
+export function liftZone(state, owner, target) {
+  const zones = zonesTouching(target), power = {};
+  for (const u of Object.values(state.units)) if (u.owner === owner && u.strength > 0 && (u.type === 'fleet' || u.type === 'carrier') && zones.includes(u.loc.id)) power[u.loc.id] = (power[u.loc.id] || 0) + u.strength;
+  return Object.keys(power).sort((a, b) => power[b] - power[a])[0] || null;
+}
+
+// Long-range airlift, or ships and marines that can reach a crisis: these countries can run evacuations.
+export function canEvacuate(state, owner) {
+  return NEO_A3.includes(state.countries[owner]?.a3) || Object.values(state.units).some(u => u.owner === owner && u.type === 'carrier' && u.strength > 0);
+}
+
+// Large navies with landing ships, or any country with a carrier group, can land troops on a defended coast.
+export function canLandBySea(state, owner) {
+  return AMPHIBIOUS_A3.includes(state.countries[owner]?.a3) || Object.values(state.units).some(u => u.owner === owner && u.type === 'carrier' && u.strength > 0);
 }
 
 // Chokepoints closed by an enemy of `owner` are impassable for its fleets.
@@ -201,6 +225,7 @@ export function describeOrder(state, o, lang = 'en') {
     case 'intel': return `${c} runs an intelligence sweep on ${t}`;
     case 'spy': return `${c} spy operation in ${t}: ${o.kind}`;
     case 'satellite': return `${c} blinds ${t}'s satellites`;
+    case 'neo': return `${c} evacuates its citizens from ${t}`;
     case 'propaganda': return o.target ? `${c} runs propaganda against ${t}` : `${c} runs a propaganda campaign at home`;
     case 'roe': return `${c} sets rules of engagement to ${o.kind}`;
     case 'election': return `${c} holds an election`;

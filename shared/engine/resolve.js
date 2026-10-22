@@ -13,11 +13,13 @@ import { detectEndings } from './endings.js';
 import { snapshotStats } from './state.js';
 
 const PRIORITY = ['roe', 'overflight', 'war', 'alliance', 'ceasefire', 'peace', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'lift',
-  'rebase', 'cap', 'fleet', 'blockade', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'strike', 'invade', 'nuke', 'election'];
+  'rebase', 'cap', 'fleet', 'blockade', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'neo', 'strike', 'invade', 'nuke', 'election'];
 
-const ANIMATED = ['strike', 'battle', 'naval', 'fleet', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front'];
+const ANIMATED = ['strike', 'battle', 'naval', 'fleet', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo'];
 
 const pt = c => ({ lat: c.lat, lon: c.lon });
+// A country's fighting quality in a domain (land, air or sea).
+const Q = (state, id, domain) => state.countries[id]?.quality?.[domain] ?? 1;
 
 export function declareWar(state, a, b, ev, why) {
   if (a === b || atWar(state, a, b)) return false;
@@ -46,7 +48,9 @@ function interceptPower(state, cid, attackerOwner) {
   const fighters = unitsAt(state, 'country', cid).filter(u => u.type === 'fighter' && u.owner !== attackerOwner && sameSide(state, u.owner, cid))
     .reduce((s, u) => s + u.strength / 100, 0);
   const cap = unitsAt(state, 'country', cid).some(u => u.cap && u.owner === cid) ? 0.1 : 0;
-  return clamp(0.04 * Math.max(0, ad) + 0.05 * Math.min(fighters, 6) + cap, 0, 0.85);
+  // Better-trained air forces defend better, and better attackers slip through more often.
+  const edge = Math.sqrt(Q(state, cid, 'air') / Q(state, attackerOwner, 'air'));
+  return clamp((0.04 * Math.max(0, ad) + 0.05 * Math.min(fighters, 6) + cap) * edge, 0, 0.85);
 }
 
 function damageUnit(state, u, amount, ev, why) {
@@ -123,7 +127,7 @@ function resolveStrike(state, o, ctx, ev, salvos) {
       continue;
     }
     // Hit.
-    const power = (u.type === 'bomber' ? 0.07 : u.type === 'missile' ? 0.045 : u.type === 'carrier' ? 0.05 : 0.03) * (u.strength / 100 + 0.3);
+    const power = (u.type === 'bomber' ? 0.07 : u.type === 'missile' ? 0.045 : u.type === 'carrier' ? 0.05 : 0.03) * (u.strength / 100 + 0.3) * (isMissile ? 1 : Math.sqrt(Q(state, o.country, 'air')));
     applyStrikeDamage(state, tgt, category, power, ev, o.country);
     tgt.lastStruck = state.meta.turn;
     state.global.closedAirspace[o.target] = state.global.closedAirspace[o.target] || { turn: state.meta.turn, at: ctx.now };
@@ -175,11 +179,21 @@ function resolveInvasions(state, orders, ev) {
     if (!attackers.length) continue;
     const defenders = unitsAt(state, 'country', target).filter(u => u.type === 'army' && (u.owner === target || sameSide(state, u.owner, target) || T.occupiedBy === u.owner) && !attackers.some(a => a.u.id === u.id));
     const lead = hostile[0].country;
-    const origin = anchor(state, attackers[0].u.loc);
+    // A landing comes ashore from the sea zone the fleet holds; enemy warships there make it costly.
+    const sea = hostile.find(o => o.amphibious && o.zone && SEA_ZONES[o.zone]);
+    const origin = sea ? { lat: SEA_ZONES[sea.zone].lat, lon: SEA_ZONES[sea.zone].lon } : anchor(state, attackers[0].u.loc);
+    let landingPenalty = 1;
+    if (sea) {
+      const ships = unitsAt(state, 'sea', sea.zone).filter(u => u.strength > 0 && (u.type === 'fleet' || u.type === 'carrier'));
+      const mine = ships.filter(u => u.owner === lead || sameSide(state, u.owner, lead)).reduce((t, u) => t + u.strength, 0);
+      const theirs = ships.filter(u => u.owner === target || (atWar(state, u.owner, lead) && sameSide(state, u.owner, target))).reduce((t, u) => t + u.strength, 0);
+      landingPenalty = theirs ? clamp(mine / (mine + theirs), 0.3, 0.9) : 1;
+      ev.push({ kind: 'landing', owner: lead, country: target, zone: sea.zone, from: origin, to: pt(T), contested: theirs > 0, n: attackers.length });
+    }
     const airBonus = Math.min(0.3, 0.1 * ev.filter(e => e.kind === 'strike' && e.target === target && !e.intercepted && sameSide(state, e.owner, lead)).length);
-    let A = attackers.reduce((s, { u, o }) => s + u.strength * supplyFactor(state, u.owner, target) * (o.amphibious ? 0.7 : 1), 0) * (1 + airBonus) * between(state, 0.8, 1.2);
+    let A = attackers.reduce((s, { u, o }) => s + u.strength * Q(state, u.owner, 'land') * supplyFactor(state, u.owner, target) * (o.amphibious ? 0.75 * landingPenalty : 1), 0) * (1 + airBonus) * between(state, 0.8, 1.2);
     const garrison = T.occupiedBy ? 10 : 20 + T.airDefense * 3 + (T.major ? 15 : 0);
-    let D = (defenders.reduce((s, u) => s + u.strength, 0) + garrison) * 1.35 * between(state, 0.8, 1.2) * (T.stability / 100 * 0.4 + 0.8);
+    let D = (defenders.reduce((s, u) => s + u.strength * Q(state, u.owner, 'land'), 0) + garrison) * 1.35 * between(state, 0.8, 1.2) * (T.stability / 100 * 0.4 + 0.8);
     const at = pt(T);
     const ratio = A / Math.max(1, D);
     if (ratio > 1) {
@@ -187,37 +201,23 @@ function resolveInvasions(state, orders, ev) {
       for (const { u } of attackers) damageUnit(state, u, u.strength * clamp(0.3 / ratio, 0.05, 0.45), ev, 'battle losses');
       const remainingDef = unitsAt(state, 'country', target).filter(u => u.type === 'army' && sameSide(state, u.owner, target)).reduce((s, u) => s + u.strength, 0);
       const survivors = attackers.filter(({ u }) => state.units[u.id]);
-      // The front line moves forward; the country falls once the attacker holds all of it.
-      const front = T.front && (T.front.by === lead || sameSide(state, T.front.by, lead)) ? T.front : { by: lead, pct: 0, from: origin };
-      const prev = front.pct;
-      const advance = clamp(18 + 50 * (ratio - 1), 15, 70) + (remainingDef < 15 ? 45 : 0);
-      front.prev = prev; front.pct = survivors.length ? Math.min(100, prev + advance) : prev; front.turn = state.meta.turn;
-      T.front = front;
-      ev.push({ kind: 'front', by: front.by, country: target, from: front.from, prev, pct: front.pct });
-      let occupied = false;
-      if (front.pct >= 100 && survivors.length) {
-        for (const { u } of survivors) u.loc = { kind: 'country', id: target };
-        if (T.occupiedBy && sameSide(state, T.occupiedBy, lead) === false && T.occupiedBy !== lead) T.occupiedBy = lead;
-        else if (!T.occupiedBy || T.occupiedBy !== lead) T.occupiedBy = lead === target ? null : lead;
-        T.stability = clamp(T.stability - 30, 0, 100);
-        state.countries[lead].influence = clamp(state.countries[lead].influence + 4, 0, 100);
-        occupied = true;
-        for (const id of Object.keys(state.global.closedAirspace)) void id;
-        state.global.closedAirspace[target] = state.global.closedAirspace[target] || { turn: state.meta.turn, at: 0 };
-      }
+      // The front moves forward a little each turn; the country falls once the attacker holds all of it.
+      // The Zeus can overrule the engine for any front: advance, hold or fall back.
+      const mine = T.front && (T.front.by === lead || sameSide(state, T.front.by, lead));
+      if (!mine) T.front = { by: lead, pct: 0, prev: 0, from: origin, turn: state.meta.turn, mode: T.front?.mode || 'auto' };
+      else if (sea && T.front.pct < 5) T.front.from = origin;
+      const engine = survivors.length ? clamp(10 + 30 * (ratio - 1), 8, 30) + (remainingDef < 15 ? 12 : 0) : 0;
+      const occupied = moveFront(state, T, frontDelta(T.front.mode, engine, 15), ev);
+      if (occupied) for (const { u } of survivors) u.loc = { kind: 'country', id: target };
       const cas = Math.round((A + D) * between(state, 0.6, 1.2));
       T.casualties += cas; state.global.casualties += cas; T.warWeariness += 8;
       ev.push({ kind: 'battle', attacker: lead, defender: target, at, result: 'won', occupied, front: true });
-      if (occupied) ev.push({ kind: 'occupation', by: lead, country: target });
     } else {
       for (const { u } of attackers) damageUnit(state, u, u.strength * clamp(0.5 * ratio + 0.2, 0.2, 0.8), ev, 'repelled');
       for (const u of defenders) damageUnit(state, u, u.strength * clamp(0.2 * ratio, 0.03, 0.3), ev, 'held the line');
       // A failed offensive gives ground back.
       if (T.front && !T.occupiedBy && (T.front.by === lead || sameSide(state, T.front.by, lead))) {
-        const prev = T.front.pct;
-        T.front.prev = prev; T.front.pct = Math.max(0, prev - clamp(8 / Math.max(ratio, 0.2), 8, 25)); T.front.turn = state.meta.turn;
-        ev.push({ kind: 'front', by: T.front.by, country: target, from: T.front.from, prev, pct: T.front.pct });
-        if (T.front.pct <= 0) T.front = null;
+        moveFront(state, T, frontDelta(T.front.mode, -clamp(8 / Math.max(ratio, 0.2), 8, 25), 8), ev);
       }
       const cas = Math.round((A + D) * between(state, 0.4, 0.9));
       T.casualties += cas; state.global.casualties += cas;
@@ -226,32 +226,47 @@ function resolveInvasions(state, orders, ev) {
   }
 }
 
+// Naval battles: every pair of warring navies sharing a zone fights. Carriers bring their air wings, ships near
+// their own coast get shore-based air and missile cover, and crew quality matters most of all at sea.
 function resolveNaval(state, ev) {
   const zones = {};
   for (const u of Object.values(state.units)) if (u.loc.kind === 'sea' && u.strength > 0) (zones[u.loc.id] ||= []).push(u);
-  for (const [zone, ships] of Object.entries(zones)) {
-    const owners = [...new Set(ships.map(u => u.owner))];
-    const pairs = [];
-    for (let i = 0; i < owners.length; i++) for (let j = i + 1; j < owners.length; j++) if (atWar(state, owners[i], owners[j])) pairs.push([owners[i], owners[j]]);
-    if (!pairs.length) continue;
-    const [a, b] = pairs[0];
-    const sideA = ships.filter(u => sameSide(state, u.owner, a) || u.owner === a);
-    const sideB = ships.filter(u => sameSide(state, u.owner, b) || u.owner === b);
-    const power = side => side.reduce((s, u) => s + u.strength * (u.type === 'carrier' ? 1.5 : 1), 0);
-    const PA = power(sideA) * between(state, 0.75, 1.25), PB = power(sideB) * between(state, 0.75, 1.25);
-    const win = PA >= PB ? sideA : sideB, lose = PA >= PB ? sideB : sideA;
-    const r = Math.max(PA, PB) / Math.max(1, Math.min(PA, PB));
-    for (const u of lose) damageUnit(state, u, u.strength * clamp(0.35 + 0.15 * r, 0.35, 0.9), ev, 'sunk in battle');
-    for (const u of win) damageUnit(state, u, u.strength * clamp(0.25 / r, 0.05, 0.3), ev, 'battle damage');
-    // Losers that survive withdraw towards home waters.
-    for (const u of lose) if (state.units[u.id]) {
-      const home = zonesTouching(u.owner)[0];
-      if (home && home !== zone) { const route = seaRoute(zone, home, new Set()); if (route && route[1]) u.loc = { kind: 'sea', id: route[1] }; }
-      u.blockade = false;
+  for (const [zone, all] of Object.entries(zones)) {
+    const fought = new Set();
+    for (;;) {
+      const ships = all.filter(u => state.units[u.id] && u.loc.id === zone);
+      const owners = [...new Set(ships.map(u => u.owner))];
+      let pair = null;
+      for (let i = 0; i < owners.length && !pair; i++) for (let j = i + 1; j < owners.length && !pair; j++) {
+        const key = [owners[i], owners[j]].sort().join('|');
+        if (!fought.has(key) && atWar(state, owners[i], owners[j])) pair = [owners[i], owners[j], key];
+      }
+      if (!pair) break;
+      const [a, b, key] = pair; fought.add(key);
+      // Each side is the belligerent plus any of its allies also at war with the other side.
+      const side = (x, y) => ships.filter(u => u.owner === x || (sameSide(state, u.owner, x) && atWar(state, u.owner, y)));
+      const sideA = side(a, b), sideB = side(b, a);
+      const coast = SEA_ZONES[zone]?.coasts || [];
+      const power = (list, lead) => list.reduce((t, u) => t + u.strength * (u.type === 'carrier' ? 2 : 1) * Q(state, u.owner, 'sea'), 0) * (coast.includes(lead) ? 1.2 : 1);
+      const PA = power(sideA, a) * between(state, 0.85, 1.15), PB = power(sideB, b) * between(state, 0.85, 1.15);
+      const aWins = PA >= PB;
+      const win = aWins ? sideA : sideB, lose = aWins ? sideB : sideA;
+      const r = Math.max(PA, PB) / Math.max(1, Math.min(PA, PB));
+      const count = list => list.filter(u => state.units[u.id]).length;
+      const before = { w: count(win), l: count(lose) };
+      for (const u of lose) damageUnit(state, u, u.strength * clamp(0.3 + 0.18 * r, 0.35, 1), ev, 'sunk in battle');
+      for (const u of win) damageUnit(state, u, u.strength * clamp(0.3 / r, 0.02, 0.3), ev, 'battle damage');
+      // Losers that survive withdraw towards home waters.
+      for (const u of lose) if (state.units[u.id]) {
+        const home = zonesTouching(u.owner)[0];
+        if (home && home !== zone) { const route = seaRoute(zone, home, new Set()); if (route && route[1]) u.loc = { kind: 'sea', id: route[1] }; }
+        u.blockade = false;
+      }
+      const cas = Math.round((PA + PB) * 0.3);
+      state.global.casualties += cas;
+      ev.push({ kind: 'naval', zone, winner: win[0].owner, loser: lose[0].owner, at: { lat: SEA_ZONES[zone].lat, lon: SEA_ZONES[zone].lon },
+        ships: { winner: before.w, loser: before.l }, lost: { winner: before.w - count(win), loser: before.l - count(lose) }, decisive: r >= 2 });
     }
-    const cas = Math.round((PA + PB) * 0.4);
-    state.global.casualties += cas;
-    ev.push({ kind: 'naval', zone, winner: win[0].owner, loser: lose[0].owner, at: { lat: SEA_ZONES[zone].lat, lon: SEA_ZONES[zone].lon } });
   }
 }
 
@@ -271,25 +286,77 @@ function updateChokepoints(state, ev) {
   }
 }
 
-// Fronts nobody fought over this turn: a ceasefire freezes them, peace clears them, and defenders slowly retake ground.
+// How far a front moves this turn: the engine's figure, unless the Zeus has told this front to advance, hold or fall back.
+function frontDelta(mode, engine, push) {
+  if (mode === 'hold') return 0;
+  if (mode === 'advance') return Math.max(engine, push);
+  if (mode === 'retreat') return -Math.max(12, push);
+  return engine;
+}
+
+// Moves a front by `delta` points. Reaching 100 occupies the country; falling to 0 ends the front.
+// Pushing back an occupied country liberates it. Returns true when the country falls this call.
+export function moveFront(state, T, delta, ev) {
+  const f = T.front; if (!f || !delta) { if (f) f.turn = state.meta.turn; return false; }
+  const prev = f.pct;
+  f.prev = prev; f.pct = clamp(prev + delta, 0, 100); f.turn = state.meta.turn;
+  ev.push({ kind: 'front', by: f.by, country: T.id, from: f.from, prev, pct: f.pct });
+  if (f.pct >= 100 && prev < 100) { occupy(state, T, f.by, ev); return true; }
+  if (f.pct < 100 && T.occupiedBy) {
+    ev.push({ kind: 'liberation', country: T.id, from: T.occupiedBy });
+    T.occupiedBy = null;
+  }
+  if (f.pct <= 0) T.front = null;
+  return false;
+}
+
+function occupy(state, T, by, ev) {
+  if (by === T.id) return;
+  T.occupiedBy = by;
+  T.stability = clamp(T.stability - 30, 0, 100);
+  state.countries[by].influence = clamp(state.countries[by].influence + 4, 0, 100);
+  state.global.closedAirspace[T.id] = state.global.closedAirspace[T.id] || { turn: state.meta.turn, at: 0 };
+  ev.push({ kind: 'occupation', by, country: T.id });
+}
+
+// Fronts nobody fought over this turn: a ceasefire freezes them, peace clears them, and otherwise they follow
+// their mode. On auto, a strong defender slowly retakes ground.
 function updateFronts(state, ev) {
   const turn = state.meta.turn;
   for (const T of Object.values(state.countries)) {
     const f = T.front; if (!f) continue;
-    if (T.occupiedBy) { if (f.turn < turn) T.front = null; continue; }
     if (f.turn === turn) continue;
     if (!atWar(state, f.by, T.id)) {
       const frozen = state.treaties.some(t => t.type === 'ceasefire' && t.parties.includes(f.by) && t.parties.includes(T.id));
-      if (!frozen) T.front = null;
+      if (!frozen && !T.occupiedBy) T.front = null;
       continue;
     }
-    const held = unitsAt(state, 'country', T.id).filter(u => u.type === 'army' && (u.owner === T.id || sameSide(state, u.owner, T.id))).reduce((s, u) => s + u.strength, 0);
-    if (held < 40) { f.prev = f.pct; continue; }
-    const prev = f.pct;
-    f.prev = prev; f.pct = Math.max(0, prev - 6); f.turn = turn;
-    ev.push({ kind: 'front', by: f.by, country: T.id, from: f.from, prev, pct: f.pct });
-    if (f.pct <= 0) T.front = null;
+    const held = unitsAt(state, 'country', T.id).filter(u => u.type === 'army' && (u.owner === T.id || sameSide(state, u.owner, T.id))).reduce((t, u) => t + u.strength, 0);
+    const press = unitsOf(state, f.by, 'army').reduce((t, u) => t + u.strength, 0);
+    const mode = f.mode || 'auto';
+    let delta = 0;
+    if (mode === 'advance') delta = T.occupiedBy ? 0 : clamp(12 + 8 * (press / Math.max(40, held) - 1), 10, 22);
+    else if (mode === 'retreat') delta = -15;
+    else if (mode === 'auto' && !T.occupiedBy && held >= 40) delta = -6;
+    if (delta) moveFront(state, T, delta, ev); else f.prev = f.pct;
   }
+}
+
+// A Zeus moves a front right now, outside the turn. Starts a front if `by` has none in this country yet.
+export function pushFrontNow(state, countryId, by, delta, ctx) {
+  const T = state.countries[countryId], B = state.countries[by];
+  if (!T || !B || countryId === by) return 'Pick a country and who is attacking it.';
+  if (!atWar(state, by, countryId) && !T.front) return `${B.name} is not at war with ${T.name}.`;
+  if (T.front && T.front.by !== by && !sameSide(state, T.front.by, by)) return `${state.countries[T.front.by].name} already holds the front in ${T.name}.`;
+  if (!T.front) {
+    if (delta <= 0) return `${B.name} holds no ground in ${T.name}.`;
+    T.front = { by, pct: 0, prev: 0, from: { lat: B.lat, lon: B.lon }, turn: state.meta.turn, mode: 'auto' };
+  }
+  const ev = [];
+  moveFront(state, T, delta, ev);
+  state.lastResolution = { turn: state.meta.turn, at: ctx.now, instant: true, events: ev.filter(e => ANIMATED.includes(e.kind)) };
+  publish(state, ev, ctx);
+  return null;
 }
 
 function moveFleet(state, o, ev) {
@@ -421,10 +488,26 @@ function runOrders(state, list, ctx, ev) {
         break;
       }
       case 'cyber': case 'intel': case 'spy': case 'satellite': case 'propaganda': resolveCovert(state, o, ev); break;
+      case 'neo': resolveEvacuation(state, o, ev); break;
       default: resolveDiplomacy(state, o, ev);
     }
   }
   return invasions;
+}
+
+// Non-combatant evacuation: citizens are flown out of a crisis, or taken off by sea when the airspace is shut.
+function resolveEvacuation(state, o, ev) {
+  const c = state.countries[o.country], T = state.countries[o.target];
+  const zone = zonesTouching(o.target).find(z => unitsAt(state, 'sea', z).some(u => u.owner === o.country && u.strength > 0))
+    || (state.global.closedAirspace[o.target] ? zonesTouching(o.target)[0] : null);
+  const danger = enemiesOf(state, o.target).length > 0 || !!state.global.closedAirspace[o.target] || T.stability < 35;
+  const evacuees = Math.round((danger ? 2500 : 800) * (0.6 + Math.sqrt(c.base.pop) / 12) * between(state, 0.7, 1.3) / 100) * 100;
+  c.support = clamp(c.support + (danger ? 4 : 1), 0, 100);
+  if (enemiesOf(state, o.target).some(e => sameSide(state, e, o.country))) shiftRelation(state, o.country, o.target, -3);
+  // A friendly staging point: the nearest allied capital, or home.
+  const allies = Object.values(state.countries).filter(x => x.id !== o.target && (x.id === o.country || sameSide(state, x.id, o.country) || relation(state, x.id, o.country) > 40) && !enemiesOf(state, x.id).length && x.lat != null);
+  const stage = allies.sort((a, b) => distanceKm(pt(a), pt(T)) - distanceKm(pt(b), pt(T)))[0] || c;
+  ev.push({ kind: 'neo', owner: o.country, country: o.target, from: pt(T), to: pt(stage), stage: stage.id, zone, sea: zone ? { lat: SEA_ZONES[zone].lat, lon: SEA_ZONES[zone].lon } : null, evacuees, danger });
 }
 
 export function resolveTurn(state, ctx) {

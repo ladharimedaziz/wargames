@@ -11,6 +11,7 @@ const VERBS = [
   ['nuke', ['nuke', 'nukes', 'nuclear strike', 'nuclear launch', 'launch nuclear']],
   ['alert', ['nuclear alert', 'alert']],
   ['strike', ['strike', 'strikes', 'bomb', 'bombs', 'attack', 'attacks', 'hit', 'hits', 'airstrike', 'airstrikes', 'shell', 'shells']],
+  ['neo', ['evacuate citizens from', 'evacuates citizens from', 'evacuate from', 'evacuates from', 'evacuate', 'evacuates', 'evacuation', 'evac', 'neo']],
   ['invade', ['invade', 'invades', 'invasion of', 'invasion', 'march into', 'marches into', 'push into', 'pushes into', 'send troops to', 'sends troops to', 'move troops to', 'moves troops to']],
   ['blockade', ['blockade', 'blockades', 'close', 'closes', 'seal', 'seals']],
   ['fleet', ['sail to', 'sails to', 'sail', 'sails', 'move fleet to', 'moves fleet to', 'fleet to', 'navy to', 'deploy fleet to', 'deploys fleet to']],
@@ -206,17 +207,17 @@ export function parseCommand(state, text, role = 'stage') {
       order.target = target; order.category = category || 'military';
       if (unitToks[0]) counts.type = unitToks.find(u => u.unit !== 'fighter' || unitToks.length === 1)?.unit || unitToks[0].unit;
       if (counts.type && !['bomber', 'missile', 'carrier', 'fighter'].includes(counts.type)) delete counts.type;
-      if (mainNum) counts.n = Math.min(12, mainNum.num);
+      if (mainNum) counts.n = Math.min(30, mainNum.num);
       if (escortIdx >= 0) counts.escort = Math.min(8, escortNum?.num || 1);
       break;
     case 'invade': case 'rebase':
       order.target = target || (verb === 'rebase' ? actor : null);
       if (verb === 'invade' && !target && countries.length === 1) order.target = actor; // "russia invade russia" = bring armies home
-      counts.n = Math.min(10, mainNum?.num || 1);
+      counts.n = Math.min(30, mainNum?.num || 1);
       if (verb === 'rebase') counts.type = unitToks.find(u => ['fighter', 'bomber', 'missile', 'airdef'].includes(u.unit))?.unit || 'fighter';
       break;
     case 'fleet': case 'blockade':
-      order.zone = zone; counts.n = Math.min(8, mainNum?.num || 1);
+      order.zone = zone; counts.n = Math.min(24, mainNum?.num || 1);
       if (unitToks.some(u => u.unit === 'carrier')) counts.type = 'carrier';
       if (!zone) return { ok: false, error: 'Which sea? e.g. "iran blockade hormuz", "us sail to south china sea".' };
       break;
@@ -226,6 +227,7 @@ export function parseCommand(state, text, role = 'stage') {
     case 'spy': order.target = target; order.kind = ['steal', 'sabotage', 'defector'].includes(kind) ? kind : (verbTok.word.startsWith('sabot') ? 'sabotage' : verbTok.word.startsWith('steal') ? 'steal' : 'sabotage'); break;
     case 'roe': order.kind = ['defensive', 'firm', 'forward'].includes(kind) ? kind : null; if (!order.kind) return { ok: false, error: 'ROE is defensive, firm or forward.' }; break;
     case 'propaganda': order.target = target; break;
+    case 'neo': order.target = target; if (!target) return { ok: false, error: 'Evacuate from where? e.g. "us evacuate sudan".' }; break;
     default: order.target = target;
   }
   order.counts = counts;

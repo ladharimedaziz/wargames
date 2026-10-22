@@ -1,6 +1,8 @@
 // Builds fresh committee states for world (map) mode and court mode.
 import { COUNTRIES, minorCountry } from '../data/countries.js';
 import { alliancesOf, defaultBloc } from '../data/alliances.js';
+import { MILITARIES, DEPLOYMENTS } from '../data/militaries.js';
+import { ECONOMIES, ECONOMY_DEFAULT } from '../data/economies.js';
 import { SEA_ZONES } from '../data/places.js';
 import { zonesTouching } from '../geo.js';
 import { COURT_PHASES, newId } from './core.js';
@@ -10,7 +12,7 @@ function baseState({ id, name, mode, seed }) {
     id, name, mode, version: 1,
     meta: { turn: 1, clock: '2027-03-14', turnDays: 7, idSeq: 0, createdAt: 0, phase: 'setup' },
     rng: { seed: seed >>> 0, n: 0 },
-    settings: { lang: 'en', music: true, sfx: true, autoAir: false, layers: { air: true, naval: true, units: true, relations: false, labels: true }, fog: 'public' },
+    settings: { lang: 'en', sfx: true, autoAir: false, layers: { air: true, naval: true, units: true, relations: false, labels: true }, fog: 'public' },
     display: {
       scene: mode === 'court' ? 'court' : 'map',
       introAt: 0, revealAt: 0, endingAt: 0, ending: null, reportAt: 0,
@@ -30,16 +32,19 @@ export function createWorldState(opts, geoInfo) {
     const d = COUNTRIES[id] ? structuredClone(COUNTRIES[id]) : minorCountry(id, geoInfo.name(id) || id);
     const a = (d.lat == null) ? geoInfo.anchor(id) : { lat: d.lat, lon: d.lon };
     if (!a) continue;
+    const e = ECONOMIES[d.a3] || ECONOMY_DEFAULT;
     s.countries[id] = {
       id, a3: d.a3, name: d.name, ar: d.ar, major: d.major, lat: a.lat, lon: a.lon,
       control: d.major ? 'ai' : 'inactive', bloc: defaultBloc(id),
-      base: { gdp: d.gdp, pop: d.pop }, gdp: d.gdp, treasury: Math.round(d.gdp * 0.08 * 10) / 10,
-      industry: 1, energy: 1, support: 62, stability: 70, inflation: 2, influence: Math.min(100, Math.round(10 + Math.log10(d.gdp + 1) * 18)),
+      base: { gdp: d.gdp, pop: d.pop, industry: e.industry, energy: e.energy, support: e.support, stability: e.stability, inflation: e.inflation, growth: e.growth },
+      gdp: d.gdp, treasury: e.reserves ?? Math.round(d.gdp * 0.08 * 10) / 10,
+      industry: e.industry, energy: e.energy, support: e.support, stability: e.stability, inflation: e.inflation, influence: Math.min(100, Math.round(10 + Math.log10(d.gdp + 1) * 18)),
       airDefense: d.airDefense, nuclear: { has: d.nuclear, alert: false }, oilNet: d.oilNet,
       alliances: alliancesOf(id), stealth: d.stealth, veto: d.veto,
       roe: 'firm', damage: 0, casualties: 0, refugees: 0, occupiedBy: null, front: null, capitulated: false,
       sanctions: [], overflight: [], intel: {}, blindUntil: 0, cyber: {}, lastStruck: 0, warWeariness: 0,
-      forces0: d.forces,
+      quality: MILITARIES[d.a3]?.quality || { land: 1, air: 1, sea: 1 },
+      forces0: MILITARIES[d.a3]?.forces || d.forces,
     };
   }
   s.units = {};
@@ -47,10 +52,11 @@ export function createWorldState(opts, geoInfo) {
   for (const c of Object.values(s.countries)) {
     const f = c.forces0; delete c.forces0;
     for (const type of ['army', 'fighter', 'bomber', 'missile']) for (let i = 0; i < f[type]; i++) place(c.id, type, { kind: 'country', id: c.id });
-    const zones = zonesTouching(c.id);
-    if (zones.length) {
-      for (let i = 0; i < f.fleet; i++) place(c.id, 'fleet', { kind: 'sea', id: zones[i % zones.length] });
-      for (let i = 0; i < f.carrier; i++) place(c.id, 'carrier', { kind: 'sea', id: zones[(i + 1) % zones.length] });
+    const zones = zonesTouching(c.id), dep = DEPLOYMENTS[c.a3] || {};
+    if (zones.length || dep.fleet) {
+      const at = (type, i, shift) => dep[type]?.[i] && SEA_ZONES[dep[type][i]] ? dep[type][i] : zones[(i + shift) % zones.length];
+      for (let i = 0; i < f.fleet; i++) { const z = at('fleet', i, 0); if (z) place(c.id, 'fleet', { kind: 'sea', id: z }); }
+      for (let i = 0; i < f.carrier; i++) { const z = at('carrier', i, 1); if (z) place(c.id, 'carrier', { kind: 'sea', id: z }); }
     }
   }
   s.adjacency = Object.fromEntries(Object.keys(s.countries).map(id => [id, geoInfo.neighbors(id).filter(n => s.countries[n])]));

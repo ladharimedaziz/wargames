@@ -2,8 +2,9 @@
 // something changes, and an effects layer animated every frame (traffic, units, strikes, battles).
 import { geoEqualEarth, geoPath, geoGraticule10, geoInterpolate } from 'd3-geo';
 import { SEA_ZONES } from '/shared/data/places.js';
+import { CITIES } from '/shared/data/cities.js';
 import { relation } from '/shared/engine/core.js';
-import { loadAtlas, makeCountryAt } from './atlas.js';
+import { loadAtlas, makeCountryAt, makeLandAt } from './atlas.js';
 import { AirTraffic, SeaTraffic } from './traffic.js';
 
 const TAU = Math.PI * 2;
@@ -53,12 +54,16 @@ export class WorldMap {
     this.atlas = { lo, hi };
     this.countryAt = makeCountryAt(lo);
     this.air = new AirTraffic(this.countryAt);
-    this.sea = new SeaTraffic();
+    this.sea = new SeaTraffic(makeLandAt(hi));
     this.patterns = {};
     this.resize();
     this.ro = new ResizeObserver(() => this.resize());
     this.ro.observe(this.el);
-    if (this.opts.interactive) this.bindInput();
+    if (this.opts.interactive || this.opts.stageControl) this.bindInput();
+    if (this.opts.stageControl) {
+      this.onKey = e => { if (e.key === 'Escape' && this.localFocus) { this.localFocus = null; this.applyFocus(); } };
+      window.addEventListener('keydown', this.onKey);
+    }
     this.t0 = performance.now();
     this.last = this.t0;
     const loop = now => { if (this.destroyed) return; this.frame(now); this.raf = requestAnimationFrame(loop); };
@@ -66,7 +71,7 @@ export class WorldMap {
     if (this.state) this.setState(this.state);
   }
 
-  destroy() { this.destroyed = true; cancelAnimationFrame(this.raf); this.ro?.disconnect(); this.el.innerHTML = ''; }
+  destroy() { this.destroyed = true; cancelAnimationFrame(this.raf); this.ro?.disconnect(); if (this.onKey) window.removeEventListener('keydown', this.onKey); this.el.innerHTML = ''; }
 
   resize() {
     const r = this.el.getBoundingClientRect();
@@ -189,11 +194,24 @@ export class WorldMap {
   }
   applyFocus(instant) {
     if (!this.w) return;
-    const f = this.opts.interactive ? this.userFocus : (this.state?.display?.focus || null);
+    // The stage display follows the Zeus's focus, unless someone has clicked a country on the display itself.
+    const f = this.opts.interactive ? this.userFocus : (this.localFocus || this.state?.display?.focus || null);
     this.camTarget = this.viewFor(f);
     if (instant) this.cam = { ...this.camTarget };
   }
   flyTo(focus) { this.userFocus = focus; this.camTarget = this.viewFor(focus); }
+  // The country the camera is centred on, if any: its cities are all shown.
+  focusedCountry() {
+    const f = this.opts.interactive ? this.userFocus : (this.localFocus || this.state?.display?.focus);
+    if (f?.kind === 'country') return f.id;
+    return this.opts.interactive ? this.selected : null;
+  }
+  // On the stage display, clicking a country zooms to it; clicking it again, the sea, or pressing Escape zooms back out.
+  stageClick(id) {
+    this.localFocus = id && id !== this.localFocus?.id && this.bounds.get(id) ? { kind: 'country', id } : null;
+    this.userAt = performance.now();
+    this.applyFocus();
+  }
 
   bindInput() {
     const fx = this.fx;
@@ -204,6 +222,7 @@ export class WorldMap {
       const r = fx.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
       const t = this.camTarget, k = clamp(t.k * Math.exp(-e.deltaY * 0.0016), 1, 12);
       this.camTarget = this.clampView({ k, x: mx - (mx - t.x) * (k / t.k), y: my - (my - t.y) * (k / t.k) });
+      this.userAt = performance.now();
     }, { passive: false });
     fx.addEventListener('pointerdown', e => { drag = { x: e.clientX, y: e.clientY, cx: this.camTarget.x, cy: this.camTarget.y }; moved = false; fx.setPointerCapture(e.pointerId); fx.style.cursor = 'grabbing'; });
     fx.addEventListener('pointermove', e => {
@@ -214,9 +233,10 @@ export class WorldMap {
         this.camTarget = this.clampView({ k: this.camTarget.k, x: drag.cx + dx, y: drag.cy + dy });
         this.cam = { ...this.cam, x: this.camTarget.x, y: this.camTarget.y, k: this.cam.k };
         if (!this.dragging && this.hover) { this.hover = null; this.opts.onHover?.(null); }
-        this.dragging = true; this.dirty = true;
+        this.dragging = true; this.dirty = true; this.userAt = performance.now();
         return;
       }
+      if (!this.opts.interactive) return;
       const ll = this.screenToLonLat(mx, my);
       const id = ll ? this.countryAt(ll[0], ll[1]) : null;
       const zone = !id ? this.zoneAt(mx, my) : null;
@@ -231,7 +251,8 @@ export class WorldMap {
         const zone = this.zoneAt(mx, my);
         const ll = this.screenToLonLat(mx, my);
         const id = ll ? this.countryAt(ll[0], ll[1]) : null;
-        this.opts.onSelect?.(zone && !id ? { zone } : zone && this.state?.countries?.[id] == null ? { zone } : { id, zone: null }, e);
+        if (this.opts.stageControl) this.stageClick(id && this.state?.countries?.[id] ? id : null);
+        else this.opts.onSelect?.(zone && !id ? { zone } : zone && this.state?.countries?.[id] == null ? { zone } : { id, zone: null }, e);
       }
       drag = null;
     });
@@ -323,13 +344,15 @@ export class WorldMap {
     const ar = this.opts.lang === 'ar';
     const list = Object.values(s.countries).filter(c => c.control !== 'inactive' || k > 3.5);
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const placed = [];
+    const placed = this.labelBoxes = [];
     list.sort((a, b) => (b.control === 'player') - (a.control === 'player') || b.base.gdp - a.base.gdp);
     for (const c of list) {
       const b = this.bounds.get(c.id); if (!b) continue;
       const wpx = (b[1][0] - b[0][0]) * k;
       if (wpx < 34 && c.control !== 'player') continue;
-      const q = this.p(c.lon, c.lat); if (!q || q[0] < -40 || q[0] > this.w + 40 || q[1] < -20 || q[1] > this.h + 20) continue;
+      // Names sit in the middle of the main landmass, leaving the capital free for its city marker.
+      const cc = this.centroids.get(c.id), q = cc ? [cc[0] * k + this.cam.x, cc[1] * k + this.cam.y] : this.p(c.lon, c.lat);
+      if (!q || q[0] < -40 || q[0] > this.w + 40 || q[1] < -20 || q[1] > this.h + 20) continue;
       const size = clamp(Math.sqrt(wpx) * 1.25, 9, 17);
       const text = ar ? c.ar : c.name.toUpperCase();
       ctx.font = ar ? `700 ${size + 1}px Cairo, sans-serif` : `700 ${size}px Rajdhani, Inter, sans-serif`;
@@ -347,40 +370,60 @@ export class WorldMap {
   playResolution(res) {
     const evs = res.events || [];
     let t = 0.3;
-    const pts = [];
+    // Points of interest by importance (0 = most), so a busy turn frames the headline action instead of the whole world.
+    const tiers = [[], [], [], [], [], [], []];
+    const mark = (tier, ...qs) => tiers[tier].push(...qs.filter(Boolean));
     const strikes = evs.filter(e => e.kind === 'strike' || e.kind === 'scrubbed');
     const add = (fx, delay) => { fx.start = performance.now() + delay * 1000; this.effects.push(fx); };
     for (const e of evs.filter(e => e.kind === 'war')) { add({ type: 'war', a: e.a, b: e.b, dur: 2.4 }, 0); }
-    for (const e of evs.filter(e => e.kind === 'move')) { add({ type: 'move', e, dur: 2.6 }, t); pts.push(e.from, e.to); }
-    for (const e of evs.filter(e => e.kind === 'fleet')) { add({ type: 'fleet', e, dur: 3.2 }, t); pts.push(...e.path); }
+    for (const e of evs.filter(e => e.kind === 'move')) { add({ type: 'move', e, dur: 2.6 }, t); mark(6, e.from, e.to); }
+    for (const e of evs.filter(e => e.kind === 'fleet')) { add({ type: 'fleet', e, dur: 3.2 }, t); mark(6, ...e.path); }
     t += 0.6;
-    strikes.slice(0, 80).forEach((e, i) => { add({ type: 'strike', e, dur: e.unitType === 'missile' ? 1.5 : 2.2 }, t + i * 0.09); if (e.from) pts.push(e.from); if (e.to) pts.push(e.to); });
-    t += Math.min(80, strikes.length) * 0.09 + 1.6;
-    for (const e of evs.filter(e => e.kind === 'battle')) { add({ type: 'battle', e, dur: 3 }, t); pts.push(e.at); }
+    strikes.slice(0, 80).forEach((e, i) => { add({ type: 'strike', e, dur: e.unitType === 'missile' ? 2.4 : 3 }, t + i * 0.12); mark(3, e.from, e.to); });
+    t += Math.min(80, strikes.length) * 0.12 + 2.2;
+    for (const e of evs.filter(e => e.kind === 'battle')) { add({ type: 'battle', e, dur: 3 }, t); mark(5, e.at); }
     for (const e of evs.filter(e => e.kind === 'front')) {
       if (e.pct > e.prev) add({ type: 'advance', e, dur: 3.6 }, t - 0.4);
       const c = this.state?.countries?.[e.country];
-      pts.push(e.from); if (c) pts.push({ lat: c.lat, lon: c.lon });
+      mark(4, e.from, c && { lat: c.lat, lon: c.lon });
     }
     this.frontDelay = t;
-    for (const e of evs.filter(e => e.kind === 'naval')) { add({ type: 'naval', e, dur: 3 }, t); pts.push(e.at); }
+    for (const e of evs.filter(e => e.kind === 'landing')) { add({ type: 'landing', e, dur: 4.6 }, t - 1.2); mark(1, e.from, e.to); }
+    for (const e of evs.filter(e => e.kind === 'naval')) { add({ type: 'naval', e, dur: 5 }, t); mark(2, e.at); }
+    for (const e of evs.filter(e => e.kind === 'neo')) { add({ type: 'neo', e, dur: 7 }, t); mark(1, e.from, e.sea || e.to); }
     for (const e of evs.filter(e => e.kind === 'unit_lost')) add({ type: 'lost', e, dur: 3.5 }, t + 0.8);
     for (const e of evs.filter(e => e.kind === 'occupation')) { add({ type: 'occupy', e, dur: 3.5 }, t + 1); }
-    for (const e of evs.filter(e => e.kind === 'chokepoint')) { add({ type: 'choke', e, dur: 3.5 }, t); const z = SEA_ZONES[e.zone]; if (z) pts.push({ lat: z.lat, lon: z.lon }); }
-    for (const e of evs.filter(e => e.kind === 'nuke')) { add({ type: 'nuke', e, dur: 11 }, t + 1.2); pts.push(e.at, e.from); t += 4.6; }
+    for (const e of evs.filter(e => e.kind === 'chokepoint')) { add({ type: 'choke', e, dur: 3.5 }, t); const z = SEA_ZONES[e.zone]; mark(2, z && { lat: z.lat, lon: z.lon }); }
+    for (const e of evs.filter(e => e.kind === 'nuke')) { add({ type: 'nuke', e, dur: 11 }, t + 1.2); mark(0, e.at, e.from); t += 4.6; }
     // Hold the shot until any front has finished sweeping across its country.
-    const hold = evs.some(e => e.kind === 'front') ? Math.max(4, this.frontDelay - t + 5.4) : 4;
+    const tail = evs.some(e => e.kind === 'neo') ? 7.5 : evs.some(e => e.kind === 'naval' || e.kind === 'landing') ? 5.5 : 4;
+    const hold = evs.some(e => e.kind === 'front') ? Math.max(tail, this.frontDelay - t + 5.4) : tail;
     this.sequenceEnd = performance.now() + (t + hold) * 1000;
     // On the stage display, frame the action automatically unless the Zeus has set a focus.
-    if (this.opts.cinematic && pts.filter(Boolean).length && !this.state?.display?.focus) {
-      const proj = pts.filter(Boolean).map(q => this.projection([q.lon, q.lat])).filter(Boolean);
-      const xs = proj.map(q => q[0]), ys = proj.map(q => q[1]);
-      const box = [[Math.min(...xs) - 30, Math.min(...ys) - 30], [Math.max(...xs) + 30, Math.max(...ys) + 30]];
+    const handsOn = this.localFocus || (this.userAt && performance.now() - this.userAt < 20000);
+    const box = this.actionBox(tiers);
+    if (this.opts.cinematic && box && !this.state?.display?.focus && !handsOn) {
       this.camTarget = this.viewFor({ kind: 'box', box, pad: 0.8, maxK: 4 });
       clearTimeout(this.camReturn);
       this.camReturn = setTimeout(() => this.applyFocus(), (t + hold) * 1000);
     }
     return t + hold;
+  }
+
+  // Grow the shot from the most important action outward, stopping before it zooms out past about a third of the world.
+  actionBox(tiers) {
+    const maxW = this.w * 0.36, maxH = this.h * 0.5;
+    let box = null;
+    for (const group of tiers) {
+      const proj = group.map(q => this.projection([q.lon, q.lat])).filter(Boolean);
+      if (!proj.length) continue;
+      const xs = proj.map(q => q[0]), ys = proj.map(q => q[1]);
+      const next = box ? [[Math.min(box[0][0], ...xs), Math.min(box[0][1], ...ys)], [Math.max(box[1][0], ...xs), Math.max(box[1][1], ...ys)]]
+        : [[Math.min(...xs), Math.min(...ys)], [Math.max(...xs), Math.max(...ys)]];
+      if (box && (next[1][0] - next[0][0] > maxW || next[1][1] - next[0][1] > maxH)) break;
+      box = next;
+    }
+    return box && [[box[0][0] - 30, box[0][1] - 30], [box[1][0] + 30, box[1][1] + 30]];
   }
 
   frame(now) {
@@ -443,6 +486,7 @@ export class WorldMap {
     }
 
     this.drawFronts(ctx, now, time, withCam);
+    this.drawCities(ctx, time);
     if (this.layers.naval !== false) this.drawShips(ctx, time);
     if (this.layers.air !== false) this.drawFlights(ctx, time);
     this.drawChokepoints(ctx, time);
@@ -452,6 +496,44 @@ export class WorldMap {
       const u = (now - this.flash.start) / (this.flash.dur * 1000);
       if (u >= 1) this.flash = null;
       else { ctx.fillStyle = `rgba(255,250,235,${(1 - u) * this.flash.alpha})`; ctx.fillRect(0, 0, this.w, this.h); }
+    }
+  }
+
+  // Cities appear as the camera zooms in: capitals and megacities first, then major and regional cities.
+  // Every city of the country in focus is shown.
+  drawCities(ctx, time) {
+    const s = this.state, k = this.cam.k, focus = this.focusedCountry();
+    const focusA3 = focus && s.countries[focus]?.a3;
+    if (k < 2.6 && !focusA3) return;
+    const ar = this.opts.lang === 'ar';
+    const placed = (this.labelBoxes || []).slice(), own = [];
+    const minTier = k >= 5.5 ? 3 : k >= 3.6 ? 2 : 1;
+    const list = CITIES.filter(c => c.a3 === focusA3 ? k >= 1.4 : c.tier <= minTier && k >= 2.6).sort((a, b) => (b.a3 === focusA3) - (a.a3 === focusA3) || a.tier - b.tier);
+    ctx.textBaseline = 'middle';
+    for (const c of list) {
+      const q = this.p(c.lon, c.lat); if (!q || q[0] < -20 || q[0] > this.w + 20 || q[1] < -20 || q[1] > this.h + 20) continue;
+      const mine = c.a3 === focusA3, capital = c.tier === 1;
+      const size = mine ? (capital ? 13 : c.tier === 2 ? 11.5 : 10.5) : capital ? 11 : 10;
+      ctx.font = ar ? `600 ${size + 1}px Cairo, sans-serif` : `600 ${size}px Inter, sans-serif`;
+      const text = ar ? c.ar : c.name;
+      const tw = ctx.measureText(text).width;
+      const box = [q[0] - 4, q[1] - size / 2 - 1, q[0] + 8 + tw, q[1] + size / 2 + 1];
+      // Cities of the country in focus only avoid each other; other cities also stay clear of country names.
+      const hit = (mine ? own : placed).some(p => !(box[2] < p[0] || box[0] > p[2] || box[3] < p[1] || box[1] > p[3]));
+      // Always draw the dot; drop the label if it would collide.
+      const pulse = mine && capital ? 0.5 + 0.5 * Math.sin(time * 2.4) : 0;
+      if (pulse) { ctx.strokeStyle = `rgba(255,214,120,${0.5 * (1 - pulse)})`; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(q[0], q[1], 4 + pulse * 6, 0, TAU); ctx.stroke(); }
+      ctx.fillStyle = capital ? '#ffd678' : mine ? '#e9f2ff' : 'rgba(220,230,245,0.85)';
+      ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      if (capital) { ctx.rect(q[0] - 2.6, q[1] - 2.6, 5.2, 5.2); } else ctx.arc(q[0], q[1], mine ? 2.4 : 1.9, 0, TAU);
+      ctx.fill(); ctx.stroke();
+      if (hit) continue;
+      placed.push(box); own.push(box);
+      ctx.textAlign = 'left';
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(4,7,12,0.85)'; ctx.strokeText(text, q[0] + 6, q[1]);
+      ctx.fillStyle = capital ? '#ffe4a6' : mine ? 'rgba(235,242,255,0.95)' : 'rgba(205,218,236,0.8)';
+      ctx.fillText(text, q[0] + 6, q[1]);
     }
   }
 
@@ -469,13 +551,15 @@ export class WorldMap {
       const by = s.countries[f.by];
       const col = by && by.bloc !== 'N' ? s.blocs[by.bloc].color : '#ff8a3d';
       const { fp, dx, dy, R, thr } = g, nx = -dy, ny = dx;
-      const amp = Math.max(1.1, (g.tmax - g.tmin) * 0.035), seed = Number(id) || 1;
+      // An organic line: salients and pockets that shift slowly, like a real front.
+      const span = g.tmax - g.tmin, amp = Math.max(1.2, span * 0.06), seed = Number(id) || 1;
       const line = [];
-      for (let i = 0; i <= 32; i++) {
-        const sN = -R + (2 * R * i) / 32;
-        const w = amp * (Math.sin(sN * 0.35 + seed) * 0.6 + Math.sin(sN * 0.13 + time * 0.7 + seed) * 0.4);
+      for (let i = 0; i <= 48; i++) {
+        const sN = -R + (2 * R * i) / 48, z = sN / Math.max(8, span);
+        const w = amp * (Math.sin(z * 9 + seed) * 0.45 + Math.sin(z * 23 + seed * 1.7 + time * 0.35) * 0.25 + Math.sin(z * 4.1 + time * 0.22 + seed * 0.3) * 0.3);
         line.push([fp[0] + dx * (thr + w) + nx * sN, fp[1] + dy * (thr + w) + ny * sN]);
       }
+      const fighting = s.wars.some(w => (w.a === f.by && w.b === id) || (w.b === f.by && w.a === id));
       const trace = () => { ctx.beginPath(); line.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); };
       withCam(() => {
         ctx.save();
@@ -501,6 +585,20 @@ export class WorldMap {
           ctx.beginPath(); ctx.moveTo(sz, 0); ctx.lineTo(-sz * 0.6, sz * 0.8); ctx.lineTo(-sz * 0.1, 0); ctx.lineTo(-sz * 0.6, -sz * 0.8); ctx.closePath();
           ctx.fillStyle = '#ffe2bd'; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1 / k; ctx.stroke();
           ctx.restore();
+        }
+        // Artillery and contact flashes flicker along a front that is still being fought over.
+        if (fighting) {
+          for (let j = 0; j < 9; j++) {
+            const cyc = time * 1.3 + j * 0.61 + seed * 0.07, n = Math.floor(cyc), v = cyc - n;
+            const r = Math.abs(Math.sin(n * 12.9898 + j * 78.233 + seed) * 43758.5453) % 1;
+            const q = line[Math.floor(r * (line.length - 1))];
+            const off = ((r * 7.31) % 1 - 0.5) * 10 / k;
+            const x = q[0] + dx * off, y = q[1] + dy * off;
+            const a = Math.max(0, 1 - v * 2.2);
+            if (!a) continue;
+            ctx.fillStyle = `rgba(255,${200 - v * 120},${120 - v * 80},${a})`;
+            ctx.beginPath(); ctx.arc(x, y, (1.2 + v * 3.4) / k, 0, TAU); ctx.fill();
+          }
         }
         ctx.restore();
       });
@@ -577,14 +675,27 @@ export class WorldMap {
   }
 
   drawShips(ctx, time) {
+    const k = this.cam.k, hull = k >= 2.6;
+    const COL = { tanker: '255,190,100', container: '120,200,240', bulk: '190,200,215', lng: '150,235,200' };
     for (const sh of this.sea.ships) {
       const pos = this.sea.position(sh);
-      const q = this.p(pos[0], pos[1]); if (!q) continue;
-      const col = sh.stuck ? '255,178,36' : sh.tanker ? '255,196,110' : '140,200,230';
-      const r = (sh.tanker ? 2.1 : 1.7) * Math.min(1.8, 0.8 + this.cam.k * 0.18);
-      ctx.fillStyle = `rgba(${col},${sh.stuck ? 0.55 + 0.3 * Math.sin(time * 3 + pos[0]) : 0.8})`;
-      ctx.beginPath(); ctx.arc(q[0], q[1], r, 0, TAU); ctx.fill();
-      if (sh.rerouted && !sh.stuck) { ctx.strokeStyle = 'rgba(255,178,36,0.4)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(q[0], q[1], r + 2, 0, TAU); ctx.stroke(); }
+      const q = this.p(pos[0], pos[1]); if (!q || q[0] < -10 || q[0] > this.w + 10 || q[1] < -10 || q[1] > this.h + 10) continue;
+      const col = sh.stuck ? '255,178,36' : COL[sh.kind] || COL.container;
+      const a = sh.stuck ? 0.55 + 0.3 * Math.sin(time * 3 + pos[0]) : 0.85;
+      if (hull && !sh.stuck) {
+        // Zoomed in: a small hull pointing along the ship's heading, with a wake.
+        const ahead = this.sea.position({ ...sh, t: Math.min(1, sh.t + 0.002) });
+        const q2 = this.p(ahead[0], ahead[1]); const ang = q2 ? Math.atan2(q2[1] - q[1], q2[0] - q[0]) : 0;
+        const L = (sh.kind === 'tanker' || sh.kind === 'bulk' ? 5 : 4.4) * Math.min(1.6, 0.7 + k * 0.1);
+        ctx.save(); ctx.translate(q[0], q[1]); ctx.rotate(ang);
+        ctx.strokeStyle = 'rgba(220,240,255,0.25)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-L, 0); ctx.lineTo(-L * 3, -L * 0.5); ctx.moveTo(-L, 0); ctx.lineTo(-L * 3, L * 0.5); ctx.stroke();
+        ctx.fillStyle = `rgba(${col},${a})`; ctx.beginPath(); ctx.moveTo(L, 0); ctx.lineTo(L * 0.4, -L * 0.38); ctx.lineTo(-L, -L * 0.38); ctx.lineTo(-L, L * 0.38); ctx.lineTo(L * 0.4, L * 0.38); ctx.closePath(); ctx.fill();
+        ctx.restore();
+      } else {
+        const r = (sh.kind === 'tanker' || sh.kind === 'bulk' ? 2 : 1.7) * Math.min(1.8, 0.8 + k * 0.18);
+        ctx.fillStyle = `rgba(${col},${a})`; ctx.beginPath(); ctx.arc(q[0], q[1], r, 0, TAU); ctx.fill();
+      }
+      if (sh.rerouted && !sh.stuck) { ctx.strokeStyle = 'rgba(255,178,36,0.4)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(q[0], q[1], 4, 0, TAU); ctx.stroke(); }
     }
   }
 
@@ -672,7 +783,7 @@ export class WorldMap {
     for (const fx of this.effects) {
       const u = (now - fx.start) / (fx.dur * 1000);
       if (u < 0) { keep.push(fx); continue; }
-      if (u >= 1) { if (fx.type === 'strike' && !fx.e.intercepted && fx.e.to) this.scars.push({ at: fx.e.to, born: now }); continue; }
+      if (u >= 1) { if (fx.type === 'strike' && !fx.e.intercepted && fx.e.to) for (const sp of fx.parts || [{ dx: 0, dy: 0 }]) this.scars.push({ at: fx.e.to, dx: sp.dx || 0, dy: sp.dy || 0, born: now }); continue; }
       keep.push(fx);
       this[`fx_${fx.type}`]?.(ctx, fx, u, now, withCam);
     }
@@ -681,40 +792,81 @@ export class WorldMap {
     this.scars = (this.scars || []).filter(sc => now - sc.born < 14000);
     for (const sc of this.scars) {
       const q = this.pt(sc.at); if (!q) continue;
-      const a = 1 - (now - sc.born) / 14000;
-      ctx.fillStyle = `rgba(255,120,60,${0.5 * a})`; ctx.beginPath(); ctx.arc(q[0], q[1], 2.2, 0, TAU); ctx.fill();
+      const a = 1 - (now - sc.born) / 14000, x = q[0] + (sc.dx || 0), y = q[1] + (sc.dy || 0);
+      ctx.fillStyle = `rgba(255,120,60,${0.5 * a})`; ctx.beginPath(); ctx.arc(x, y, 1.8, 0, TAU); ctx.fill();
+      // A thin smoke column drifting off the impact.
+      ctx.fillStyle = `rgba(150,150,160,${0.18 * a})`;
+      for (let i = 1; i <= 3; i++) { const age = ((now - sc.born) / 1000 + i * 0.7) % 2.1; ctx.beginPath(); ctx.arc(x + age * 2.5, y - age * 6, 1.5 + age * 1.6, 0, TAU); ctx.fill(); }
     }
   }
 
+  // A strike is a salvo, not a single dot: several missiles or aircraft leave together, spread out, and either
+  // get through to scattered impact points or are met by interceptors rising from the target.
   fx_strike(ctx, fx, u) {
     const e = fx.e;
     const a = this.pt(e.from) || this.countryPoint(e.owner), endPt = e.intercepted ? (e.at || e.to) : e.to;
     const b = this.pt(endPt) || this.countryPoint(e.target);
     if (!a || !b) return;
-    const travel = 0.72;
     const m = e.unitType === 'missile';
-    const col = m ? '255,90,70' : '255,190,90';
-    const bend = m ? -0.28 : 0.12;
-    if (u < travel) {
-      const v = ease(u / travel);
-      const head = this.onCurve(a, b, v, bend);
-      ctx.strokeStyle = `rgba(${col},0.55)`; ctx.lineWidth = m ? 1.6 : 1.2;
-      ctx.beginPath();
-      for (let i = 0; i <= 24; i++) { const pp = this.onCurve(a, b, Math.max(0, v - 0.35) + (v - Math.max(0, v - 0.35)) * i / 24, bend); i ? ctx.lineTo(pp[0], pp[1]) : ctx.moveTo(pp[0], pp[1]); }
-      ctx.stroke();
-      ctx.fillStyle = `rgba(${col},1)`; ctx.shadowColor = `rgba(${col},1)`; ctx.shadowBlur = 10;
-      ctx.beginPath(); ctx.arc(head[0], head[1], m ? 2.4 : 2, 0, TAU); ctx.fill(); ctx.shadowBlur = 0;
-    } else {
-      const v = (u - travel) / (1 - travel);
-      if (e.intercepted) {
-        ctx.strokeStyle = `rgba(200,240,255,${1 - v})`; ctx.lineWidth = 1.5;
-        for (let i = 0; i < 6; i++) { const ang = i * TAU / 6; ctx.beginPath(); ctx.moveTo(b[0] + Math.cos(ang) * 2, b[1] + Math.sin(ang) * 2); ctx.lineTo(b[0] + Math.cos(ang) * (4 + v * 9), b[1] + Math.sin(ang) * (4 + v * 9)); ctx.stroke(); }
-      } else {
-        const r = 4 + ease(v) * 22;
-        const g = ctx.createRadialGradient(b[0], b[1], 0, b[0], b[1], r);
-        g.addColorStop(0, `rgba(255,240,200,${0.9 * (1 - v)})`); g.addColorStop(0.4, `rgba(255,120,40,${0.6 * (1 - v)})`); g.addColorStop(1, 'rgba(255,60,30,0)');
-        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b[0], b[1], r, 0, TAU); ctx.fill();
-        ctx.strokeStyle = `rgba(255,150,80,${1 - v})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(b[0], b[1], r * 1.3, 0, TAU); ctx.stroke();
+    if (!fx.parts) {
+      const n = m ? 5 : e.unitType === 'bomber' ? 4 : 3;
+      let seed = Math.floor(Math.random() * 1e9);
+      const rnd = () => ((seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
+      fx.parts = Array.from({ length: n }, (_, i) => {
+        const ang = rnd() * TAU, r = 4 + rnd() * 13;
+        return { delay: i * 0.05 + rnd() * 0.05, bend: (m ? -0.3 : 0.1) + (rnd() - 0.5) * 0.16, dx: Math.cos(ang) * r, dy: Math.sin(ang) * r * 0.7,
+          ox: (rnd() - 0.5) * 6, oy: (rnd() - 0.5) * 6, stopped: e.intercepted || (m && rnd() < 0.2), meet: 0.66 + rnd() * 0.14 };
+      });
+    }
+    const col = m ? '255,96,70' : '255,196,100';
+    const travel = 0.62;
+    for (const sp of fx.parts) {
+      const su = clamp((u - sp.delay) / (1 - sp.delay), 0, 1); if (!su) continue;
+      const A = [a[0] + sp.ox, a[1] + sp.oy], B = [b[0] + sp.dx, b[1] + sp.dy];
+      const end = sp.stopped ? sp.meet : 1;
+      const v = Math.min(end, ease(su / travel));
+      if (su < travel || (sp.stopped ? false : v < 1)) {
+        // Trail and glowing head.
+        ctx.strokeStyle = `rgba(${col},0.5)`; ctx.lineWidth = m ? 1.3 : 1;
+        ctx.beginPath();
+        const v0 = Math.max(0, v - 0.3);
+        for (let i = 0; i <= 16; i++) { const q = this.onCurve(A, B, v0 + (v - v0) * i / 16, sp.bend); i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]); }
+        ctx.stroke();
+        if (v < end) {
+          const h = this.onCurve(A, B, v, sp.bend);
+          ctx.fillStyle = `rgba(${col},1)`; ctx.shadowColor = `rgba(${col},1)`; ctx.shadowBlur = 8;
+          if (m) { ctx.beginPath(); ctx.arc(h[0], h[1], 1.8, 0, TAU); ctx.fill(); }
+          else { ctx.save(); ctx.translate(h[0], h[1]); ctx.rotate(h[2]); ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(-3, 3); ctx.lineTo(-1.5, 0); ctx.lineTo(-3, -3); ctx.closePath(); ctx.fill(); ctx.restore(); }
+          ctx.shadowBlur = 0;
+        }
+      }
+      if (sp.stopped) {
+        // An interceptor climbs from the defended area and meets the incoming weapon.
+        const meetPt = this.onCurve(A, B, sp.meet, sp.bend);
+        const launchAt = 0.25, iv = clamp((su - launchAt) / (travel - launchAt), 0, 1);
+        if (iv > 0 && iv < 1) {
+          const src = [b[0] + sp.dy * 0.6, b[1] + 6], hp = [src[0] + (meetPt[0] - src[0]) * ease(iv), src[1] + (meetPt[1] - src[1]) * ease(iv)];
+          ctx.strokeStyle = 'rgba(160,230,255,0.6)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(src[0], src[1]); ctx.lineTo(hp[0], hp[1]); ctx.stroke();
+          ctx.fillStyle = '#d8f6ff'; ctx.beginPath(); ctx.arc(hp[0], hp[1], 1.4, 0, TAU); ctx.fill();
+        }
+        const bv = (su - travel) / (1 - travel);
+        if (bv > 0 && bv < 1) {
+          ctx.strokeStyle = `rgba(210,245,255,${1 - bv})`; ctx.lineWidth = 1.2;
+          for (let i = 0; i < 6; i++) { const ang = i * TAU / 6; ctx.beginPath(); ctx.moveTo(meetPt[0] + Math.cos(ang) * 1.5, meetPt[1] + Math.sin(ang) * 1.5); ctx.lineTo(meetPt[0] + Math.cos(ang) * (3 + bv * 7), meetPt[1] + Math.sin(ang) * (3 + bv * 7)); ctx.stroke(); }
+          ctx.fillStyle = `rgba(255,255,255,${0.8 * (1 - bv)})`; ctx.beginPath(); ctx.arc(meetPt[0], meetPt[1], 2 + bv * 2, 0, TAU); ctx.fill();
+        }
+        continue;
+      }
+      // Impact: a hot flash, a ring and rising smoke.
+      const iv = (su - travel) / (1 - travel);
+      if (iv > 0) {
+        const r = 2.5 + ease(iv) * 13;
+        const g = ctx.createRadialGradient(B[0], B[1], 0, B[0], B[1], r);
+        g.addColorStop(0, `rgba(255,245,210,${0.95 * (1 - iv)})`); g.addColorStop(0.45, `rgba(255,130,50,${0.6 * (1 - iv)})`); g.addColorStop(1, 'rgba(255,60,30,0)');
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(B[0], B[1], r, 0, TAU); ctx.fill();
+        ctx.strokeStyle = `rgba(255,170,100,${0.8 * (1 - iv)})`; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(B[0], B[1], r * 1.4, 0, TAU); ctx.stroke();
+        ctx.fillStyle = `rgba(120,120,130,${0.35 * (1 - iv)})`;
+        for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(B[0] + (i - 1) * 2 + iv * 3, B[1] - iv * (8 + i * 4), 2 + iv * 3, 0, TAU); ctx.fill(); }
       }
     }
   }
@@ -773,14 +925,157 @@ export class WorldMap {
     ctx.strokeStyle = `rgba(255,220,180,${1 - u})`; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(q[0] - 6, q[1] - 6); ctx.lineTo(q[0] + 6, q[1] + 6); ctx.moveTo(q[0] + 6, q[1] - 6); ctx.lineTo(q[0] - 6, q[1] + 6); ctx.stroke();
   }
+  // A naval battle: two battle groups trade missile salvos; the losing side takes hits and loses ships.
   fx_naval(ctx, fx, u) {
-    const q = this.pt(fx.e.at); if (!q) return;
-    for (let i = 0; i < 5; i++) {
-      const v = clamp(u * 1.5 - i * 0.12, 0, 1); if (!v || v >= 1) continue;
-      const ang = i * 1.3, r = 6 + i * 3;
-      ctx.fillStyle = `rgba(200,235,255,${1 - v})`; ctx.beginPath(); ctx.arc(q[0] + Math.cos(ang) * r, q[1] + Math.sin(ang) * r, 1.5 + v * 3, 0, TAU); ctx.fill();
+    const e = fx.e, q = this.pt(e.at); if (!q) return;
+    const S = this.state, colOf = id => { const c = S.countries[id]; return c && c.bloc !== 'N' ? S.blocs[c.bloc].color : '#c8d2e0'; };
+    if (!fx.geo) {
+      const ang = Math.random() * Math.PI, gap = 22;
+      const n = x => clamp(x || 3, 1, 7);
+      const ships = (cx, cy, count, lost) => Array.from({ length: count }, (_, i) => ({ x: cx + (i % 3 - 1) * 7 + (Math.random() - 0.5) * 3, y: cy + (Math.floor(i / 3) - 0.5) * 7 + (Math.random() - 0.5) * 3, sunk: i < lost, at: 0.35 + Math.random() * 0.45 }));
+      const wc = [Math.cos(ang) * -gap, Math.sin(ang) * -gap], lc = [Math.cos(ang) * gap, Math.sin(ang) * gap];
+      const wN = n(e.ships?.winner), lN = n(e.ships?.loser);
+      fx.geo = { win: ships(wc[0], wc[1], wN, Math.min(wN - 1, e.lost?.winner || 0)), lose: ships(lc[0], lc[1], lN, Math.min(lN, e.lost?.loser ?? Math.ceil(lN / 2))),
+        shots: Array.from({ length: 16 }, (_, i) => ({ fromWin: i % 4 !== 3, t: 0.05 + (i / 16) * 0.6, bend: (Math.random() - 0.5) * 0.5, si: Math.floor(Math.random() * 7), ti: Math.floor(Math.random() * 7) })) };
     }
-    ctx.strokeStyle = `rgba(54,226,255,${1 - u})`; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(q[0], q[1], 8 + u * 28, 0, TAU); ctx.stroke();
+    const { win, lose, shots } = fx.geo;
+    const fade = u > 0.85 ? 1 - (u - 0.85) / 0.15 : 1;
+    ctx.save(); ctx.globalAlpha = fade;
+    const drawShip = (sh, col, flip) => {
+      if (sh.sunk && u > sh.at + 0.25) return;
+      const sinking = sh.sunk && u > sh.at ? (u - sh.at) / 0.25 : 0;
+      ctx.save(); ctx.translate(q[0] + sh.x, q[1] + sh.y + sinking * 3); ctx.scale(flip, 1); ctx.globalAlpha = fade * (1 - sinking);
+      ctx.fillStyle = 'rgba(4,6,11,0.9)'; ctx.strokeStyle = col; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(-5, -1); ctx.lineTo(5, -1); ctx.lineTo(3, 2.5); ctx.lineTo(-4, 2.5); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-1, -1); ctx.lineTo(-1, -4); ctx.lineTo(1.5, -1); ctx.stroke();
+      ctx.restore();
+      if (sinking > 0 && sinking < 1) { ctx.fillStyle = `rgba(255,150,60,${1 - sinking})`; ctx.beginPath(); ctx.arc(q[0] + sh.x, q[1] + sh.y, 2 + sinking * 7, 0, TAU); ctx.fill(); }
+    };
+    win.forEach(sh => drawShip(sh, colOf(e.winner), 1));
+    lose.forEach(sh => drawShip(sh, colOf(e.loser), -1));
+    // Missile exchange.
+    for (const sh of shots) {
+      const v = (u - sh.t) / 0.22; if (v <= 0 || v >= 1.25) continue;
+      const src = (sh.fromWin ? win : lose)[sh.si % (sh.fromWin ? win : lose).length], dst = (sh.fromWin ? lose : win)[sh.ti % (sh.fromWin ? lose : win).length];
+      const A = [q[0] + src.x, q[1] + src.y], B = [q[0] + dst.x, q[1] + dst.y];
+      if (v < 1) {
+        const h = this.onCurve(A, B, ease(v), sh.bend);
+        ctx.strokeStyle = sh.fromWin ? 'rgba(255,220,150,0.6)' : 'rgba(255,140,140,0.5)'; ctx.lineWidth = 1;
+        ctx.beginPath(); const t0 = this.onCurve(A, B, Math.max(0, ease(v) - 0.25), sh.bend); ctx.moveTo(t0[0], t0[1]); ctx.lineTo(h[0], h[1]); ctx.stroke();
+        ctx.fillStyle = '#fff1d6'; ctx.beginPath(); ctx.arc(h[0], h[1], 1.3, 0, TAU); ctx.fill();
+      } else {
+        // Losers' missiles are mostly shot down short of the target; the winners' land.
+        const w = (v - 1) / 0.25, hitPt = sh.fromWin ? B : this.onCurve(A, B, 0.85, sh.bend);
+        ctx.fillStyle = sh.fromWin ? `rgba(255,170,80,${1 - w})` : `rgba(200,240,255,${1 - w})`;
+        ctx.beginPath(); ctx.arc(hitPt[0], hitPt[1], 2 + w * 5, 0, TAU); ctx.fill();
+      }
+    }
+    // Spray and the battle label.
+    ctx.strokeStyle = `rgba(54,226,255,${0.5 * (1 - u)})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(q[0], q[1], 34 + u * 18, 0, TAU); ctx.stroke();
+    const name = SEA_ZONES[e.zone] ? (this.opts.lang === 'ar' ? SEA_ZONES[e.zone].ar : SEA_ZONES[e.zone].name.toUpperCase()) : '';
+    ctx.font = this.opts.lang === 'ar' ? '700 11px Cairo, sans-serif' : '700 10px Rajdhani, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const label = this.opts.lang === 'ar' ? `معركة بحرية · ${name}` : `NAVAL BATTLE · ${name}`;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(label, q[0] + 1, q[1] - 45);
+    ctx.fillStyle = '#bff3ff'; ctx.fillText(label, q[0], q[1] - 46);
+    ctx.restore();
+  }
+  // Amphibious landing: landing craft run in from the fleet and come ashore on the nearest coast.
+  fx_landing(ctx, fx, u) {
+    const e = fx.e, path = this.atlas.lo.paths.get(e.country);
+    if (!fx.beach) {
+      const zp = this.projection([e.from.lon, e.from.lat]), tc = this.centroids.get(e.country);
+      if (!zp || !tc || !path) return;
+      this.hitCtx ||= new OffscreenCanvas(1, 1).getContext('2d');
+      let hit = tc;
+      for (let i = 1; i <= 60; i++) { const t = i / 60, x = zp[0] + (tc[0] - zp[0]) * t, y = zp[1] + (tc[1] - zp[1]) * t; if (this.hitCtx.isPointInPath(path, x, y)) { hit = [x, y]; break; } }
+      fx.beach = hit; fx.zp = zp;
+    }
+    const k = this.cam.k, S = p => [p[0] * k + this.cam.x, p[1] * k + this.cam.y];
+    const A = S(fx.zp), B = S(fx.beach);
+    const own = this.state.countries[e.owner], col = own && own.bloc !== 'N' ? this.state.blocs[own.bloc].color : '#c8d2e0';
+    const ang = Math.atan2(B[1] - A[1], B[0] - A[0]), nx = -Math.sin(ang), ny = Math.cos(ang);
+    const fade = u > 0.85 ? 1 - (u - 0.85) / 0.15 : 1;
+    ctx.save(); ctx.globalAlpha = fade;
+    // Escorts holding offshore.
+    for (let i = -1; i <= 1; i++) {
+      const x = A[0] + nx * i * 10, y = A[1] + ny * i * 10;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.fillStyle = 'rgba(4,6,11,0.9)'; ctx.strokeStyle = col; ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-5, -2.5); ctx.lineTo(-5, 2.5); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.restore();
+    }
+    // Landing craft in waves, each with a white wake.
+    const n = clamp((e.n || 2) * 2, 4, 10);
+    for (let i = 0; i < n; i++) {
+      const lane = (i - (n - 1) / 2) * 5, start = (i % 3) * 0.08;
+      const v = clamp((u - start) / 0.55, 0, 1); if (!v) continue;
+      const t = ease(v), x = A[0] + (B[0] - A[0]) * t + nx * lane * (1 - t * 0.5), y = A[1] + (B[1] - A[1]) * t + ny * lane * (1 - t * 0.5);
+      ctx.strokeStyle = 'rgba(220,240,255,0.55)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - Math.cos(ang) * 9 * (1 - t * 0.6), y - Math.sin(ang) * 9 * (1 - t * 0.6)); ctx.stroke();
+      ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.fillStyle = col; ctx.fillRect(-2.5, -1.6, 5, 3.2); ctx.restore();
+      if (e.contested && v < 1 && (i + Math.floor(u * 20)) % 4 === 0) { ctx.fillStyle = 'rgba(255,255,255,0.7)'; ctx.beginPath(); ctx.arc(x + nx * 4, y + ny * 4, 1.6, 0, TAU); ctx.fill(); }
+    }
+    // The beachhead.
+    const bv = clamp((u - 0.5) / 0.3, 0, 1);
+    if (bv > 0) {
+      ctx.strokeStyle = hexA(col, 1 - bv * 0.5); ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(B[0], B[1], 6 + bv * 10, ang - 1.4, ang + 1.4); ctx.stroke();
+      ctx.fillStyle = '#ffe2bd'; ctx.beginPath(); ctx.moveTo(B[0], B[1]); ctx.lineTo(B[0], B[1] - 12); ctx.lineTo(B[0] + 7, B[1] - 9); ctx.lineTo(B[0], B[1] - 6); ctx.fill();
+      ctx.font = '700 10px Rajdhani, sans-serif'; ctx.textAlign = 'center'; ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(this.opts.lang === 'ar' ? 'إنزال برمائي' : 'AMPHIBIOUS LANDING', B[0] + 1, B[1] + 17);
+      ctx.fillStyle = '#ffe2bd'; ctx.fillText(this.opts.lang === 'ar' ? 'إنزال برمائي' : 'AMPHIBIOUS LANDING', B[0], B[1] + 16);
+    }
+    ctx.restore();
+  }
+  // Evacuation (NEO): an embassy beacon, a counter of people brought out, and a stream of transports to safety,
+  // or helicopters shuttling to a ship offshore when the airspace is shut.
+  fx_neo(ctx, fx, u, now) {
+    const e = fx.e, A = this.pt(e.from), B = this.pt(e.to), Sea = e.sea && this.pt(e.sea);
+    if (!A || !B) return;
+    const own = this.state.countries[e.owner];
+    const col = '#ffd678';
+    const fade = u > 0.88 ? 1 - (u - 0.88) / 0.12 : 1;
+    const time = now / 1000;
+    ctx.save(); ctx.globalAlpha = fade;
+    // Beacon at the embassy.
+    for (let i = 0; i < 3; i++) { const v = (time * 0.8 + i / 3) % 1; ctx.strokeStyle = `rgba(255,214,120,${0.8 * (1 - v)})`; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.arc(A[0], A[1], 4 + v * 22, 0, TAU); ctx.stroke(); }
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(A[0], A[1] - 6); ctx.lineTo(A[0] + 5, A[1]); ctx.lineTo(A[0], A[1] + 6); ctx.lineTo(A[0] - 5, A[1]); ctx.closePath(); ctx.fill();
+    if (Sea) {
+      // Ship offshore, helicopters shuttling back and forth, then the ship sails for safety.
+      const sail = clamp((u - 0.7) / 0.3, 0, 1), shipPt = [Sea[0] + (B[0] - Sea[0]) * ease(sail) * 0.35, Sea[1] + (B[1] - Sea[1]) * ease(sail) * 0.35];
+      ctx.save(); ctx.translate(shipPt[0], shipPt[1]); ctx.fillStyle = 'rgba(4,6,11,0.9)'; ctx.strokeStyle = col; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.moveTo(-9, -2); ctx.lineTo(9, -2); ctx.lineTo(6, 4); ctx.lineTo(-6, 4); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = col; ctx.fillRect(-4, -5, 8, 3); ctx.restore();
+      for (let h = 0; h < 3; h++) {
+        const cyc = clamp(u / 0.72, 0, 1) * 2.2 - h * 0.25; if (cyc < 0 || cyc > 2) continue;
+        const leg = cyc % 1, out = Math.floor(cyc) % 2 === 0;
+        const t = easeInOut(leg), P = out ? [A[0] + (shipPt[0] - A[0]) * t, A[1] + (shipPt[1] - A[1]) * t] : [shipPt[0] + (A[0] - shipPt[0]) * t, shipPt[1] + (A[1] - shipPt[1]) * t];
+        ctx.fillStyle = '#fff3d1'; ctx.beginPath(); ctx.arc(P[0], P[1], 1.8, 0, TAU); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,243,209,0.7)'; ctx.lineWidth = 0.8; const r = (time * 30) % TAU;
+        ctx.beginPath(); ctx.moveTo(P[0] + Math.cos(r) * 4, P[1] + Math.sin(r) * 4); ctx.lineTo(P[0] - Math.cos(r) * 4, P[1] - Math.sin(r) * 4); ctx.stroke();
+      }
+    } else {
+      // Transport aircraft streaming out along the air bridge.
+      ctx.setLineDash([3, 5]); ctx.lineDashOffset = -time * 20; ctx.strokeStyle = 'rgba(255,214,120,0.35)'; ctx.lineWidth = 1;
+      this.curve(ctx, A, B, 0.15); ctx.stroke(); ctx.setLineDash([]);
+      for (let i = 0; i < 7; i++) {
+        const v = clamp((u - i * 0.08) / 0.42, 0, 1); if (!v || v >= 1) continue;
+        const h = this.onCurve(A, B, easeInOut(v), 0.15);
+        ctx.save(); ctx.translate(h[0], h[1]); ctx.rotate(h[2]); ctx.fillStyle = '#fff3d1'; ctx.shadowColor = col; ctx.shadowBlur = 6;
+        ctx.beginPath(); ctx.moveTo(6, 0); ctx.lineTo(-4, 1.2); ctx.lineTo(-5, 0); ctx.lineTo(-4, -1.2); ctx.closePath(); ctx.fill();
+        ctx.fillRect(-1, -5, 2.2, 10); ctx.fillRect(-5, -2.2, 1.6, 4.4); ctx.restore();
+      }
+      ctx.strokeStyle = `rgba(255,214,120,0.7)`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(B[0], B[1], 5, 0, TAU); ctx.stroke();
+    }
+    // Counter.
+    const count = Math.round(e.evacuees * clamp(u / 0.8, 0, 1) / 10) * 10;
+    const name = own ? (this.opts.lang === 'ar' ? own.ar : own.name.toUpperCase()) : '';
+    const l1 = this.opts.lang === 'ar' ? `إجلاء · ${name}` : `EVACUATION · ${name}`;
+    const l2 = this.opts.lang === 'ar' ? `${count.toLocaleString('en-US')} تم إجلاؤهم` : `${count.toLocaleString('en-US')} evacuated`;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = this.opts.lang === 'ar' ? '700 12px Cairo, sans-serif' : '700 11px Rajdhani, sans-serif';
+    const tw = Math.max(ctx.measureText(l1).width, ctx.measureText(l2).width) + 16;
+    ctx.fillStyle = 'rgba(8,10,16,0.85)'; ctx.strokeStyle = 'rgba(255,214,120,0.8)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.roundRect(A[0] - tw / 2, A[1] - 52, tw, 32, 6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#ffe4a6'; ctx.fillText(l1, A[0], A[1] - 43);
+    ctx.font = '600 11px JetBrains Mono, monospace'; ctx.fillStyle = '#fff'; ctx.fillText(l2, A[0], A[1] - 29);
+    ctx.restore();
   }
   fx_lost(ctx, fx, u) {
     const q = this.pt(fx.e.at); if (!q) return;
@@ -837,7 +1132,35 @@ export class WorldMap {
       if (h) {
         const g = ctx.createRadialGradient(h[0], h[1], 0, h[0], h[1], 14);
         g.addColorStop(0, 'rgba(255,255,255,1)'); g.addColorStop(0.35, 'rgba(255,190,90,0.8)'); g.addColorStop(1, 'rgba(255,120,40,0)');
-        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(h[0], h[1], 14, 0, TAU); ctx.fill();
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(h[0], h[1], v > 0.3 ? 8 : 14, 0, TAU); ctx.fill();
+      }
+      // Stage separation: two small flashes as spent boosters fall away.
+      for (const sep of [0.12, 0.26]) {
+        const w = (v - sep) / 0.08; if (w <= 0 || w >= 1) continue;
+        const sp = at(Math.round(easeInOut(sep) * 60)); if (!sp) continue;
+        ctx.strokeStyle = `rgba(255,230,180,${1 - w})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(sp[0], sp[1], 3 + w * 9, 0, TAU); ctx.stroke();
+        ctx.fillStyle = `rgba(200,200,210,${1 - w})`; ctx.beginPath(); ctx.arc(sp[0] + w * 3, sp[1] + w * 14, 1.5, 0, TAU); ctx.fill();
+      }
+      // Terminal phase: the bus releases decoys alongside the warhead, and air defences fire at them.
+      if (v > 0.72 && h) {
+        const w = (v - 0.72) / 0.28;
+        if (!fx.decoys) fx.decoys = Array.from({ length: 4 }, (_, i) => ({ dx: (i - 1.5) * 9 + (Math.random() - 0.5) * 6, dy: (Math.random() - 0.5) * 10, kill: 0.35 + i * 0.15 }));
+        for (const d of fx.decoys) {
+          const p = [h[0] + d.dx * w, h[1] + d.dy * w];
+          if (w < d.kill) {
+            ctx.fillStyle = 'rgba(255,220,180,0.9)'; ctx.beginPath(); ctx.arc(p[0], p[1], 1.6, 0, TAU); ctx.fill();
+            const iv = clamp((w - d.kill + 0.25) / 0.25, 0, 1);
+            if (iv > 0) { const src = [b[0] + d.dx, b[1] + 8]; ctx.strokeStyle = 'rgba(160,230,255,0.7)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(src[0], src[1]); ctx.lineTo(src[0] + (p[0] - src[0]) * iv, src[1] + (p[1] - src[1]) * iv); ctx.stroke(); }
+          } else if (w < d.kill + 0.15) {
+            const bv = (w - d.kill) / 0.15; ctx.fillStyle = `rgba(220,245,255,${1 - bv})`; ctx.beginPath(); ctx.arc(p[0], p[1], 2 + bv * 5, 0, TAU); ctx.fill();
+          }
+        }
+      }
+      // Incoming warning text.
+      if (Math.floor(u * T * 3) % 2 === 0) {
+        ctx.font = '700 11px Rajdhani, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        const warn = this.opts.lang === 'ar' ? 'صاروخ باليستي قادم' : 'BALLISTIC MISSILE INBOUND';
+        ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(warn, b[0] + 1, b[1] - 33); ctx.fillStyle = '#ff6a72'; ctx.fillText(warn, b[0], b[1] - 34);
       }
       // Incoming warning at the target.
       const pulse = (u * T * 1.6) % 1;

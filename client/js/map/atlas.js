@@ -1,6 +1,6 @@
 // Loads the world atlas once and indexes countries by World Engine id (dependent territories merge into their sovereign).
 import { feature, mesh } from 'topojson-client';
-import { geoBounds, geoContains, geoArea, geoCentroid } from 'd3-geo';
+import { geoBounds, geoContains, geoArea, geoCentroid, geoPath, geoEquirectangular } from 'd3-geo';
 import { featureCountryId } from '/shared/data/places.js';
 
 let loading = null;
@@ -48,5 +48,27 @@ export function makeCountryAt(atlas) {
     }
     cache.set(key, hit);
     return hit;
+  };
+}
+
+// Fast land test for keeping ships in the water: the detailed atlas painted once into a 0.1° land mask.
+export function makeLandAt(atlas, res = 0.1) {
+  const W = Math.round(360 / res), H = Math.round(180 / res);
+  let mask = null;
+  const build = () => {
+    const cv = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(W, H) : Object.assign(document.createElement('canvas'), { width: W, height: H });
+    const ctx = cv.getContext('2d', { willReadFrequently: true });
+    const path = geoPath(geoEquirectangular().scale(W / (2 * Math.PI)).translate([W / 2, H / 2]), ctx);
+    ctx.fillStyle = '#fff'; ctx.beginPath();
+    for (const c of atlas.countries) path(c.feature);
+    ctx.fill();
+    const data = ctx.getImageData(0, 0, W, H).data;
+    mask = new Uint8Array(W * H);
+    for (let i = 0; i < mask.length; i++) mask[i] = data[i * 4 + 3] > 127 ? 1 : 0;
+  };
+  return (lon, lat) => {
+    if (!mask) build();
+    const x = ((Math.floor((lon + 180) / res) % W) + W) % W, y = Math.floor((90 - lat) / res);
+    return y >= 0 && y < H && mask[y * W + x] === 1;
   };
 }

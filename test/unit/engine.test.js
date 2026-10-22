@@ -6,6 +6,7 @@ import { createWorldState, createCourtState } from '../../shared/engine/state.js
 import { applyAction } from '../../shared/engine/reducer.js';
 import { parseCommand } from '../../shared/engine/command.js';
 import { atWar, relation } from '../../shared/engine/core.js';
+import { validateOrder } from '../../shared/engine/orders.js';
 
 const gi = { ids: geo.atlasCountryIds(), name: geo.atlasName, anchor: geo.anchorOf, neighbors: geo.neighborsOf };
 const US = '840', RU = '643', UA = '804', FR = '250', SA = '682', JP = '392';
@@ -171,16 +172,86 @@ test('real alliances: hub treaties do not tie US partners to each other', async 
 
 test('invasions push a front line forward until the country falls', () => {
   const { s, kronos } = world();
-  kronos({ type: 'spawnUnits', country: RU, unitType: 'army', count: 10 });
+  kronos({ type: 'spawnUnits', country: RU, unitType: 'army', count: 20 });
   let peak = 0;
-  for (let i = 0; i < 4 && !s.countries[UA].occupiedBy; i++) {
-    for (const a of parseCommand(s, 'russia invade ukraine 8', 'stage').actions) kronos(a);
+  let turns = 0;
+  for (let i = 0; i < 12 && !s.countries[UA].occupiedBy; i++, turns++) {
+    for (const a of parseCommand(s, 'russia invade ukraine 22', 'stage').actions) kronos(a);
     kronos({ type: 'resolveTurn' });
     peak = Math.max(peak, s.countries[UA].front?.pct || 0);
     if (s.countries[UA].front && !s.countries[UA].occupiedBy) assert.ok(s.countries[UA].front.pct < 100);
   }
   assert.ok(peak > 0, 'the front moved');
+  assert.ok(turns >= 2, 'a country never falls in a single turn');
   assert.equal(s.countries[UA].occupiedBy, RU);
   kronos({ type: 'forcePeace', a: RU, b: UA });
   assert.equal(s.countries[UA].front, null);
+});
+
+test('the Zeus decides whether a front advances, holds or falls back', () => {
+  const { s, kronos } = world();
+  kronos({ type: 'forceWar', a: RU, b: UA });
+  kronos({ type: 'setFront', country: UA, by: RU, pct: 30 });
+  kronos({ type: 'frontMode', country: UA, mode: 'hold' });
+  kronos({ type: 'resolveTurn' });
+  assert.equal(s.countries[UA].front.pct, 30, 'hold keeps the line');
+  kronos({ type: 'frontMode', country: UA, mode: 'advance' });
+  kronos({ type: 'resolveTurn' });
+  assert.ok(s.countries[UA].front.pct > 30, 'advance pushes forward');
+  const before = s.countries[UA].front.pct;
+  kronos({ type: 'frontMode', country: UA, mode: 'retreat' });
+  kronos({ type: 'resolveTurn' });
+  assert.ok(s.countries[UA].front.pct < before, 'retreat gives ground back');
+  // Moving a front right now animates it and can take the whole country.
+  const r = kronos({ type: 'frontPush', country: UA, delta: 100 });
+  assert.ok(r.ok, r.error);
+  assert.equal(s.countries[UA].occupiedBy, RU);
+  assert.ok(s.lastResolution.instant && s.lastResolution.events.some(e => e.kind === 'occupation'));
+  kronos({ type: 'frontPush', country: UA, delta: -20 });
+  assert.equal(s.countries[UA].occupiedBy, null, 'pushing back liberates');
+});
+
+test('only countries with landing fleets can invade across the sea', () => {
+  const { s, kronos } = world();
+  const IR = '364';
+  assert.ok(Object.values(s.units).some(u => u.owner === SA && u.type === 'fleet' && u.loc.id === 'persian_gulf'));
+  const saArmy = Object.values(s.units).find(u => u.owner === SA && u.type === 'army');
+  const v1 = validateOrder(s, { country: SA, type: 'invade', target: IR, units: [saArmy.id] });
+  assert.equal(v1.ok, false);
+  assert.match(v1.reason, /landing ships/);
+  const usFleet = Object.values(s.units).find(u => u.owner === US && u.type === 'fleet');
+  usFleet.loc = { kind: 'sea', id: 'persian_gulf' };
+  const usArmy = Object.values(s.units).find(u => u.owner === US && u.type === 'army');
+  const o = { country: US, type: 'invade', target: IR, units: [usArmy.id] };
+  const v2 = validateOrder(s, o);
+  assert.ok(v2.ok, v2.reason);
+  assert.equal(o.zone, 'persian_gulf');
+});
+
+test('capable countries evacuate citizens (NEO), others cannot', () => {
+  const { s, kronos } = world();
+  const p = parseCommand(s, 'us evacuate sudan', 'stage');
+  assert.ok(p.ok, p.error);
+  for (const a of p.actions) kronos(a);
+  kronos({ type: 'resolveTurn' });
+  const e = s.lastResolution.events.find(x => x.kind === 'neo');
+  assert.ok(e && e.evacuees > 0 && e.owner === US);
+  const yemen = Object.values(s.countries).find(c => c.a3 === 'YEM');
+  const v = validateOrder(s, { country: yemen.id, type: 'neo', target: '729' });
+  assert.equal(v.ok, false);
+});
+
+test('countries start from their real economies and settle back toward them, not toward 100%', () => {
+  const { s, zeus } = world();
+  const IR = '364', CN = '156';
+  assert.ok(s.countries[IR].inflation > 20 && s.countries[US].inflation < 5);
+  assert.ok(s.countries[IR].industry < 1 && s.countries[CN].industry > 1);
+  assert.ok(s.countries[SA].treasury > s.countries[IR].treasury);
+  for (let i = 0; i < 8; i++) assert.ok(zeus({ type: 'resolveTurn' }).ok);
+  assert.ok(s.countries[IR].industry < 0.9, 'sanctioned industry does not heal to 100%');
+  assert.ok(s.countries[IR].inflation > 20, 'inflation drifts to its own norm');
+  assert.ok(Math.abs(s.countries[JP].support - 30) < 12, 'approval stays near its real level');
+  assert.ok(s.global.gdpIndex > 0.97, 'a peaceful world economy does not shrink');
+  const protests = s.log.filter(l => /protest/i.test(JSON.stringify(l))).length;
+  assert.ok(protests < 15, `peacetime protests stay rare (${protests})`);
 });

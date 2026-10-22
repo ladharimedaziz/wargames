@@ -123,7 +123,6 @@ export function CourtPanel({ conn, user, state, committee, logout, onBack }) {
               <button class="btn sm gold" onClick=${() => act({ type: 'gavel', text: 'ORDER' })}>⚒ Gavel <span class="kbd">G</span></button>
               <button class=${cls('btn sm', c.recess && 'on')} onClick=${() => act({ type: 'recess', value: !c.recess })}>${c.recess ? 'End recess' : 'Recess'}</button></div>
             <div class="row wrap"><div class="seg">${[['en', 'EN'], ['ar', 'ع'], ['both', 'Both']].map(([k, l]) => html`<button class=${state.settings.lang === k ? 'on' : ''} onClick=${() => act({ type: 'setSetting', key: 'lang', value: k })}>${l}</button>`)}</div>
-              <button class=${cls('btn sm', state.settings.music && 'on')} onClick=${() => act({ type: 'setSetting', key: 'music', value: !state.settings.music })}>♫</button>
               <button class=${cls('btn sm', state.settings.sfx && 'on')} onClick=${() => act({ type: 'setSetting', key: 'sfx', value: !state.settings.sfx })}>◖</button>
               <div class="grow"></div>
               <a class="btn sm ghost" href=${`/api/export/${state.id}`} download title="Download a save of this courtroom">⤓ Save</a></div>

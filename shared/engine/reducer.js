@@ -6,7 +6,7 @@ import {
   UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive,
 } from './core.js';
 import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.js';
-import { resolveTurn, resolveNow, declareWar, applyStrikeDamage } from './resolve.js';
+import { resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow } from './resolve.js';
 import { courtActions } from './court.js';
 
 const SCENES = ['map', 'disguise', 'intro', 'reveal', 'ending', 'report', 'blank', 'pause', 'vote', 'treaty', 'polls', 'web', 'court'];
@@ -86,6 +86,22 @@ const WORLD = {
     for (const id of a.countries || []) if (C(s, id)) C(s, id).control = a.control;
     log(s, ctx, `${(a.countries || []).length} countries set to ${a.control}`);
     return ok();
+  } },
+  // War fronts: the Zeus decides whether each front advances, holds or falls back, or moves it right now.
+  frontMode: { perm: 'zeus', run(s, a, ctx) {
+    const c = C(s, a.country); if (!c?.front) return err('There is no front in that country.');
+    if (!['auto', 'advance', 'hold', 'retreat'].includes(a.mode)) return err('Unknown front order.');
+    c.front.mode = a.mode;
+    log(s, ctx, `${C(s, c.front.by).name}'s front in ${c.name}: ${{ auto: 'left to the battle', advance: 'ordered to advance', hold: 'ordered to hold', retreat: 'ordered to fall back' }[a.mode]}`);
+    return ok();
+  } },
+  frontPush: { perm: 'zeus', run(s, a, ctx) {
+    const c = C(s, a.country); if (!c) return err('Unknown country.');
+    const by = a.by || c.front?.by;
+    const delta = clamp(Number(a.delta) || 0, -100, 100); if (!delta) return err('Pick how far to move the front.');
+    const e = pushFrontNow(s, c.id, by, delta, ctx); if (e) return err(e);
+    log(s, ctx, `${C(s, by).name}'s front in ${c.name} moved ${delta > 0 ? 'forward' : 'back'} to ${Math.round(c.front?.pct ?? 0)}%`);
+    return ok({ broadcastAnim: true });
   } },
   setDelegate: { perm: 'zeus', run(s, a) { const c = C(s, a.country); if (!c) return err('Unknown country.'); c.delegate = String(a.delegate || '').slice(0, 60); return ok(); } },
   setBloc: { perm: 'zeus', run(s, a, ctx) {
@@ -213,7 +229,7 @@ const WORLD = {
   setSetting: { perm: 'zeus', run(s, a) {
     const st = s.settings;
     if (a.key === 'lang' && ['en', 'ar', 'both'].includes(a.value)) st.lang = a.value;
-    else if (['music', 'sfx', 'autoAir'].includes(a.key)) st[a.key] = !!a.value;
+    else if (['sfx', 'autoAir'].includes(a.key)) st[a.key] = !!a.value;
     else if (a.key === 'layer' && a.layer in st.layers) st.layers[a.layer] = !!a.value;
     else if (a.key === 'fog') st.fog = a.value === 'public' || a.value === 'all' || C(s, a.value) ? a.value : 'public';
     else if (a.key === 'volume') st.volume = clamp(Number(a.value) || 0, 0, 1);
@@ -372,7 +388,7 @@ const WORLD = {
     const pct = clamp(Number(a.pct) || 0, 0, 99);
     if (!pct) { c.front = null; return ok(); }
     const prev = c.front?.by === a.by ? c.front.pct : 0;
-    c.front = { by: a.by, pct, prev, from: { lat: by.lat, lon: by.lon }, turn: s.meta.turn };
+    c.front = { by: a.by, pct, prev, from: c.front?.by === a.by ? c.front.from : { lat: by.lat, lon: by.lon }, turn: s.meta.turn, mode: c.front?.mode || 'auto' };
     log(s, ctx, `Kronos set ${by.name}'s hold on ${c.name} to ${pct}%`);
     return ok();
   } },
