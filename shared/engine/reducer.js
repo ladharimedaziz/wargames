@@ -573,6 +573,19 @@ const WORLD = {
     log(s, ctx, `Kronos set the outbreak in ${c.name} to ${c.outbreak?.level || 0}%`);
     return ok();
   } },
+  endAllOutbreaks: { perm: 'kronos', run(s, a, ctx) {
+    const hit = Object.values(s.countries).filter(c => c.outbreak); if (!hit.length) return err('There are no outbreaks.');
+    for (const c of hit) c.outbreak = null;
+    news(s, ctx, hit.length === 1 ? `The outbreak in ${hit[0].name} is declared over` : `The WHO declares the outbreak over in ${hit.length} countries`, hit.length === 1 ? `إعلان انتهاء الوباء في ${hit[0].ar}` : `منظمة الصحة العالمية تعلن انتهاء الوباء في ${hit.length} دولة`, 4);
+    log(s, ctx, `Kronos ended every outbreak (${hit.map(c => c.name).join(', ')})`);
+    return ok();
+  } },
+  restoreAllPower: { perm: 'kronos', run(s, a, ctx) {
+    const hit = Object.values(s.countries).filter(c => c.blackout); if (!hit.length) return err('There are no blackouts.');
+    for (const c of hit) c.blackout = null;
+    news(s, ctx, `Power is restored across ${hit.map(c => c.name).join(', ')}`, `عودة التيار الكهربائي في ${hit.map(c => c.ar).join('، ')}`, 3);
+    return ok();
+  } },
   restorePower: { perm: 'kronos', run(s, a, ctx) {
     const c = C(s, a.country); if (!c?.blackout) return err('No blackout there.');
     c.blackout = null; news(s, ctx, `Power is restored across ${c.name}`, `عودة التيار الكهربائي في ${c.ar}`, 3);

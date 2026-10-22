@@ -397,3 +397,13 @@ test('the Zeus can show a coat of arms on the stage', () => {
   assert.ok(zeus({ type: 'setSetting', key: 'autoSnap', value: false }).ok);
   assert.equal(s.settings.autoSnap, false);
 });
+
+test('Kronos can end every outbreak at once', () => {
+  const { s, kronos, zeus } = world();
+  assert.ok(kronos({ type: 'disaster', country: SA, kind: 'pandemic' }).ok);
+  assert.ok(kronos({ type: 'outbreak', country: SA, op: 'spread' }).ok);
+  assert.ok(Object.values(s.countries).filter(c => c.outbreak).length > 1);
+  assert.equal(zeus({ type: 'endAllOutbreaks' }).ok, false);
+  assert.ok(kronos({ type: 'endAllOutbreaks' }).ok);
+  assert.equal(Object.values(s.countries).filter(c => c.outbreak).length, 0);
+});
