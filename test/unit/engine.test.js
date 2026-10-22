@@ -255,3 +255,17 @@ test('countries start from their real economies and settle back toward them, not
   const protests = s.log.filter(l => /protest/i.test(JSON.stringify(l))).length;
   assert.ok(protests < 15, `peacetime protests stay rare (${protests})`);
 });
+
+test('strikes aim at bases and cities, and only capital strikes hit the capital', () => {
+  const { s, zeus, kronos } = world();
+  kronos({ type: 'forceWar', a: RU, b: UA });
+  command(s, zeus, 'russia strike ukraine 4 missiles');
+  command(s, zeus, 'russia strike ukraine 2 bombers capital');
+  assert.ok(zeus({ type: 'resolveTurn' }).ok);
+  const strikes = s.lastResolution.events.filter(e => e.kind === 'strike' && e.target === UA);
+  const cap = s.countries[UA];
+  const atCap = e => Math.abs(e.to.lat - cap.lat) < 0.01 && Math.abs(e.to.lon - cap.lon) < 0.01;
+  const military = strikes.filter(e => e.category === 'military'), capital = strikes.filter(e => e.category === 'capital');
+  assert.ok(military.length >= 2 && military.some(e => !atCap(e)), 'military strikes spread across the country');
+  assert.ok(capital.length && capital.every(atCap), 'capital strikes hit the capital');
+});

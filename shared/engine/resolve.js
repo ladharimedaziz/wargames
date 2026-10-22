@@ -1,5 +1,6 @@
 // Turn resolution: every queued order resolves at once, then the economy, AI, news and endings update.
 import { SEA_ZONES, FLEET_MOVES_PER_TURN } from '../data/places.js';
+import { CITIES } from '../data/cities.js';
 import { distanceKm, countriesCrossed, seaRoute, zonesTouching } from '../geo.js';
 import {
   UNIT_TYPES, rand, chance, between, clamp, newId, atWar, sameSide, relation, shiftRelation, anchor, unitsAt, unitsOf,
@@ -62,10 +63,31 @@ function damageUnit(state, u, amount, ev, why) {
   }
 }
 
+// Where a weapon is aimed. Only a strike on the capital goes to the capital: military strikes hit bases spread across
+// the country (and close to any front), industry, energy and infrastructure strikes hit the major cities.
+function aimPoint(state, tgt, category, ctx, attacker) {
+  const cities = CITIES.filter(c => c.a3 === tgt.a3);
+  if (category === 'capital' || !cities.length) return pt(tgt);
+  const inside = q => !ctx.countryAt || ctx.countryAt(q.lon, q.lat) === tgt.id;
+  if (category === 'military') {
+    // Bases sit away from city centres; near an active front, strikes go where the fighting is.
+    const front = tgt.front?.by === attacker && tgt.front.from;
+    for (let i = 0; i < 6; i++) {
+      const base = front && rand(state) < 0.6 ? front : cities[Math.floor(rand(state) * cities.length)];
+      const q = { lat: base.lat + between(state, -0.9, 0.9), lon: base.lon + between(state, -1.1, 1.1) };
+      if (inside(q)) return q;
+    }
+  }
+  const major = cities.filter(c => c.tier <= 2);
+  const pick = (major.length ? major : cities)[Math.floor(rand(state) * (major.length || cities.length))];
+  const q = { lat: pick.lat + between(state, -0.15, 0.15), lon: pick.lon + between(state, -0.15, 0.15) };
+  return inside(q) ? q : { lat: pick.lat, lon: pick.lon };
+}
+
 function resolveStrike(state, o, ctx, ev, salvos) {
   const atk = state.countries[o.country], tgt = state.countries[o.target];
   if (!atWar(state, o.country, o.target)) declareWar(state, o.country, o.target, ev, 'strike');
-  const to = pt(tgt);
+  const category0 = o.category || 'military';
   const escorts = (o.escort || []).map(id => state.units[id]).filter(Boolean);
   const category = o.category || 'military';
   salvos[o.target] = (salvos[o.target] || 0);
@@ -73,6 +95,7 @@ function resolveStrike(state, o, ctx, ev, salvos) {
     const u = state.units[id];
     if (!u) continue;
     const from = anchor(state, u.loc);
+    const to = aimPoint(state, tgt, category0, ctx, o.country);
     const isMissile = u.type === 'missile';
     const path = ctx.countryAt ? countriesCrossed(from, to, ctx.countryAt, 90) : [];
     let pSurvive = 1, interceptedOver = null, violations = [];
@@ -120,7 +143,7 @@ function resolveStrike(state, o, ctx, ev, salvos) {
     if (interceptedOver) {
       const host = state.countries[interceptedOver];
       const at = interceptedOver === o.target ? to : pt(host);
-      ev.push({ kind: 'strike', owner: o.country, target: o.target, unitType: u.type, category, from, to, intercepted: true, by: interceptedOver, at });
+      ev.push({ kind: 'strike', owner: o.country, target: o.target, unitType: u.type, category, from, to, intercepted: true, by: interceptedOver, at, escort: escorts.length });
       if (!isMissile) damageUnit(state, u, between(state, 35, 70), ev, 'shot down');
       else if (u.strength <= 0) { delete state.units[u.id]; }
       if (interceptedOver !== o.target && !atWar(state, interceptedOver, o.country)) shiftRelation(state, interceptedOver, o.country, -10);
@@ -131,7 +154,7 @@ function resolveStrike(state, o, ctx, ev, salvos) {
     applyStrikeDamage(state, tgt, category, power, ev, o.country);
     tgt.lastStruck = state.meta.turn;
     state.global.closedAirspace[o.target] = state.global.closedAirspace[o.target] || { turn: state.meta.turn, at: ctx.now };
-    ev.push({ kind: 'strike', owner: o.country, target: o.target, unitType: u.type, category, from, to, intercepted: false, at: to, power: Math.round(power * 100) });
+    ev.push({ kind: 'strike', owner: o.country, target: o.target, unitType: u.type, category, from, to, intercepted: false, at: to, power: Math.round(power * 100), escort: escorts.length });
     if (isMissile && u.strength <= 0) { ev.push({ kind: 'unit_lost', owner: u.owner, unitType: 'missile', at: from, why: 'stockpile spent' }); delete state.units[u.id]; }
   }
 }
