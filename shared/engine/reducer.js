@@ -295,7 +295,7 @@ const WORLD = {
   playEnding: { perm: 'zeus', run(s, a, ctx) {
     if (!ENDINGS[a.ending]) return err('Unknown ending.');
     const det = endingDetail(s, a.ending);
-    s.display.ending = { type: a.ending, title: String(a.title || det.title || ENDINGS[a.ending].title).slice(0, 80), line: String(a.line || det.line || ENDINGS[a.ending].line).slice(0, 400), scene: det.scene, facts: det.facts };
+    s.display.ending = { type: a.ending, title: String(a.title || det.title || ENDINGS[a.ending].title).slice(0, 80), line: String(a.line || det.line || ENDINGS[a.ending].line).slice(0, 400), scene: det.scene, bloc: det.bloc, facts: det.facts };
     s.display.endingAt = ctx.now; s.display.scene = 'ending'; s.meta.phase = 'ended';
     log(s, ctx, `Ending played: ${s.display.ending.title}`);
     return ok();
