@@ -40,8 +40,9 @@ export function accounts() {
 export const findAccount = u => accounts().find(a => a.username === String(u || '').toLowerCase().trim());
 
 export function passwordFor(username) {
-  if (username === 'kronos' && process.env.KRONOS_PASSWORD) return process.env.KRONOS_PASSWORD;
+  // A password set by hand (in the app, or with `npm run reset-kronos`) wins over KRONOS_PASSWORD.
   if (custom.passwords[username]) return custom.passwords[username];
+  if (username === 'kronos' && process.env.KRONOS_PASSWORD) return process.env.KRONOS_PASSWORD;
   const h = hmac('pw', username, rotations[username] || 0);
   return `${ADJ[h[0] % ADJ.length]}-${NOUN[h[1] % NOUN.length]}-${100 + (h.readUInt16BE(2) % 900)}`;
 }
@@ -64,10 +65,10 @@ export function rotatePassword(username) {
 // Kronos picks a Zeus password by hand. Like a rotation, it signs that account out everywhere.
 export function setPassword(username, password) {
   const pw = String(password || '').trim();
-  if (!findAccount(username) || username === 'kronos') return 'Cannot change that account.';
+  if (!findAccount(username)) return 'Unknown account.';
   if (pw.length < 6 || pw.length > 60 || /\s/.test(pw)) return 'Use 6 to 60 characters, no spaces.';
   custom.passwords[username] = pw;
-  custom.signouts[username] = (custom.signouts[username] || 0) + 1;
+  if (username !== 'kronos') custom.signouts[username] = (custom.signouts[username] || 0) + 1;
   saveCustom();
   return null;
 }
@@ -124,3 +125,11 @@ export function noteFail(ip) {
   else { f.n++; f.at = Date.now(); }
 }
 export const clearFails = ip => fails.delete(ip);
+
+// Sets a password straight on disk, for when nobody can log in (used by scripts/reset-kronos.mjs; the server
+// reads the file at start-up, so restart it afterwards).
+export function writePasswordFile(dir, username, password) {
+  const saved = { passwords: {}, signouts: {}, ...readJSON(dir, 'custom-accounts.json', {}) };
+  if (password) saved.passwords[username] = password; else delete saved.passwords[username];
+  writeJSON(dir, 'custom-accounts.json', saved);
+}
