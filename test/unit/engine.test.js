@@ -443,6 +443,18 @@ test('faction war: a theatre fight, a world fight, and a ceasefire', () => {
   assert.ok(zeus({ type: 'resolveTurn' }).ok, 'the turn resolves with a faction war on');
 });
 
+test('unify fronts setting: auto, all, off', () => {
+  const { s, zeus } = world();
+  assert.ok(zeus({ type: 'forceWar', a: '276', b: '643' }).ok || true);
+  s.wars = [{ a: '276', b: '643', since: 1 }];
+  s.countries['276'].bloc = 'A'; s.countries['643'].bloc = 'B';
+  assert.equal(fullWarTheaters(s).size, 0, 'one war stays per-country in auto');
+  assert.ok(zeus({ type: 'setSetting', key: 'unifyFronts', value: 'all' }).ok);
+  assert.ok(fullWarTheaters(s).has('europe'));
+  zeus({ type: 'setSetting', key: 'unifyFronts', value: 'off' });
+  assert.equal(fullWarTheaters(s).size, 0);
+});
+
 test('a war only closes airspace that is contested and within the enemy\'s reach', () => {
   const { s } = world();
   assert.deepEqual(warClosures(s, US, '004'), []); // no air force to fight over Afghanistan

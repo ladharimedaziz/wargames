@@ -303,6 +303,7 @@ const WORLD = {
   setSetting: { perm: 'zeus', run(s, a) {
     const st = s.settings;
     if (a.key === 'lang' && ['en', 'ar', 'both'].includes(a.value)) st.lang = a.value;
+    else if (a.key === 'unifyFronts') st.unifyFronts = ['auto', 'all', 'off'].includes(a.value) ? a.value : 'auto';
     else if (['sfx', 'night', 'showStrikes', 'autoSnap', 'aesthetic'].includes(a.key)) st[a.key] = !!a.value;
     else if (a.key === 'autoAir') st.airMode = a.value ? 'auto' : 'manual';
     else if (a.key === 'layer' && a.layer in st.layers) st.layers[a.layer] = !!a.value;

@@ -104,7 +104,10 @@ export function fullWarTheaters(state) {
     const a = state.countries[w.a], b = state.countries[w.b]; if (!a || !b || a.rebelOf || b.rebelOf || !cross(a, b)) continue;
     for (const t of new Set([theaterOf(a), theaterOf(b)])) if (t) count[t] = (count[t] || 0) + 1;
   }
-  for (const [t, n] of Object.entries(count)) if (n >= 3 || state.global?.theaterWar?.[t]) out.add(t);
+  // settings.unifyFronts: 'auto' (three wars, or a faction war), 'all' (any A-v-B war), 'off'
+  const mode = state.settings?.unifyFronts || 'auto';
+  if (mode === 'off') return out;
+  for (const [t, n] of Object.entries(count)) if (mode === 'all' || n >= 3 || state.global?.theaterWar?.[t]) out.add(t);
   return out;
 }
 
