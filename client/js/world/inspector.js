@@ -242,16 +242,14 @@ function CivilWar({ conn, state, c, setSelected }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [share, setShare] = useState(30);
-  const rebels = state.countries[`${c.id}r`];
   if (c.rebelOf) return null;
-  if (rebels && state.wars.some(w => w.civil && (w.a === rebels.id || w.b === rebels.id))) {
-    return html`<div class="row small" style="margin-top:6px"><span class="chip gold">Civil war</span><b class="click" onClick=${() => setSelected(rebels.id)}>${rebels.name}</b><span class="dim">are fighting ${c.name}</span></div>`;
-  }
+  const factions = Object.values(state.countries).filter(f => f.rebelOf === c.id && state.wars.some(w => w.civil && (w.a === f.id || w.b === f.id)));
+  const fight = factions.length ? html`<div class="row small wrap" style="margin-top:6px"><span class="chip gold">Civil war</span>${factions.map(f => html`<b class="click" onClick=${() => setSelected(f.id)}>${f.name}</b>`)}<span class="dim">vs ${c.name}</span></div>` : null;
   const go = async () => {
     const r = await run(conn, { type: 'civilWar', country: c.id, share, name: name.trim() });
     if (r.ok) { setOpen(false); setName(''); }
   };
-  if (!open) return html`<div class="row" style="margin-top:6px"><button class="btn xs" onClick=${() => setOpen(true)} title="A rebel faction seizes part of the country, with defecting troops">✊ Start a civil war</button></div>`;
+  if (!open) return html`${fight}<div class="row" style="margin-top:6px"><button class="btn xs" onClick=${() => setOpen(true)} title="A rebel faction seizes part of the country, with defecting troops">✊ ${factions.length ? 'Add another faction' : 'Start a civil war'}</button></div>`;
   return html`<div class="civil-box col">
     <div class="row between"><b class="small">Civil war in ${c.name}</b><button class="btn xs ghost" onClick=${() => setOpen(false)}>✕</button></div>
     <input class="input sm" placeholder=${`Rebel name, e.g. Free ${c.name} Army`} value=${name} onInput=${e => setName(e.target.value)} />

@@ -51,6 +51,8 @@ export function SandboxTab({ conn, state, selected, selZone }) {
       </div>
       <div class="row"><span class="dim small">Date</span><input class="input sm" type="date" value=${state.meta.clock} onChange=${e => k({ type: 'setClock', clock: e.target.value })} /><span class="dim small">Days per turn</span><input class="input sm" style="width:60px" type="number" min="1" max="90" value=${state.meta.turnDays} onChange=${e => k({ type: 'setClock', turnDays: +e.target.value })} /></div>
 
+      <${CivilWars} conn=${conn} state=${state} />
+
       <div class="sub-h">Country</div>
       <${CountrySelect} state=${state} value=${cid} onChange=${setCountry} />
       ${c && html`
@@ -107,4 +109,26 @@ export function SandboxTab({ conn, state, selected, selZone }) {
       ${Object.entries(state.global.chokepoints).map(([z, cp]) => html`<div class="row small" style="margin-bottom:4px"><span class="grow">${SEA_ZONES[z].name}</span>
         <div class="seg sm">${['auto', 'open', 'contested', 'closed'].map(s => html`<button class=${(s === 'auto' ? !cp.forced : cp.forced && cp.status === s) ? 'on' : ''} title=${s === 'auto' ? 'Let fleets and blockades decide' : `Hold it ${s} until set back to auto`} onClick=${() => k({ type: 'setChokepoint', zone: z, status: s, by: cid })}>${s}</button>`)}</div></div>`)}
     </div>`;
+}
+
+// Civil wars: every faction's stance toward every other, and outside powers backing a side.
+const STANCES = [['war', 'War'], ['peace', 'Truce'], ['ally', 'Allied']];
+function CivilWars({ conn, state }) {
+  const [backer, setBacker] = useState('');
+  const roots = [...new Set(Object.values(state.countries).filter(f => f.rebelOf && state.wars.some(w => w.civil && (w.a === f.id || w.b === f.id))).map(f => f.rebelOf))];
+  if (!roots.length) return html`<div class="sub-h">Civil wars</div><p class="pane-hint">None yet. Pick a country on the map and use "Start a civil war", then add more factions from the same card.</p>`;
+  const stance = (a, b) => state.wars.some(w => (w.a === a && w.b === b) || (w.a === b && w.b === a)) ? 'war' : state.treaties.some(t => t.type === 'alliance' && t.parties.includes(a) && t.parties.includes(b)) ? 'ally' : 'peace';
+  return html`<div class="sub-h">Civil wars</div>
+    ${roots.map(r => {
+      const members = [state.countries[r], ...Object.values(state.countries).filter(f => f.rebelOf === r)];
+      const pairs = members.flatMap((A, i) => members.slice(i + 1).map(B => [A, B]));
+      return html`<div class="card"><div class="card-b col">
+        <b>${state.countries[r].name}</b>
+        ${pairs.map(([A, B]) => html`<div class="row small wrap"><span class="grow">${A.name} ↔ ${B.name}</span><div class="seg sm">${STANCES.map(([k, l]) => html`<button class=${stance(A.id, B.id) === k ? 'on' : ''} onClick=${() => run(conn, { type: 'factionStance', a: A.id, b: B.id, stance: k })}>${l}</button>`)}</div></div>`)}
+        <div class="row small wrap"><span class="dim">Outside power backs</span>
+          <${CountrySelect} state=${state} value=${backer} onChange=${setBacker} />
+          ${members.map(m => html`<button class="btn xs" disabled=${!backer} onClick=${() => run(conn, { type: 'civilAssist', country: backer, side: m.id })}>${m.name}</button>`)}
+        </div>
+      </div></div>`;
+    })}`;
 }

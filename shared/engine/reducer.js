@@ -498,12 +498,14 @@ const WORLD = {
   civilWar: { perm: 'zeus', run(s, a, ctx) {
     const P = C(s, a.country); if (!P) return err('Pick the country that splits.');
     if (P.rebelOf) return err('Rebels cannot split again.');
-    const id = `${P.id}r`;
-    if (s.countries[id] && s.countries[id].control !== 'inactive' && atWar(s, id, P.id)) return err(`${P.name} is already in a civil war.`);
+    // Several factions can rise in one country: Xr, Xr2, Xr3 …
+    let nth = 1, id = `${P.id}r`;
+    while (s.countries[id] && s.countries[id].control !== 'inactive' && atWar(s, id, P.id)) { nth++; id = `${P.id}r${nth}`; }
+    if (nth > 6) return err(`${P.name} already has six factions.`);
     const share = clamp(Number(a.share) || 30, 5, 80);
     const name = String(a.name || '').trim().slice(0, 40) || `${P.name} Rebels`;
     const ar = String(a.ar || '').trim().slice(0, 40) || `متمردو ${P.ar}`;
-    const bloc = BLOCS.includes(a.bloc) ? a.bloc : (P.bloc === 'A' ? 'B' : P.bloc === 'B' ? 'A' : 'C');
+    const bloc = nth > 1 ? 'N' : BLOCS.includes(a.bloc) ? a.bloc : (P.bloc === 'A' ? 'B' : P.bloc === 'B' ? 'A' : 'C');
     const R = {
       ...structuredClone(P), id, a3: `${P.a3}-R`, name, ar, rebelOf: P.id, bloc, control: 'ai', delegate: '',
       base: { ...P.base, gdp: P.base.gdp * share / 100, pop: P.base.pop * share / 100 }, gdp: P.gdp * share / 100, treasury: Math.round(Math.max(0, P.treasury) * 0.1),
@@ -512,7 +514,9 @@ const WORLD = {
     };
     s.countries[id] = R;
     // Rebels border everything the country borders, and the country itself.
-    s.adjacency[id] = [...new Set([P.id, ...(s.adjacency[P.id] || [])])];
+    const kin = Object.keys(s.countries).filter(k => s.countries[k].rebelOf === P.id && k !== id);
+    s.adjacency[id] = [...new Set([P.id, ...kin, ...(s.adjacency[P.id] || [])])];
+    for (const k of kin) if (s.adjacency[k] && !s.adjacency[k].includes(id)) s.adjacency[k].push(id);
     for (const n of s.adjacency[id]) if (s.adjacency[n] && !s.adjacency[n].includes(id)) s.adjacency[n].push(id);
     // A share of the army defects.
     const armies = Object.values(s.units).filter(u => u.owner === P.id && u.type === 'army' && u.loc.kind === 'country' && u.loc.id === P.id);
@@ -546,6 +550,32 @@ const WORLD = {
     }
     publishInstant(s, ev, ctx);
     log(s, ctx, `Civil war: ${name} break away from ${P.name}`);
+    return ok({ broadcastAnim: true });
+  } },
+  // Factions of one civil war: set how any two of them (or a faction and the government) treat each other.
+  factionStance: { perm: 'zeus', run(s, a, ctx) {
+    const A = C(s, a.a), B = C(s, a.b); if (!A || !B || A.id === B.id) return err('Pick two factions.');
+    const root = x => x.rebelOf || x.id;
+    if (root(A) !== root(B)) return err('Both must belong to the same civil war.');
+    const i = s.wars.findIndex(w => (w.a === A.id && w.b === B.id) || (w.a === B.id && w.b === A.id));
+    if (a.stance === 'war') { if (i < 0) { s.wars.push({ a: A.id, b: B.id, since: s.meta.turn, civil: true }); shiftRelation(s, A.id, B.id, -100); } }
+    else if (a.stance === 'peace' || a.stance === 'ally') {
+      if (i >= 0) s.wars.splice(i, 1);
+      if (a.stance === 'ally') { shiftRelation(s, A.id, B.id, 100); if (!s.treaties.some(t => t.type === 'alliance' && t.parties.includes(A.id) && t.parties.includes(B.id))) s.treaties.push({ type: 'alliance', parties: [A.id, B.id], turn: s.meta.turn }); }
+    } else return err('War, peace or alliance.');
+    log(s, ctx, `${A.name} and ${B.name}: ${a.stance}`);
+    return ok();
+  } },
+  // A foreign power backs one side of a civil war: it goes to war with that side's enemies.
+  civilAssist: { perm: 'zeus', run(s, a, ctx) {
+    const X = C(s, a.country), S = C(s, a.side); if (!X || !S) return err('Pick a country and a side.');
+    const root = S.rebelOf || S.id; if (X.id === root || X.rebelOf === root) return err('That country is part of the civil war.');
+    const foes = Object.values(s.countries).filter(f => (f.id === root || f.rebelOf === root) && f.id !== S.id && atWar(s, f.id, S.id));
+    if (!foes.length) return err('That side is not fighting anyone.');
+    const ev = [];
+    for (const f of foes) { if (!atWar(s, X.id, f.id)) declareWar(s, X.id, f.id, ev, 'declared'); shiftRelation(s, X.id, S.id, 40); }
+    publishInstant(s, ev, ctx);
+    log(s, ctx, `${X.name} backs ${S.name} in the civil war`);
     return ok({ broadcastAnim: true });
   } },
   setRelation: { perm: 'kronos', run(s, a) { if (!C(s, a.a) || !C(s, a.b)) return err('Pick two countries.'); s.relations[[a.a, a.b].sort().join('|')] = clamp(Number(a.value) || 0, -100, 100); return ok(); } },
