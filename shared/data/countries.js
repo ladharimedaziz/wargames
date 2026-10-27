@@ -23,6 +23,7 @@ const RAW = `
 528|NLD|Netherlands|هولندا|1100|18|52.37|4.9|1|1|0|1|0|0|5|0|-0.8|NATO,EU|
 056|BEL|Belgium|بلجيكا|650|12|50.85|4.35|1|1|0|0|0|0|4|0|-0.6|NATO,EU|
 616|POL|Poland|بولندا|850|37|52.23|21.01|3|2|0|1|0|1|6|0|-0.6|NATO,EU|
+278|DDR|East Germany|ألمانيا الشرقية|240|17|52.52|13.4|3|2|0|0|0|1|6|0|-0.4||
 804|UKR|Ukraine|أوكرانيا|180|37|50.45|30.52|5|1|0|0|0|1|6|0|-0.2||
 112|BLR|Belarus|بيلاروسيا|70|9|53.9|27.57|1|1|0|0|0|0|5|0|-0.1|CSTO|
 643|RUS|Russia|روسيا|2000|144|55.76|37.62|8|10|2|4|1|4|9|1|7|CSTO,SCO|P
@@ -156,7 +157,7 @@ export const ALIASES = {
   russia: '643', russian: '643', rf: '643', china: '156', chinese: '156', prc: '156',
   saudi: '682', ksa: '682', 'saudi arabia': '682', uae: '784', emirates: '784', iran: '364', iranian: '364',
   'north korea': '408', dprk: '408', nk: '408', 'south korea': '410', rok: '410', korea: '410',
-  france: '250', french: '250', germany: '276', german: '276', japan: '392', japanese: '392', india: '356', indian: '356',
+  france: '250', french: '250', germany: '276', german: '276', 'east germany': '278', ddr: '278', 'west germany': '276', japan: '392', japanese: '392', india: '356', indian: '356',
   turkey: '792', turkiye: '792', israel: '376', egypt: '818', pakistan: '586', taiwan: '158', ukraine: '804',
   poland: '616', italy: '380', spain: '724', canada: '124', australia: '036', brazil: '076', mexico: '484',
   qatar: '634', kuwait: '414', oman: '512', bahrain: '048', yemen: '887', iraq: '368', syria: '760', jordan: '400',
