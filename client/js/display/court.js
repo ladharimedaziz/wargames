@@ -3,7 +3,7 @@ import { html, useState, useEffect, useRef, useNow, timerRemaining, fmt, cls } f
 import { sfx } from '../fx/audio.js';
 import { t, tt } from './i18n.js';
 
-const SIDE_COLOR = { prosecution: '#e5484d', defence: '#3d8bfd', bench: '#ffb224', witness: '#9b7bff', jury: '#3ddc97', gallery: '#8a96aa' };
+const SIDE_COLOR = { prosecution: '#d9503f', defence: '#6a9ccf', bench: '#d9a441', witness: '#a592c9', jury: '#7fbf9a', gallery: '#8a96aa' };
 const initials = s => (s || '?').split(/\s+/).filter(Boolean).slice(0, 2).map(w => w[0]).join('').toUpperCase();
 
 export function CourtDisplay({ conn, state, lang }) {

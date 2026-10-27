@@ -29,7 +29,7 @@ export const COUNCIL_PRESETS = {
     org: 'Disarmament and International Security Committee',
     title: 'Addressing the Regulation of Chemical Weapons in Modern Day Warfare',
     subtitle: 'United Nations General Assembly · DISEC',
-    accent: '#ffb224',
+    accent: '#d9a441',
     brief: 'The Chemical Weapons Convention banned these weapons almost thirty years ago, yet they were used in Syria, in assassinations abroad and in armed conflicts since. The committee must decide how to enforce a ban that is law but not always fact.',
     facts: [
       'The Chemical Weapons Convention entered into force in 1997. Its states parties are checked by the OPCW in The Hague.',
@@ -95,4 +95,4 @@ export const GOTHAM_DISTRICTS = [
   { id: 'robbins', name: 'Robbinsville' }, { id: 'miller', name: 'Miller Harbor' }, { id: 'amusement', name: 'Amusement Mile' }, { id: 'founders', name: "Founders' Island" },
   { id: 'arkham', name: 'Arkham Island' }, { id: 'blackgate', name: 'Blackgate' }, { id: 'sprang', name: 'Sprang Island' },
 ];
-export const DISTRICT_STATUS = [['secure', 'Secure', '#3ddc97'], ['tense', 'Tense', '#ffb224'], ['unrest', 'Unrest', '#ff7a45'], ['lost', 'Lost', '#ff4d5e'], ['dark', 'Blackout', '#8a96aa']];
+export const DISTRICT_STATUS = [['secure', 'Secure', '#7fbf9a'], ['tense', 'Tense', '#d9a441'], ['unrest', 'Unrest', '#ff7a45'], ['lost', 'Lost', '#e2574a'], ['dark', 'Blackout', '#8a96aa']];

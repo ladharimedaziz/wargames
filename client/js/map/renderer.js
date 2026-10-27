@@ -716,7 +716,7 @@ export class WorldMap {
     if (night) { g.addColorStop(0, '#040b18'); g.addColorStop(1, '#01030a'); } else { g.addColorStop(0, '#0a1a2c'); g.addColorStop(1, '#050b14'); }
     ctx.fillStyle = g; ctx.fill(this.sphere);
     ctx.strokeStyle = night ? 'rgba(80,140,220,0.035)' : 'rgba(80,160,220,0.07)'; ctx.lineWidth = 0.6 / k; ctx.stroke(this.graticule);
-    ctx.strokeStyle = night ? 'rgba(90,150,255,0.18)' : 'rgba(54,226,255,0.25)'; ctx.lineWidth = 1.2 / k; ctx.stroke(this.sphere);
+    ctx.strokeStyle = night ? 'rgba(90,150,255,0.18)' : 'rgba(236,230,214,0.25)'; ctx.lineWidth = 1.2 / k; ctx.stroke(this.sphere);
     // Land
     ctx.fillStyle = night ? '#060a12' : '#0f1726';
     for (const p of A.paths.values()) ctx.fill(p);
@@ -731,14 +731,14 @@ export class WorldMap {
         // While a front is still sweeping across, the front layer draws the advance and the hatch waits for it.
         const sweeping = this.fronts?.[id] && performance.now() < this.fronts[id].start + this.fronts[id].dur * 1000;
         if (c.occupiedBy && s.countries[c.occupiedBy] && !sweeping) {
-          const oc = s.blocs[s.countries[c.occupiedBy].bloc]?.color || '#ff4d5e';
+          const oc = s.blocs[s.countries[c.occupiedBy].bloc]?.color || '#e2574a';
           // The occupier's flag over the whole country, with a bloc-coloured tint so it reads as held ground.
           if (this.flagReady(c.occupiedBy) && this.fullBounds.get(id)) { ctx.fillStyle = 'rgba(6,8,14,0.35)'; ctx.fill(path); ctx.save(); ctx.clip(path); this.drawFlag(ctx, c.occupiedBy, this.fullBounds.get(id), 0.62); ctx.restore(); ctx.fillStyle = hexA(oc, 0.16); ctx.fill(path); }
           else { const pat = this.pattern('occ' + oc, hexA(oc, 0.85)); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(path); }
         }
         if (c.capitulated) { ctx.fillStyle = 'rgba(30,30,30,0.55)'; ctx.fill(path); }
         if (s.global.closedAirspace?.[id] && this.layers.air !== false) {
-          const pat = this.pattern('air', 'rgba(255,77,94,0.55)'); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(path);
+          const pat = this.pattern('air', 'rgba(226,87,74,0.55)'); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(path);
         }
         if (pov && id !== pov && !(s.countries[pov] && (s.countries[pov].bloc !== 'N' && s.countries[pov].bloc === c.bloc))) { ctx.fillStyle = 'rgba(3,5,10,0.35)'; ctx.fill(path); }
       }
@@ -1284,8 +1284,8 @@ export class WorldMap {
     withCam(() => {
       if (this.hover?.id && pathFor(this.hover.id)) { ctx.fillStyle = 'rgba(255,255,255,0.07)'; ctx.fill(pathFor(this.hover.id)); }
       if (this.selected && pathFor(this.selected)) {
-        ctx.shadowColor = 'rgba(54,226,255,0.9)'; ctx.shadowBlur = 12;
-        ctx.strokeStyle = `rgba(54,226,255,${0.75 + 0.25 * Math.sin(time * 4)})`; ctx.lineWidth = 1.8 / k; ctx.stroke(pathFor(this.selected));
+        ctx.shadowColor = 'rgba(236,230,214,0.9)'; ctx.shadowBlur = 12;
+        ctx.strokeStyle = `rgba(236,230,214,${0.75 + 0.25 * Math.sin(time * 4)})`; ctx.lineWidth = 1.8 / k; ctx.stroke(pathFor(this.selected));
         ctx.shadowBlur = 0;
       }
       for (const h of this.highlights) if (pathFor(h.id)) { ctx.fillStyle = h.color; ctx.fill(pathFor(h.id)); }
@@ -1302,7 +1302,7 @@ export class WorldMap {
       for (const w of wars) {
         const a = this.countryPoint(w.a), b = this.countryPoint(w.b);
         if (!a || !b) continue;
-        ctx.strokeStyle = `rgba(255,77,94,${0.35 + 0.15 * Math.sin(time * 2 + w.since)})`;
+        ctx.strokeStyle = `rgba(226,87,74,${0.35 + 0.15 * Math.sin(time * 2 + w.since)})`;
         this.curve(ctx, a, b, 0.18);
         ctx.stroke();
       }
@@ -1655,7 +1655,7 @@ export class WorldMap {
       if (Math.abs(r) < 35) continue;
       const a = this.countryPoint(A.id), b = this.countryPoint(B.id);
       if (!a || !b) continue;
-      ctx.strokeStyle = r > 0 ? `rgba(61,220,151,${Math.abs(r) / 260})` : `rgba(255,77,94,${Math.abs(r) / 260})`;
+      ctx.strokeStyle = r > 0 ? `rgba(127,191,154,${Math.abs(r) / 260})` : `rgba(226,87,74,${Math.abs(r) / 260})`;
       ctx.lineWidth = 0.5 + Math.abs(r) / 50;
       this.curve(ctx, a, b, 0.12); ctx.stroke();
     }
@@ -1670,7 +1670,7 @@ export class WorldMap {
       const tail = alongFast(f.path, Math.max(0, f.t - 0.04));
       const qt = this.p(tail[0], tail[1]);
       const last = f.kind === 'last', div = f.kind === 'diverted';
-      const col = last ? '255,178,36' : div ? '255,138,150' : '200,230,255';
+      const col = last ? '217,164,65' : div ? '255,138,150' : '200,230,255';
       if (qt && Math.abs(qt[0] - q[0]) < this.w / 3) {
         const g = ctx.createLinearGradient(qt[0], qt[1], q[0], q[1]);
         g.addColorStop(0, `rgba(${col},0)`); g.addColorStop(1, `rgba(${col},${last ? 0.6 : 0.28})`);
@@ -1683,7 +1683,7 @@ export class WorldMap {
       ctx.beginPath(); ctx.moveTo(sz * 1.4, 0); ctx.lineTo(-sz, sz * 0.9); ctx.lineTo(-sz * 0.5, 0); ctx.lineTo(-sz, -sz * 0.9); ctx.closePath(); ctx.fill();
       ctx.restore();
       if (f.label && f.t < 0.35) {
-        ctx.font = '700 10px Rajdhani, sans-serif'; ctx.fillStyle = `rgba(255,178,36,${1 - f.t / 0.35})`;
+        ctx.font = '700 10px Rajdhani, sans-serif'; ctx.fillStyle = `rgba(217,164,65,${1 - f.t / 0.35})`;
         ctx.fillText(f.label, q[0] + 8, q[1] - 8);
       }
     }
@@ -1695,7 +1695,7 @@ export class WorldMap {
     for (const sh of this.sea.ships) {
       const pos = this.sea.position(sh);
       const q = this.p(pos[0], pos[1]); if (!q || q[0] < -10 || q[0] > this.w + 10 || q[1] < -10 || q[1] > this.h + 10) continue;
-      const col = sh.stuck ? '255,178,36' : COL[sh.kind] || COL.container;
+      const col = sh.stuck ? '217,164,65' : COL[sh.kind] || COL.container;
       const a = sh.stuck ? 0.55 + 0.3 * Math.sin(time * 3 + pos[0]) : 0.85;
       if (hull && !sh.stuck) {
         // Zoomed in: a small hull pointing along the ship's heading, with a wake.
@@ -1710,7 +1710,7 @@ export class WorldMap {
         const r = (sh.kind === 'tanker' || sh.kind === 'bulk' ? 2 : 1.7) * Math.min(1.8, 0.8 + k * 0.18);
         ctx.fillStyle = `rgba(${col},${a})`; ctx.beginPath(); ctx.arc(q[0], q[1], r, 0, TAU); ctx.fill();
       }
-      if (sh.rerouted && !sh.stuck) { ctx.strokeStyle = 'rgba(255,178,36,0.4)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(q[0], q[1], 4, 0, TAU); ctx.stroke(); }
+      if (sh.rerouted && !sh.stuck) { ctx.strokeStyle = 'rgba(217,164,65,0.4)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(q[0], q[1], 4, 0, TAU); ctx.stroke(); }
     }
   }
 
@@ -1718,7 +1718,7 @@ export class WorldMap {
     const cps = this.state.global?.chokepoints || {};
     for (const [z, cp] of Object.entries(cps)) {
       const zone = SEA_ZONES[z]; const q = this.p(zone.lon, zone.lat); if (!q) continue;
-      const col = cp.status === 'closed' ? '255,77,94' : cp.status === 'contested' ? '255,178,36' : '61,220,151';
+      const col = cp.status === 'closed' ? '226,87,74' : cp.status === 'contested' ? '217,164,65' : '127,191,154';
       const pulse = cp.status === 'open' ? 0 : (time * 0.8) % 1;
       ctx.strokeStyle = `rgba(${col},0.95)`; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(q[0], q[1], 5, 0, TAU); ctx.stroke();
@@ -2206,7 +2206,7 @@ export class WorldMap {
       }
     }
     // Spray and the battle label.
-    ctx.strokeStyle = `rgba(54,226,255,${0.5 * (1 - u)})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(q[0], q[1], 34 + u * 18, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = `rgba(236,230,214,${0.5 * (1 - u)})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(q[0], q[1], 34 + u * 18, 0, TAU); ctx.stroke();
     const name = SEA_ZONES[e.zone] ? (this.opts.lang === 'ar' ? SEA_ZONES[e.zone].ar : SEA_ZONES[e.zone].name.toUpperCase()) : '';
     ctx.font = this.opts.lang === 'ar' ? '700 11px Cairo, sans-serif' : '700 10px Rajdhani, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const label = this.opts.lang === 'ar' ? `معركة بحرية · ${name}` : `NAVAL BATTLE · ${name}`;
@@ -2321,20 +2321,20 @@ export class WorldMap {
   fx_occupy(ctx, fx, u, now, withCam) {
     const path = this.atlas.lo.paths.get(fx.e.country); if (!path) return;
     const by = this.state.countries[fx.e.by];
-    const col = this.colorOf(by, '#ff4d5e');
+    const col = this.colorOf(by, '#e2574a');
     withCam(() => { ctx.fillStyle = hexA(col, 0.55 * Math.sin(u * Math.PI) * (0.6 + 0.4 * Math.sin(u * 18))); ctx.fill(path); ctx.strokeStyle = hexA(col, 1 - u); ctx.lineWidth = 2 / this.cam.k; ctx.stroke(path); });
   }
   fx_war(ctx, fx, u, now, withCam) {
     withCam(() => {
       for (const id of [fx.a, fx.b]) {
         const path = this.atlas.lo.paths.get(id); if (!path) continue;
-        ctx.strokeStyle = `rgba(255,77,94,${(1 - u) * (0.6 + 0.4 * Math.sin(u * 30))})`; ctx.lineWidth = 2.4 / this.cam.k; ctx.stroke(path);
+        ctx.strokeStyle = `rgba(226,87,74,${(1 - u) * (0.6 + 0.4 * Math.sin(u * 30))})`; ctx.lineWidth = 2.4 / this.cam.k; ctx.stroke(path);
       }
     });
   }
   fx_choke(ctx, fx, u) {
     const z = SEA_ZONES[fx.e.zone]; const q = z && this.p(z.lon, z.lat); if (!q) return;
-    const col = fx.e.status === 'closed' ? '255,77,94' : fx.e.status === 'contested' ? '255,178,36' : '61,220,151';
+    const col = fx.e.status === 'closed' ? '226,87,74' : fx.e.status === 'contested' ? '217,164,65' : '127,191,154';
     for (let i = 0; i < 3; i++) { const v = (u * 1.8 + i / 3) % 1; ctx.strokeStyle = `rgba(${col},${(1 - v) * (1 - u)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(q[0], q[1], 6 + v * 40, 0, TAU); ctx.stroke(); }
   }
   // Nuclear strike, kept abstract: a ballistic missile track, an incoming warning, then a flash and shockwave. Nothing graphic.

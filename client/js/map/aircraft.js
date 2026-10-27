@@ -253,19 +253,19 @@ export const AIRCRAFT_FX = {
         travel(1, q => this.drawModel(ctx, 'transport', q[0], q[1], q[2], 6 * sc, '#cfd6df'));
         label('ARMS SHIPMENT', 'شحنة أسلحة', '#d5dbe4'); break;
       case 'trade':
-        arc('rgba(61,220,151,0.5)', [4, 4], 1.3, 0.16); arc('rgba(61,220,151,0.35)', [4, 4], 1.3, -0.16);
-        travel(4, q => { ctx.fillStyle = '#3ddc97'; ctx.fillRect(q[0] - 1.8, q[1] - 1.8, 3.6, 3.6); }, 0.16);
-        label('TRADE DEAL', 'اتفاق تجاري', '#3ddc97'); break;
+        arc('rgba(127,191,154,0.5)', [4, 4], 1.3, 0.16); arc('rgba(127,191,154,0.35)', [4, 4], 1.3, -0.16);
+        travel(4, q => { ctx.fillStyle = '#7fbf9a'; ctx.fillRect(q[0] - 1.8, q[1] - 1.8, 3.6, 3.6); }, 0.16);
+        label('TRADE DEAL', 'اتفاق تجاري', '#7fbf9a'); break;
       case 'alliance':
         for (const id of [e.a, e.b]) this.outline?.(ctx, id, `rgba(120,200,255,${0.8 * f})`, 2);
         arc(`rgba(150,220,255,${0.9 * f})`, null, 2);
         label('ALLIANCE', 'تحالف', '#9fd8ff'); break;
       case 'sanction': case 'unsanction': {
         const lift = e.kind === 'unsanction';
-        arc(lift ? 'rgba(61,220,151,0.6)' : 'rgba(255,90,90,0.6)', [6, 4], 1.6, 0.2, ease(u / 0.5));
-        if (B && u > 0.45) { const r = 8 + 3 * Math.sin(now / 150); ctx.strokeStyle = lift ? '#3ddc97' : '#ff5a5a'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(B[0], B[1], r, 0, TAU); ctx.stroke();
+        arc(lift ? 'rgba(127,191,154,0.6)' : 'rgba(255,90,90,0.6)', [6, 4], 1.6, 0.2, ease(u / 0.5));
+        if (B && u > 0.45) { const r = 8 + 3 * Math.sin(now / 150); ctx.strokeStyle = lift ? '#7fbf9a' : '#ff5a5a'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(B[0], B[1], r, 0, TAU); ctx.stroke();
           if (!lift) { ctx.beginPath(); ctx.moveTo(B[0] - r * 0.7, B[1] - r * 0.7); ctx.lineTo(B[0] + r * 0.7, B[1] + r * 0.7); ctx.stroke(); } }
-        label(lift ? 'SANCTIONS LIFTED' : 'SANCTIONS', lift ? 'رفع العقوبات' : 'عقوبات', lift ? '#3ddc97' : '#ff7a7a'); break;
+        label(lift ? 'SANCTIONS LIFTED' : 'SANCTIONS', lift ? 'رفع العقوبات' : 'عقوبات', lift ? '#7fbf9a' : '#ff7a7a'); break;
       }
       case 'ceasefire': case 'peace':
         ctx.globalAlpha = 1; this.fx_peace?.(ctx, { e: { a: e.a, b: e.b } }, u, now);
@@ -303,8 +303,8 @@ export const AIRCRAFT_FX = {
         for (let i = 0; i < 3; i++) { const v = ((u * 1.5) + i / 3) % 1; ctx.strokeStyle = `rgba(255,190,60,${(1 - v) * 0.8 * f})`; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(A[0], A[1], 5 + v * 26, 0, TAU); ctx.stroke(); }
         label('NUCLEAR FORCES ON ALERT', 'القوات النووية في حالة تأهب', '#ffbe3c', A); break;
       case 'lift':
-        for (let i = 0; i < 3; i++) { const v = ((u * 1.5) + i / 3) % 1; ctx.strokeStyle = `rgba(61,220,151,${(1 - v) * 0.7 * f})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(A[0], A[1], 5 + v * 22, 0, TAU); ctx.stroke(); }
-        label('BLOCKADES LIFTED', 'رفع الحصار', '#3ddc97', A); break;
+        for (let i = 0; i < 3; i++) { const v = ((u * 1.5) + i / 3) % 1; ctx.strokeStyle = `rgba(127,191,154,${(1 - v) * 0.7 * f})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(A[0], A[1], 5 + v * 22, 0, TAU); ctx.stroke(); }
+        label('BLOCKADES LIFTED', 'رفع الحصار', '#7fbf9a', A); break;
       case 'roe': {
         const col = e.value === 'forward' ? '#ff8a5c' : e.value === 'defensive' ? '#9fd8ff' : '#ffd678';
         for (let i = 0; i < 3; i++) { const y = A[1] - 6 - i * 5 - (u * 10) % 5; ctx.strokeStyle = col; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(A[0] - 5, y + 3); ctx.lineTo(A[0], y); ctx.lineTo(A[0] + 5, y + 3); ctx.stroke(); }
@@ -312,9 +312,9 @@ export const AIRCRAFT_FX = {
       }
       case 'election': {
         const good = e.outcome !== 'ousted';
-        ctx.strokeStyle = good ? '#3ddc97' : '#ff8a5c'; ctx.lineWidth = 1.4; ctx.strokeRect(A[0] - 5, A[1] - 22, 10, 9);
+        ctx.strokeStyle = good ? '#7fbf9a' : '#ff8a5c'; ctx.lineWidth = 1.4; ctx.strokeRect(A[0] - 5, A[1] - 22, 10, 9);
         if (u > 0.3) { ctx.beginPath(); ctx.moveTo(A[0] - 3, A[1] - 18); ctx.lineTo(A[0] - 1, A[1] - 15.5); ctx.lineTo(A[0] + 3.5, A[1] - 21); ctx.stroke(); }
-        label(good ? 'GOVERNMENT RE-ELECTED' : 'GOVERNMENT OUSTED', good ? 'إعادة انتخاب الحكومة' : 'سقوط الحكومة', good ? '#3ddc97' : '#ff8a5c', A); break;
+        label(good ? 'GOVERNMENT RE-ELECTED' : 'GOVERNMENT OUSTED', good ? 'إعادة انتخاب الحكومة' : 'سقوط الحكومة', good ? '#7fbf9a' : '#ff8a5c', A); break;
       }
     }
     ctx.globalAlpha = 1;

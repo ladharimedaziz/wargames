@@ -79,7 +79,7 @@ function CommitteeCard({ conn, c, enter, dm }) {
             : html`<div class="kc-name" onDblClick=${() => setRenaming(true)} title="Double-click to rename">${c.name}</div>`}
           <div class="dim small">${c.mode === 'court' ? 'Court' : c.mode === 'council' ? 'Council' : c.preset === 'cold85' ? 'Cold War 1985' : c.preset === 'latam' ? 'Americas' : 'World'} · ${c.id}${c.mode === 'world' ? ` · turn ${c.turn} · ${c.clock}` : c.court ? ` · ${c.court.phase}` : c.council?.vote ? ` · vote ${c.council.vote}` : ''}</div>
         </div>
-        ${c.mode === 'world' && html`<div class="kc-ring" style=${`--p:${t * 10};--c:${t >= 8 ? '#ff4d5e' : t >= 6 ? '#ff7a45' : t >= 4 ? '#ffb224' : '#3ddc97'}`}><b>${t}</b><span>${c.tensionName}</span></div>`}
+        ${c.mode === 'world' && html`<div class="kc-ring" style=${`--p:${t * 10};--c:${t >= 8 ? '#e2574a' : t >= 6 ? '#ff7a45' : t >= 4 ? '#d9a441' : '#7fbf9a'}`}><b>${t}</b><span>${c.tensionName}</span></div>`}
       </div>
       <div class="kc-stats">
         <div><span class="dim small">Zeus online</span><b>${c.online.length ? c.online.map(o => o.user.replace(`${c.id}-`, '') + (o.view === 'display' ? ' (display)' : '')).join(', ') : html`<span class="neg">nobody</span>`}</b></div>

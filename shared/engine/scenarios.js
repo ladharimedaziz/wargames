@@ -11,9 +11,9 @@ function coldWar(s) {
   s.meta.clock = '1985-03-11'; s.meta.turnDays = 7;
   s.settings.year = 1985; s.settings.era = 'cold85'; s.settings.aiNukes = false;
   s.global.oilPrice = 28; s.global.tension = 5;
-  s.blocs.A = { name: 'NATO and allies', ar: 'الناتو', color: '#3d8bfd' };
-  s.blocs.B = { name: 'Warsaw Pact and allies', ar: 'حلف وارسو', color: '#e5484d' };
-  s.blocs.C = { name: 'Non-Aligned', ar: 'عدم الانحياز', color: '#ffb224' };
+  s.blocs.A = { name: 'NATO and allies', ar: 'الناتو', color: '#6a9ccf' };
+  s.blocs.B = { name: 'Warsaw Pact and allies', ar: 'حلف وارسو', color: '#d9503f' };
+  s.blocs.C = { name: 'Non-Aligned', ar: 'عدم الانحياز', color: '#d9a441' };
   const bloc = id => NATO.includes(id) ? 'A' : PACT.includes(id) ? 'B' : NONALIGNED.includes(id) ? 'C' : 'N';
   for (const c of Object.values(s.countries)) {
     c.bloc = bloc(c.id); c.stealth = false; c.cyber = {};

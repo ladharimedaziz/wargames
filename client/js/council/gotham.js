@@ -48,7 +48,7 @@ const ICON = {
   train: () => html`<rect x="-7" y="-4" width="14" height="8" rx="2" fill="#ffd27a" /><circle cx="-3" cy="5" r="1.6" fill="#ffd27a" /><circle cx="3" cy="5" r="1.6" fill="#ffd27a" />`,
   alley: () => html`<path d="M-6 6 L0 -7 L6 6Z" fill="none" stroke="#ff7a6b" stroke-width="2" />`,
   theatre: () => html`<path d="M-7 -4 Q0 -10 7 -4 L7 5 L-7 5Z" fill="#e5a0ff" />`,
-  hospital: () => html`<rect x="-6" y="-6" width="12" height="12" fill="#e6f6ee" /><rect x="-4" y="-1" width="8" height="2" fill="#e5484d" /><rect x="-1" y="-4" width="2" height="8" fill="#e5484d" />`,
+  hospital: () => html`<rect x="-6" y="-6" width="12" height="12" fill="#e6f6ee" /><rect x="-4" y="-1" width="8" height="2" fill="#d9503f" /><rect x="-1" y="-4" width="2" height="8" fill="#d9503f" />`,
   wheel: () => html`<circle r="7" fill="none" stroke="#ff9ad2" stroke-width="1.6" /><path d="M-7 0H7M0 -7V7M-5 -5L5 5M5 -5L-5 5" stroke="#ff9ad2" stroke-width="1" />`,
   plant: () => html`<rect x="-7" y="-2" width="14" height="8" fill="#9dff7a" /><rect x="-5" y="-9" width="3" height="8" fill="#9dff7a" /><rect x="1" y="-6" width="3" height="5" fill="#9dff7a" />`,
   port: () => html`<path d="M-7 5 H7 M-3 5 V-7 H5 M5 -7 V0" stroke="#6ad7ff" stroke-width="2" fill="none" />`,
@@ -65,12 +65,12 @@ const BRIDGES = [
 ];
 const MK = {
   fire: (c) => html`<path d="M0 -9 C5 -3 6 2 3 6 C1 8 -1 8 -3 6 C-6 2 -4 -3 0 -9Z" fill="#ff8a3d" /><path d="M0 -3 C2 0 2 3 0 5 C-2 3 -2 0 0 -3Z" fill="#ffe08a" />`,
-  riot: () => html`<circle r="7" fill="#ff4d5e" /><rect x="-1" y="-4" width="2" height="5" fill="#fff" /><rect x="-1" y="2" width="2" height="2" fill="#fff" />`,
+  riot: () => html`<circle r="7" fill="#e2574a" /><rect x="-1" y="-4" width="2" height="5" fill="#fff" /><rect x="-1" y="2" width="2" height="2" fill="#fff" />`,
   breach: () => html`<path d="M-7 -7 L-1 -7 L-3 -1 L2 -3 L7 -7 L7 7 L-7 7Z" fill="#c85cff" />`,
   hostage: () => html`<path d="M0 -8 L8 0 L0 8 L-8 0Z" fill="#ffd166" /><circle r="2" fill="#2a1a00" />`,
   sighting: () => html`<circle r="8" fill="none" stroke="#7dffd8" stroke-width="2" /><circle r="3" fill="#7dffd8" />`,
   blackout: () => html`<path d="M2 -9 L-5 1 L0 1 L-2 9 L6 -2 L1 -2Z" fill="#cdd7ff" />`,
-  help: () => html`<rect x="-7" y="-2.5" width="14" height="5" fill="#3ddc97" /><rect x="-2.5" y="-7" width="5" height="14" fill="#3ddc97" />`,
+  help: () => html`<rect x="-7" y="-2.5" width="14" height="5" fill="#7fbf9a" /><rect x="-2.5" y="-7" width="5" height="14" fill="#7fbf9a" />`,
 };
 export const MARKER_LABEL = { fire: 'Fire', riot: 'Riot', breach: 'Breach', hostage: 'Hostages', sighting: 'Sighting', blackout: 'Blackout', help: 'Help point' };
 const COL = Object.fromEntries(DISTRICT_STATUS.map(([k, , c]) => [k, c]));
@@ -86,7 +86,7 @@ export function GothamMap({ c, onDistrict, onPoint, big }) {
     <svg viewBox="0 0 1000 700" preserveAspectRatio="xMidYMid meet" onClick=${click}>
       <defs>
         <pattern id="gt-grid" width="14" height="14" patternUnits="userSpaceOnUse"><path d="M14 0H0V14" fill="none" stroke="#7aa2ff" stroke-opacity=".10" /></pattern>
-        <pattern id="gt-hatch" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="9" fill="#ff4d5e" fill-opacity=".38" /></pattern>
+        <pattern id="gt-hatch" width="9" height="9" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="9" fill="#e2574a" fill-opacity=".38" /></pattern>
         ${GOTHAM_DISTRICTS.map(d => html`<clipPath id=${`gt-clip-${d.id}`}><path d=${PATHS[d.id]} /></clipPath>`)}
         <pattern id="gt-ave" width="56" height="56" patternUnits="userSpaceOnUse"><path d="M0 0H56M0 28H56" stroke="#9db8ff" stroke-opacity=".13" stroke-width="2.4" fill="none" /><path d="M0 0V56" stroke="#9db8ff" stroke-opacity=".08" stroke-width="1.6" /></pattern>
         <radialGradient id="gt-sea" cx="50%" cy="48%" r="70%"><stop offset="0" stop-color="#0b1730" /><stop offset="1" stop-color="#050a16" /></radialGradient>

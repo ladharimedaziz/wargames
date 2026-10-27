@@ -35,7 +35,7 @@ export const NAVAL_FX = {
     ctx.save(); ctx.scale(scale, scale);
     if (blockade) {
       const p = 0.5 + 0.5 * Math.sin(time * 4);
-      ctx.strokeStyle = `rgba(255,77,94,${0.5 + 0.4 * p})`; ctx.lineWidth = 1.3; ctx.setLineDash([3, 2]);
+      ctx.strokeStyle = `rgba(226,87,74,${0.5 + 0.4 * p})`; ctx.lineWidth = 1.3; ctx.setLineDash([3, 2]);
       ctx.beginPath(); ctx.arc(0, 0, carrier ? 22 : 15, time * 0.6, time * 0.6 + TAU); ctx.stroke(); ctx.setLineDash([]);
     }
     if (carrier && us) {

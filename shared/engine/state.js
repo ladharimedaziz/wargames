@@ -85,8 +85,8 @@ export function createWorldState(opts, geoInfo) {
     closedAirspace: {}, weather: {}, casualties: 0, refugees: 0,
   };
   s.blocs = {
-    A: { name: 'Western Alliance', ar: 'التحالف الغربي', color: '#3d8bfd' },
-    B: { name: 'Eastern Coalition', ar: 'التحالف الشرقي', color: '#e5484d' },
+    A: { name: 'Western Alliance', ar: 'التحالف الغربي', color: '#6a9ccf' },
+    B: { name: 'Eastern Coalition', ar: 'التحالف الشرقي', color: '#d9503f' },
     C: { name: 'Third Bloc', ar: 'الكتلة الثالثة', color: '#f5a524' },
     N: { name: 'Neutral', ar: 'محايد', color: '#6b7280' },
   };

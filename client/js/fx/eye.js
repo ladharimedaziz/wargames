@@ -27,14 +27,14 @@ export function KronosEye({ on, big = false }) {
         <defs>
           <radialGradient id="kiris" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stop-color="#fff3c4" />
-            <stop offset="30%" stop-color="#ffb224" />
+            <stop offset="30%" stop-color="#d9a441" />
             <stop offset="70%" stop-color="#c2311f" />
             <stop offset="100%" stop-color="#3a0606" />
           </radialGradient>
           <clipPath id="keye"><path d="M4 32 Q60 -10 116 32 Q60 74 4 32 Z" /></clipPath>
         </defs>
         <g class="lid">
-          <path d="M4 32 Q60 -10 116 32 Q60 74 4 32 Z" fill="#120406" stroke="#ffb224" stroke-width="2.2" />
+          <path d="M4 32 Q60 -10 116 32 Q60 74 4 32 Z" fill="#120406" stroke="#d9a441" stroke-width="2.2" />
           <g clip-path="url(#keye)">
             <g class="iris">
               <circle cx="60" cy="32" r="19" fill="url(#kiris)" />
@@ -43,7 +43,7 @@ export function KronosEye({ on, big = false }) {
             </g>
           </g>
         </g>
-        <path d="M2 30 L-6 26 M118 30 L126 26 M60 4 L60 -4 M30 12 L26 5 M90 12 L94 5" stroke="#ffb224" stroke-width="2" stroke-linecap="round" opacity=".7" />
+        <path d="M2 30 L-6 26 M118 30 L126 26 M60 4 L60 -4 M30 12 L26 5 M90 12 L94 5" stroke="#d9a441" stroke-width="2" stroke-linecap="round" opacity=".7" />
       </svg>
       <div class="text" style=${glitch ? 'filter: blur(.6px); transform: skewX(-8deg); opacity: .8' : ''}>
         ${[...TEXT].map((ch, i) => html`<span key=${i}>${ch === ' ' ? ' ' : ch}</span>`)}

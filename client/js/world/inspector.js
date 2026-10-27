@@ -169,7 +169,7 @@ function ZoneCard({ conn, state, selZone, startOrder }) {
   const ships = Object.values(state.units).filter(u => u.loc.kind === 'sea' && u.loc.id === selZone && u.strength > 0);
   const owners = [...new Set(ships.map(u => u.owner))];
   return html`<div class="pane inspector">
-    <div class="insp-head" style="--bloc:#36e2ff"><div class="grow"><div class="insp-name">${z.name}</div></div></div>
+    <div class="insp-head" style="--bloc:#ece6d6"><div class="grow"><div class="insp-name">${z.name}</div></div></div>
     ${cp && html`<div class="card" style="margin:10px 0"><div class="card-b"><div class="row between"><b>Chokepoint</b><span class=${cls('chip', cp.status === 'closed' ? 'red' : cp.status === 'contested' ? 'gold' : 'green')}>${cp.status}${cp.by ? ` by ${state.countries[cp.by]?.name}` : ''}</span></div><div class="dim small" style="margin-top:4px">Closing it adds about $${z.oil} to a barrel of oil and forces shipping the long way round.</div></div></div>`}
     <div class="sub-h">Coastal states</div>
     <div class="small">${z.coasts.map(id => state.countries[id]?.name).filter(Boolean).join(', ') || 'Open ocean'}</div>
@@ -195,7 +195,7 @@ function WorldOverview({ conn, state, setSelected }) {
   return html`<div class="pane inspector">
     <div class="pane-h"><h2>The world</h2><span class="dim small">Click a country or sea</span></div>
     <div class="tension-ladder">
-      ${[...TENSION_LEVELS].reverse().map((l, i) => html`<div class=${cls('tl-row', lvl.name === l.name && 'on')} style=${`--c:${['#ff4d5e', '#ff7a45', '#ffb224', '#7fd4ff', '#3ddc97'][i]}`}><span>${l.name}</span><span class="dim">${l.max - 1.5 > 0 ? l.max - 2 + 0.5 : 0}–${l.max}</span></div>`)}
+      ${[...TENSION_LEVELS].reverse().map((l, i) => html`<div class=${cls('tl-row', lvl.name === l.name && 'on')} style=${`--c:${['#e2574a', '#ff7a45', '#d9a441', '#7fd4ff', '#7fbf9a'][i]}`}><span>${l.name}</span><span class="dim">${l.max - 1.5 > 0 ? l.max - 2 + 0.5 : 0}–${l.max}</span></div>`)}
       <div class="tl-val">${g.tension}<span>/10</span></div>
     </div>
     <div class="spark-grid">
