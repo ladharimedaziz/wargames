@@ -6,7 +6,7 @@ import { SEA_ZONES } from '/shared/data/places.js';
 import { CITIES } from '/shared/data/cities.js';
 import { AIRCRAFT } from '/shared/data/militaries.js';
 import { stateSplit } from '/shared/data/german-split.js';
-import { relation, worldWarBlocs, isOOB, OUT_OF_BOUNDS, sameSide } from '/shared/engine/core.js';
+import { relation, fullWarTheaters, theaterOf, THEATERS, isOOB, OUT_OF_BOUNDS, sameSide } from '/shared/engine/core.js';
 import { distanceKm, seaRoute, zonesTouching } from '/shared/geo.js';
 import { loadAtlas, makeCountryAt, makeLandAt, pairBorder } from './atlas.js';
 import { contours as d3contours } from 'd3-contour';
@@ -201,6 +201,7 @@ export class WorldMap {
   setState(state, extra = {}) {
     const prev = this.state;
     this.state = state;
+    this.ft = state?.countries ? fullWarTheaters(state) : new Set();
     // A committee reset onto the other map (Cold War, with East and West Germany, or the modern one) needs the other atlas.
     if (this.atlas && state?.mode === 'world' && stateSplit(state) !== this.split) { try { if (!sessionStorage.getItem('atlas-reload')) { sessionStorage.setItem('atlas-reload', '1'); location.reload(); } } catch {} return; }
     if (!this.atlas || !state || state.mode !== 'world') return;
@@ -360,23 +361,23 @@ export class WorldMap {
   drawControl(ctx, now, time, A) {
     const s = this.state, k = this.cam.k, groups = this.controlGroups(now);
     const live = this.ctlProgress(now) < 1;
-    // World war: every group of ground one bloc holds in the other's countries shares one frontline.
-    const ww = worldWarBlocs(s), uni = new Map();
+    // A theatre in full conflict (bloc against bloc): the ground each bloc holds there shares one frontline.
+    const uni = new Map(), cross = (x, y) => (x.bloc === 'A' && y.bloc === 'B') || (x.bloc === 'B' && y.bloc === 'A');
     for (const g of groups) {
       g.uni = false;
-      const O = s.countries[g.owner], C = s.countries[g.country];
-      if (!ww || !O || !C || O.rebelOf || C.rebelOf || !ww.includes(O.bloc) || !ww.includes(C.bloc) || O.bloc === C.bloc) continue;
+      const O = s.countries[g.owner], C = s.countries[g.country], th = theaterOf(C);
+      if (!th || !this.ft.has(th) || !O || !C || O.rebelOf || C.rebelOf || !cross(O, C)) continue;
       const sh = this.groupShape(g, now, time); if (!sh.rings.length) continue;
       g.uni = true;
-      const e = uni.get(O.bloc) || { items: [] };
-      e.items.push(sh); uni.set(O.bloc, e);
+      const key = `${th}|${O.bloc}`, e = uni.get(key) || { th, bloc: O.bloc, items: [], at: [] };
+      e.items.push(sh); e.at.push([C.lon, C.lat]); uni.set(key, e);
     }
     for (const g of groups) {
       const C = s.countries[g.country], O = s.countries[g.owner], cpath = A.paths.get(g.country);
       if (!C || !O || !cpath) continue;
       if (C.occupiedBy === g.owner && !live) continue; // drawn whole by the base layer
       const sh = this.groupShape(g, now, time); if (!sh.rings.length) continue;
-      const col = this.heldColor(O, '#ff8a3d'), fl = this.heldFlag(g.owner);
+      const col = g.uni ? s.blocs[O.bloc].color : this.colorOf(O, '#ff8a3d'), fl = g.uni ? `bloc:${O.bloc}` : g.owner;
       const fighting = s.wars.some(w => (w.a === g.owner && w.b === g.country) || (w.b === g.owner && w.a === g.country));
       withCamOn(ctx, this.dpr, this.cam, () => {
         ctx.save(); ctx.clip(cpath);
@@ -389,8 +390,8 @@ export class WorldMap {
         if (sh.front.length && !g.uni) {
           ctx.save(); ctx.clip(cpath);
           ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-          const ww = !!worldWarBlocs(s)?.includes(O.bloc) && !O.rebelOf; ctx.strokeStyle = ww ? hexA(col, 0.75) : 'rgba(255,110,50,0.4)'; ctx.lineWidth = (ww ? 9 : 6) / k; ctx.stroke(sh.path);
-          ctx.strokeStyle = ww ? '#fff' : '#ffc07a'; ctx.lineWidth = 1.5 / k; ctx.setLineDash([5 / k, 3 / k]); ctx.lineDashOffset = -time * 12 / k; ctx.stroke(sh.path); ctx.setLineDash([]);
+          ctx.strokeStyle = 'rgba(255,110,50,0.4)'; ctx.lineWidth = 6 / k; ctx.stroke(sh.path);
+          ctx.strokeStyle = '#ffc07a'; ctx.lineWidth = 1.5 / k; ctx.setLineDash([5 / k, 3 / k]); ctx.lineDashOffset = -time * 12 / k; ctx.stroke(sh.path); ctx.setLineDash([]);
           // Chevrons pressing into the defender's ground.
           const sz = 6.5 / k, step = Math.max(1, Math.floor(sh.front.length / 10));
           for (let j = 0; j < sh.front.length; j += step) {
@@ -443,7 +444,17 @@ export class WorldMap {
         if (q && pct != null && (g.i1 - g.i0) * k > 6) this.frontLabel(ctx, q[0], q[1] + 8, O, pct, col);
       }
     }
-    for (const [bloc, e] of uni) this.unifiedEdge(ctx, e.items, s.blocs[bloc].color, time);
+    for (const e of uni.values()) {
+      this.unifiedEdge(ctx, e.items, s.blocs[e.bloc].color, time);
+      // One tag per theatre, where the two sides meet.
+    }
+    const tagged = new Set();
+    for (const e of uni.values()) {
+      if (tagged.has(e.th)) continue; tagged.add(e.th);
+      const A2 = uni.get(`${e.th}|A`), B2 = uni.get(`${e.th}|B`), pts = [...(A2?.at || []), ...(B2?.at || [])];
+      const q = this.p(pts.reduce((m, p) => m + p[0], 0) / pts.length, pts.reduce((m, p) => m + p[1], 0) / pts.length);
+      if (q) this.tag(ctx, q[0], q[1] - 24, `${THEATERS[e.th].toUpperCase()} · ${s.blocs.A.name.split(' ')[0].toUpperCase()} v ${s.blocs.B.name.split(' ')[0].toUpperCase()}`, '#ffd9b0');
+    }
   }
 
   // The outline of all the ground one bloc holds, as a single glowing line: the shapes are drawn together, eroded, and the
@@ -505,7 +516,11 @@ export class WorldMap {
   }
 
   setLayers(l) { this.layers = { ...this.layers, ...l }; this.dirty = true; }
-  setSelected(id) { this.selected = id; this.multi.clear(); }
+  setSelected(id) {
+    // 'bloc:X' selects a whole faction (Faction view).
+    this.faction = typeof id === 'string' && id.startsWith('bloc:') ? id.slice(5) : null;
+    this.selected = this.faction ? null : id; this.multi.clear(); this.dirty = true;
+  }
   setLang(lang) { this.opts.lang = lang; this.dirty = true; }
 
   // --- camera ---
@@ -772,9 +787,11 @@ export class WorldMap {
     g.beginPath(); for (let i = 0; i < 10; i++) { const b = i * Math.PI / 5 - Math.PI / 2, r = i % 2 ? 22 : 52; g.lineTo(cx + Math.cos(b) * r, cy + Math.sin(b) * r); } g.closePath(); g.fill();
     e = { img: cv, ok: true }; this.flagImgs.set(ck, e); return cv;
   }
-  // The flag a holder's ground flies: its bloc's in a world war, otherwise its own.
-  heldFlag(id) { const c = this.state?.countries?.[id], ww = this.state && worldWarBlocs(this.state); return ww && c && ww.includes(c.bloc) && !c.rebelOf ? `bloc:${c.bloc}` : id; }
-  heldColor(c, fallback) { const ww = this.state && worldWarBlocs(this.state); return ww && c && ww.includes(c.bloc) && !c.rebelOf ? this.state.blocs[c.bloc].color : this.colorOf(c, fallback); }
+  // The flag a holder's ground flies in country `inId`: its bloc's in a theatre in full conflict, otherwise its own.
+  heldFlag(id, inId) {
+    const c = this.state?.countries?.[id], d = this.state?.countries?.[inId];
+    return c && d && !c.rebelOf && !d.rebelOf && this.ft?.has(theaterOf(d)) && c.bloc !== d.bloc && ['A', 'B'].includes(c.bloc) && ['A', 'B'].includes(d.bloc) ? `bloc:${c.bloc}` : id;
+  }
   flagImage(id) {
     if (String(id).startsWith('bloc:')) return this.blocFlag(id.slice(5));
     this.flagImgs ||= new Map();
@@ -824,7 +841,7 @@ export class WorldMap {
         // While a front is still sweeping across, the front layer draws the advance and the hatch waits for it.
         const sweeping = this.fronts?.[id] && performance.now() < this.fronts[id].start + this.fronts[id].dur * 1000;
         if (c.occupiedBy && s.countries[c.occupiedBy] && !sweeping) {
-          const oc = s.blocs[s.countries[c.occupiedBy].bloc]?.color || '#e2574a', ofl = this.heldFlag(c.occupiedBy);
+          const oc = s.blocs[s.countries[c.occupiedBy].bloc]?.color || '#e2574a', ofl = this.heldFlag(c.occupiedBy, id);
           // The occupier's flag over the whole country, with a bloc-coloured tint so it reads as held ground.
           if (this.flagReady(ofl) && this.fullBounds.get(id)) { ctx.fillStyle = 'rgba(6,8,14,0.35)'; ctx.fill(path); ctx.save(); ctx.clip(path); this.drawFlag(ctx, ofl, this.fullBounds.get(id), 0.62); ctx.restore(); ctx.fillStyle = hexA(oc, 0.16); ctx.fill(path); }
           else { const pat = this.pattern('occ' + oc, hexA(oc, 0.85)); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(path); }
@@ -1369,6 +1386,13 @@ export class WorldMap {
         ctx.strokeStyle = `rgba(236,230,214,${0.75 + 0.25 * Math.sin(time * 4)})`; ctx.lineWidth = 1.8 / k; ctx.stroke(pathFor(this.selected));
         ctx.shadowBlur = 0;
       }
+      if (this.faction && this.state?.blocs?.[this.faction]) {
+        const fc = this.state.blocs[this.faction].color;
+        for (const c of Object.values(this.state.countries)) if (c.bloc === this.faction && !c.rebelOf && pathFor(c.id)) {
+          ctx.fillStyle = hexA(fc, 0.2 + 0.06 * Math.sin(time * 3)); ctx.fill(pathFor(c.id));
+          ctx.strokeStyle = hexA(fc, 0.9); ctx.lineWidth = 1.4 / k; ctx.stroke(pathFor(c.id));
+        }
+      }
       for (const id of this.multi) if (pathFor(id)) {
         ctx.fillStyle = 'rgba(236,230,214,0.14)'; ctx.fill(pathFor(id));
         ctx.shadowColor = 'rgba(236,230,214,0.9)'; ctx.shadowBlur = 10; ctx.strokeStyle = 'rgba(236,230,214,0.95)'; ctx.lineWidth = 1.8 / k; ctx.stroke(pathFor(id)); ctx.shadowBlur = 0;
@@ -1380,7 +1404,9 @@ export class WorldMap {
     if (this.layers.relations) this.drawRelations(ctx, time);
     // Wars: pulsing arcs between capitals
     if (this.layers.wars !== false) {
-      const wars = s.wars.slice(0, 80);
+      // Wars between the blocs of a theatre in full conflict are shown by its unified frontline, not one arc each.
+      const merged = w => { const x = s.countries[w.a], y = s.countries[w.b]; return x && y && ((x.bloc === 'A' && y.bloc === 'B') || (x.bloc === 'B' && y.bloc === 'A')) && this.ft.has(theaterOf(x)) && this.ft.has(theaterOf(y)); };
+      const wars = s.wars.filter(w => !merged(w)).slice(0, 80);
       ctx.lineWidth = 1.3;
       ctx.setLineDash([5, 6]);
       ctx.lineDashOffset = -time * 14;
@@ -1614,7 +1640,7 @@ export class WorldMap {
       withCamOn(ctx, this.dpr, this.cam, () => {
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         // Between the two big blocs of a world war the contact line wears both colours: one bloc's glow, the other's dashes.
-        const ww = worldWarBlocs(s), ca = s.countries[w.a], cb = s.countries[w.b], blocLine = ww && ca && cb && ww.includes(ca.bloc) && ww.includes(cb.bloc) && ca.bloc !== cb.bloc;
+        const ca = s.countries[w.a], cb = s.countries[w.b], blocLine = ca && cb && ((ca.bloc === 'A' && cb.bloc === 'B') || (ca.bloc === 'B' && cb.bloc === 'A')) && this.ft.has(theaterOf(cb));
         ctx.strokeStyle = blocLine ? hexA(s.blocs[ca.bloc].color, 0.8) : `rgba(255,90,60,${0.35 + 0.2 * Math.sin(time * 3 + (w.since || 0))})`; ctx.lineWidth = (blocLine ? 8 : 6) / k;
         for (const l of fb.lines) { ctx.beginPath(); l.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); }
         ctx.strokeStyle = blocLine ? s.blocs[cb.bloc].color : '#ffc07a'; ctx.lineWidth = (blocLine ? 2.4 : 1.4) / k; ctx.setLineDash([4 / k, 3 / k]); ctx.lineDashOffset = -time * 10 / k;

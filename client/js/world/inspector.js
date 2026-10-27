@@ -1,7 +1,7 @@
 // Right-hand inspector: the selected country (or sea zone), or a world overview when nothing is selected.
 import { html, useState, useEffect, run, fmt, cls } from '../lib.js';
 import { SEA_ZONES } from '/shared/data/places.js';
-import { UNIT_TYPES, ROE, BLOCS, tensionLevel, TENSION_LEVELS, relation, isOOB, OOB_ERROR } from '/shared/engine/core.js';
+import { UNIT_TYPES, ROE, BLOCS, tensionLevel, TENSION_LEVELS, relation, isOOB, OOB_ERROR, THEATERS, theaterOf } from '/shared/engine/core.js';
 import { ALLIANCE_NAMES } from '/shared/data/countries.js';
 import { navalLabel, aircraftFor, hasNamedNavy } from '/shared/data/militaries.js';
 
@@ -13,10 +13,39 @@ const Stat = ({ label, value, pct, tone, hint }) => html`
 
 export function Inspector(props) {
   const { state, selected, selZone } = props;
+  if (typeof selected === 'string' && selected.startsWith('bloc:') && state.blocs[selected.slice(5)]) return html`<${FactionCard} ...${props} bloc=${selected.slice(5)} />`;
   if (selected && isOOB(selected)) return html`<div class="pane inspector"><div class="empty">${OOB_ERROR}</div></div>`;
   if (selected && state.countries[selected]) return html`<${CountryCard} ...${props} />`;
   if (selZone && SEA_ZONES[selZone]) return html`<${ZoneCard} ...${props} />`;
   return html`<${WorldOverview} ...${props} />`;
+}
+
+// Faction view: a whole bloc, and a full war against another one without picking countries.
+function FactionCard({ conn, state, bloc, setSelected }) {
+  const b = state.blocs[bloc], others = Object.entries(state.blocs).filter(([k]) => k !== bloc && k !== 'N');
+  const [foe, setFoe] = useState(() => (others[0] || [])[0]);
+  const [scope, setScope] = useState('all');
+  const members = Object.values(state.countries).filter(c => c.bloc === bloc && !c.rebelOf && !isOOB(c.id));
+  const majors = members.filter(c => c.major).sort((x, y) => y.base.gdp - x.base.gdp);
+  const byTheater = Object.keys(THEATERS).map(t => [t, members.filter(c => theaterOf(c) === t).length]).filter(([, n]) => n > 0);
+  const foeMembers = Object.values(state.countries).filter(c => c.bloc === foe && !c.rebelOf && !isOOB(c.id));
+  const inScope = c => scope === 'all' || theaterOf(c) === scope;
+  const wars = state.wars.filter(w => { const x = state.countries[w.a], y = state.countries[w.b]; return x && y && ((x.bloc === bloc && y.bloc === foe) || (x.bloc === foe && y.bloc === bloc)); });
+  return html`<div class="pane inspector">
+    <div class="insp-head" style=${`--bloc:${b.color}`}><div class="grow"><div class="insp-name">${b.name}</div><div class="dim small">${members.length} countries · ${majors.length} major powers</div></div>
+      <button class="btn xs ghost" onClick=${() => setSelected(null)}>✕</button></div>
+    <div class="sub-h">Members</div>
+    <div class="row wrap small" style="gap:4px">${majors.slice(0, 14).map(c => html`<span class="chip">${c.name}</span>`)}${members.length > majors.length && html`<span class="dim">+${members.length - majors.length} more</span>`}</div>
+    <div class="sub-h">Full war</div>
+    ${others.length === 0 ? html`<p class="pane-hint">There is no other faction to fight.</p>` : html`<div class="col" style="gap:8px">
+      <label class="field">Against<select class="input" value=${foe} onChange=${e => setFoe(e.target.value)}>${others.map(([k, o]) => html`<option value=${k}>${o.name}</option>`)}</select></label>
+      <label class="field">Where<select class="input" value=${scope} onChange=${e => setScope(e.target.value)}><option value="all">The whole world</option>${byTheater.map(([t, n]) => html`<option value=${t}>${THEATERS[t]} (${n} of ${b.name.split(' ')[0]})</option>`)}</select></label>
+      <div class="dim small">${members.filter(inScope).length} v ${foeMembers.filter(inScope).length} countries${wars.length ? ` · ${wars.length} wars already between them` : ''}</div>
+      <div class="row wrap" style="gap:6px">
+        <button class="btn sm danger" disabled=${!foe} onClick=${() => run(conn, { type: 'factionWar', a: bloc, b: foe, theater: scope }, `Full war: ${b.name} v ${state.blocs[foe]?.name}`)}>⚔ Begin full war</button>
+        <button class="btn sm" disabled=${!wars.length} onClick=${() => run(conn, { type: 'factionPeace', a: bloc, b: foe, theater: scope }, 'Faction ceasefire')}>🕊 End it</button>
+      </div></div>`}
+  </div>`;
 }
 
 function CountryCard({ conn, state, selected: id, setSelected, startOrder, kronos, setBrush }) {

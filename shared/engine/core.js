@@ -81,15 +81,31 @@ export function aggressorOf(state, a, b) {
   return w ? (w.aggressor ?? w.a) : null;
 }
 
-// A world war: two big blocs (A and B) with at least three wars between their members. Their fronts are drawn as one
-// line per bloc, under the bloc's flag. Returns the two bloc keys, or null.
-export function worldWarBlocs(state) {
-  let n = 0;
+// Theatres: where a war is fought. A country belongs to the theatre its capital is in.
+export const THEATERS = { europe: 'European theatre', mideast: 'Middle East', asia: 'Indo-Pacific', south: 'South Asia', africa: 'Africa', americas: 'The Americas' };
+export function theaterOf(c) {
+  if (!c || c.lat == null) return null;
+  const { lat, lon } = c;
+  if (lon < -30 && lon > -170) return 'americas';
+  if (lat >= 34 && lon >= -25 && lon <= 45 && !(lat < 42 && lon > 26)) return 'europe';
+  if (lat >= 12 && lat <= 42 && lon > 25 && lon <= 62) return 'mideast';
+  if (lon > 62 && lon <= 93) return 'south';
+  if (lon > 93 || lon <= -170) return 'asia';
+  if (lat < 38 && lon >= -20 && lon <= 52) return 'africa';
+  return null;
+}
+
+// Theatres in full conflict: at least three wars between members of blocs A and B inside the theatre, or one the Zeus
+// opened as a faction war. Their fronts are drawn as one line per bloc, under the bloc's flag. Returns a Set of theatre keys.
+export function fullWarTheaters(state) {
+  const count = {}, out = new Set();
+  const cross = (a, b) => (a.bloc === 'A' && b.bloc === 'B') || (a.bloc === 'B' && b.bloc === 'A');
   for (const w of state.wars || []) {
-    const a = state.countries[w.a], b = state.countries[w.b]; if (!a || !b || a.rebelOf || b.rebelOf) continue;
-    if ((a.bloc === 'A' && b.bloc === 'B') || (a.bloc === 'B' && b.bloc === 'A')) n++;
+    const a = state.countries[w.a], b = state.countries[w.b]; if (!a || !b || a.rebelOf || b.rebelOf || !cross(a, b)) continue;
+    for (const t of new Set([theaterOf(a), theaterOf(b)])) if (t) count[t] = (count[t] || 0) + 1;
   }
-  return n >= 3 ? ['A', 'B'] : null;
+  for (const [t, n] of Object.entries(count)) if (n >= 3 || state.global?.theaterWar?.[t]) out.add(t);
+  return out;
 }
 
 export function atWar(state, a, b) {

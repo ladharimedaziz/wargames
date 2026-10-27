@@ -7,7 +7,7 @@ import { CELL, NI } from '../../shared/engine/control.js';
 import { applyScenario } from '../../shared/engine/scenarios.js';
 import { applyAction } from '../../shared/engine/reducer.js';
 import { parseCommand } from '../../shared/engine/command.js';
-import { atWar, relation, warClosures } from '../../shared/engine/core.js';
+import { atWar, relation, warClosures, fullWarTheaters } from '../../shared/engine/core.js';
 import { validateOrder, autoUnits } from '../../shared/engine/orders.js';
 
 const gi = { ids: geo.atlasCountryIds(), name: geo.atlasName, anchor: geo.anchorOf, neighbors: geo.neighborsOf };
@@ -426,6 +426,21 @@ test('the Cold War map splits Germany: East Germany is its own country, the mode
   assert.equal(s.countries['278'].bloc, 'B');
   assert.equal(s.countries['276'].bloc, 'A');
   assert.ok(Object.values(s.units).some(u => u.owner === '278'));
+});
+
+test('faction war: a theatre fight, a world fight, and a ceasefire', () => {
+  const { s, zeus } = world();
+  const r = zeus({ type: 'factionWar', a: 'A', b: 'B', theater: 'europe' });
+  assert.ok(r.ok, r.error);
+  assert.ok(atWar(s, '276', '643') || atWar(s, '616', '276') || s.wars.length > 3, 'European members are at war');
+  assert.ok(!atWar(s, '840', '156'), 'a European war does not drag in East Asia');
+  assert.ok(fullWarTheaters(s).has('europe') && !fullWarTheaters(s).has('asia'));
+  assert.ok(zeus({ type: 'factionPeace', a: 'A', b: 'B', theater: 'europe' }).ok);
+  assert.equal(fullWarTheaters(s).size, 0);
+  assert.equal(zeus({ type: 'factionWar', a: 'A', b: 'A' }).ok, false);
+  assert.ok(zeus({ type: 'factionWar', a: 'A', b: 'B' }).ok);
+  assert.ok(atWar(s, '840', '643'), 'major powers fight everywhere in a world war');
+  assert.ok(zeus({ type: 'resolveTurn' }).ok, 'the turn resolves with a faction war on');
 });
 
 test('a war only closes airspace that is contested and within the enemy\'s reach', () => {
