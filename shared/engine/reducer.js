@@ -7,13 +7,14 @@ import {
   UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures, isOOB, OOB_ERROR, aggressorOf, enemiesOf, unVoters, aiVote,
 } from './core.js';
 import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.js';
-import { resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
+import { OP_KINDS, resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
 import { bindGeo, hasGeo, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter, mainland } from './control.js';
 import { courtActions } from './court.js';
+import { councilActions } from './council.js';
 import { joinText } from './ai.js';
 import { endingDetail } from './endings.js';
 
-const SCENES = ['map', 'disguise', 'intro', 'reveal', 'ending', 'report', 'blank', 'pause', 'vote', 'treaty', 'polls', 'web', 'court'];
+const SCENES = ['map', 'disguise', 'intro', 'reveal', 'ending', 'report', 'blank', 'pause', 'vote', 'treaty', 'polls', 'web', 'court', 'council'];
 const STAT_FIELDS = { gdp: [0.5, 1e6], treasury: [-1e5, 1e5], support: [0, 100], stability: [0, 100], industry: [0.05, 1.2], energy: [0.05, 1.2], damage: [0, 1], inflation: [-2, 80], airDefense: [0, 12], influence: [0, 100] };
 const DISASTERS = {
   earthquake: { en: 'A major earthquake strikes', ar: 'زلزال قوي يضرب', gdp: 0.04, industry: 0.12, support: 3 },
@@ -95,9 +96,9 @@ const WORLD = {
   // War fronts: the Zeus decides whether each front advances, holds or falls back, or moves it right now.
   frontMode: { perm: 'zeus', run(s, a, ctx) {
     const c = C(s, a.country); if (!c?.front) return err('There is no front in that country.');
-    if (!['auto', 'advance', 'hold', 'retreat'].includes(a.mode)) return err('Unknown front order.');
+    if (!['auto', 'advance', 'encircle', 'hold', 'retreat'].includes(a.mode)) return err('Unknown front order.');
     c.front.mode = a.mode;
-    log(s, ctx, `${C(s, c.front.by).name}'s front in ${c.name}: ${{ auto: 'left to the battle', advance: 'ordered to advance', hold: 'ordered to hold', retreat: 'ordered to fall back' }[a.mode]}`);
+    log(s, ctx, `${C(s, c.front.by).name}'s front in ${c.name}: ${{ auto: 'left to the battle', advance: 'ordered to advance', encircle: 'ordered to encircle the capital', hold: 'ordered to hold', retreat: 'ordered to fall back' }[a.mode]}`);
     return ok();
   } },
   frontPush: { perm: 'zeus', run(s, a, ctx) {
@@ -498,12 +499,14 @@ const WORLD = {
   civilWar: { perm: 'zeus', run(s, a, ctx) {
     const P = C(s, a.country); if (!P) return err('Pick the country that splits.');
     if (P.rebelOf) return err('Rebels cannot split again.');
-    const id = `${P.id}r`;
-    if (s.countries[id] && s.countries[id].control !== 'inactive' && atWar(s, id, P.id)) return err(`${P.name} is already in a civil war.`);
+    // Several factions can rise in one country: Xr, Xr2, Xr3 …
+    let nth = 1, id = `${P.id}r`;
+    while (s.countries[id] && s.countries[id].control !== 'inactive' && atWar(s, id, P.id)) { nth++; id = `${P.id}r${nth}`; }
+    if (nth > 6) return err(`${P.name} already has six factions.`);
     const share = clamp(Number(a.share) || 30, 5, 80);
     const name = String(a.name || '').trim().slice(0, 40) || `${P.name} Rebels`;
     const ar = String(a.ar || '').trim().slice(0, 40) || `متمردو ${P.ar}`;
-    const bloc = BLOCS.includes(a.bloc) ? a.bloc : (P.bloc === 'A' ? 'B' : P.bloc === 'B' ? 'A' : 'C');
+    const bloc = nth > 1 ? 'N' : BLOCS.includes(a.bloc) ? a.bloc : (P.bloc === 'A' ? 'B' : P.bloc === 'B' ? 'A' : 'C');
     const R = {
       ...structuredClone(P), id, a3: `${P.a3}-R`, name, ar, rebelOf: P.id, bloc, control: 'ai', delegate: '',
       base: { ...P.base, gdp: P.base.gdp * share / 100, pop: P.base.pop * share / 100 }, gdp: P.gdp * share / 100, treasury: Math.round(Math.max(0, P.treasury) * 0.1),
@@ -512,7 +515,9 @@ const WORLD = {
     };
     s.countries[id] = R;
     // Rebels border everything the country borders, and the country itself.
-    s.adjacency[id] = [...new Set([P.id, ...(s.adjacency[P.id] || [])])];
+    const kin = Object.keys(s.countries).filter(k => s.countries[k].rebelOf === P.id && k !== id);
+    s.adjacency[id] = [...new Set([P.id, ...kin, ...(s.adjacency[P.id] || [])])];
+    for (const k of kin) if (s.adjacency[k] && !s.adjacency[k].includes(id)) s.adjacency[k].push(id);
     for (const n of s.adjacency[id]) if (s.adjacency[n] && !s.adjacency[n].includes(id)) s.adjacency[n].push(id);
     // A share of the army defects.
     const armies = Object.values(s.units).filter(u => u.owner === P.id && u.type === 'army' && u.loc.kind === 'country' && u.loc.id === P.id);
@@ -548,6 +553,77 @@ const WORLD = {
     log(s, ctx, `Civil war: ${name} break away from ${P.name}`);
     return ok({ broadcastAnim: true });
   } },
+  restoreRegime: { perm: 'kronos', run(s, a) { const c = C(s, a.country); if (!c || !c.origName) return err('No coup to undo.'); c.name = c.origName; delete c.origName; delete c.altFlag; return ok(); } },
+  // A coup, planned per country: the new regime's name and flag, then success or failure on Kronos's word.
+  setCoupPlan: { perm: 'kronos', run(s, a) {
+    const c = C(s, a.country); if (!c) return err('Pick a country.');
+    const f = a.flag, okFlag = f && typeof f.pat === 'string' && Array.isArray(f.c) && f.c.length === 3 && f.c.every(x => /^#[0-9a-f]{6}$/i.test(x));
+    c.coupPlan = { regime: String(a.regime || '').trim().slice(0, 48), flag: okFlag ? { pat: f.pat.slice(0, 16), c: f.c } : null, bloc: BLOCS.includes(a.bloc) ? a.bloc : null };
+    return ok();
+  } },
+  coup: { perm: 'kronos', run(s, a, ctx) {
+    const c = C(s, a.country); if (!c) return err('Pick a country.');
+    const plan = c.coupPlan || {}, win = a.outcome !== 'fail';
+    if (win) {
+      c.origName ||= c.name; if (plan.regime) c.name = plan.regime;
+      if (plan.flag) c.altFlag = plan.flag;
+      if (plan.bloc) c.bloc = plan.bloc;
+      c.roe = 'forward'; c.support = 35; c.stability = clamp(c.stability - 30, 0, 100); c.gdp = Math.max(0.5, c.gdp * 0.97);
+      news(s, ctx, `Military coup in ${c.origName || c.name}: officers declare ${c.name}`, `انقلاب عسكري في ${c.ar}`, 7);
+    } else {
+      c.stability = clamp(c.stability - 12, 0, 100); c.support = clamp(c.support + 6, 0, 100);
+      news(s, ctx, `Coup attempt crushed in ${c.name}; plotters arrested`, `إحباط محاولة انقلاب في ${c.ar}`, 6);
+    }
+    log(s, ctx, `Kronos: coup in ${c.name} ${win ? 'succeeds' : 'fails'}`);
+    sandboxFx(s, ctx, [{ kind: 'act', act: 'coup', country: c.id, at: at(c), ok: win, flag: win ? plan.flag : null }]);
+    return ok({ broadcastAnim: true });
+  } },
+  // Ready-made factions for the Americas committee: several armed groups rise in Mexico, at war with the state and each other.
+  seedFactions: { perm: 'zeus', run(s, a, ctx) {
+    const P = C(s, '484'); if (!P) return err('Mexico is not on this map.');
+    if (Object.values(s.countries).some(f => f.rebelOf === P.id)) return err('Mexico already has armed factions.');
+    const SET = [
+      { name: 'Sinaloa Federation', at: { lat: 25.0, lon: -107.4 }, share: 12, flag: { pat: 'hband', c: ['#1e8a4c', '#f4f4f0', '#111111'] } },
+      { name: 'Jalisco New Generation', at: { lat: 20.6, lon: -103.4 }, share: 12, flag: { pat: 'chevron', c: ['#b3202a', '#111111', '#f0c419'] } },
+      { name: 'Gulf Cartel', at: { lat: 25.8, lon: -98.3 }, share: 9, flag: { pat: 'vband', c: ['#1f4e9c', '#f4f4f0', '#e07b1a'] } },
+      { name: 'Northeast Cartel', at: { lat: 27.5, lon: -101.0 }, share: 9, flag: { pat: 'canton', c: ['#6a2c91', '#f4f4f0', '#111111'] } },
+    ];
+    const ids = [];
+    for (const f of SET) {
+      const r = WORLD.civilWar.run(s, { country: P.id, share: f.share, name: f.name, at: f.at, bloc: 'N' }, ctx);
+      if (r.error) return r;
+      const id = Object.keys(s.countries).filter(k => s.countries[k].rebelOf === P.id).pop();
+      s.countries[id].altFlag = f.flag; ids.push(id);
+    }
+    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) { s.wars.push({ a: ids[i], b: ids[j], since: s.meta.turn, civil: true }); shiftRelation(s, ids[i], ids[j], -100); }
+    return ok({ broadcastAnim: true });
+  } },
+  // Factions of one civil war: set how any two of them (or a faction and the government) treat each other.
+  factionStance: { perm: 'zeus', run(s, a, ctx) {
+    const A = C(s, a.a), B = C(s, a.b); if (!A || !B || A.id === B.id) return err('Pick two factions.');
+    const root = x => x.rebelOf || x.id;
+    if (root(A) !== root(B)) return err('Both must belong to the same civil war.');
+    const i = s.wars.findIndex(w => (w.a === A.id && w.b === B.id) || (w.a === B.id && w.b === A.id));
+    if (a.stance === 'war') { if (i < 0) { s.wars.push({ a: A.id, b: B.id, since: s.meta.turn, civil: true }); shiftRelation(s, A.id, B.id, -100); } }
+    else if (a.stance === 'peace' || a.stance === 'ally') {
+      if (i >= 0) s.wars.splice(i, 1);
+      if (a.stance === 'ally') { shiftRelation(s, A.id, B.id, 100); if (!s.treaties.some(t => t.type === 'alliance' && t.parties.includes(A.id) && t.parties.includes(B.id))) s.treaties.push({ type: 'alliance', parties: [A.id, B.id], turn: s.meta.turn }); }
+    } else return err('War, peace or alliance.');
+    log(s, ctx, `${A.name} and ${B.name}: ${a.stance}`);
+    return ok();
+  } },
+  // A foreign power backs one side of a civil war: it goes to war with that side's enemies.
+  civilAssist: { perm: 'zeus', run(s, a, ctx) {
+    const X = C(s, a.country), S = C(s, a.side); if (!X || !S) return err('Pick a country and a side.');
+    const root = S.rebelOf || S.id; if (X.id === root || X.rebelOf === root) return err('That country is part of the civil war.');
+    const foes = Object.values(s.countries).filter(f => (f.id === root || f.rebelOf === root) && f.id !== S.id && atWar(s, f.id, S.id));
+    if (!foes.length) return err('That side is not fighting anyone.');
+    const ev = [];
+    for (const f of foes) { if (!atWar(s, X.id, f.id)) declareWar(s, X.id, f.id, ev, 'declared'); shiftRelation(s, X.id, S.id, 40); }
+    publishInstant(s, ev, ctx);
+    log(s, ctx, `${X.name} backs ${S.name} in the civil war`);
+    return ok({ broadcastAnim: true });
+  } },
   setRelation: { perm: 'kronos', run(s, a) { if (!C(s, a.a) || !C(s, a.b)) return err('Pick two countries.'); s.relations[[a.a, a.b].sort().join('|')] = clamp(Number(a.value) || 0, -100, 100); return ok(); } },
   setChokepoint: { perm: 'kronos', run(s, a) {
     const cp = s.global.chokepoints[a.zone]; if (!cp) return err('Not a chokepoint.');
@@ -573,6 +649,20 @@ const WORLD = {
   setNuclearExchange: { perm: 'kronos', run(s, a) { s.settings.nuclearExchange = !!a.value; return ok(); } },
   // War options Kronos can switch off: computer fleets sailing and hunting on their own, combined-arms bonuses.
   setWarOption: { perm: 'kronos', run(s, a) { if (!['autoNavy', 'combinedArms'].includes(a.key)) return err('Unknown option.'); s.settings[a.key] = !!a.value; return ok(); } },
+  // Standing operations: a bombing campaign, air patrols, drone raids or a combined-arms invasion that repeat every turn.
+  setOp: { perm: 'zeus', run(s, a, ctx) {
+    const c = C(s, a.country); if (!c) return err('Unknown country.');
+    if (!OP_KINDS.includes(a.kind)) return err('Unknown operation.');
+    if (a.kind === 'drones' && s.settings.year && s.settings.year < 2000) return err('There are no combat drones in 1985.');
+    s.ops ||= [];
+    const same = o => o.country === c.id && o.kind === a.kind && (a.kind === 'patrol' || o.target === a.target);
+    if (a.on === false) { s.ops = s.ops.filter(o => !same(o)); return ok(); }
+    if (a.kind !== 'patrol') { const T = C(s, a.target); if (!T || T.id === c.id) return err('Pick a target country.'); if (sameSide(s, c.id, T.id)) return err(`${T.name} is on the same side as ${c.name}.`); }
+    if (s.ops.some(same)) return ok();
+    s.ops.push({ id: newId(s, 'op'), k: s.ops.length % 4, country: c.id, target: a.kind === 'patrol' ? null : a.target, kind: a.kind, since: s.meta.turn, fresh: true });
+    log(s, ctx, `${c.name}: standing operation ${a.kind}${a.target ? ` against ${C(s, a.target).name}` : ''}`);
+    return ok();
+  } },
   setAiNukes: { perm: 'kronos', run(s, a) { s.settings.aiNukes = !!a.value; return ok(); } },
   disaster: { perm: 'kronos', run(s, a, ctx) {
     const c = C(s, a.country), d = DISASTERS[a.kind]; if (!c || !d) return err('Pick a country and event.');
@@ -671,7 +761,9 @@ const COMMON = {
   rename: { perm: 'kronos', run(s, a) { const n = String(a.name || '').trim().slice(0, 60); if (!n) return err('Give it a name.'); s.name = n; return ok(); } },
 };
 
+const SHARED_STAGE = ['setScene', 'setBanner', 'setSetting', 'timerSet', 'timerStart', 'timerPause', 'timerReset', 'timerAdd', 'timerHide', 'noteAdd', 'kronosBanner', 'setKronosNote'];
 export function actionsFor(state) {
+  if (state.mode === 'council') return { ...COMMON, ...councilActions, ...pick(WORLD, SHARED_STAGE) };
   return { ...COMMON, ...(state.mode === 'court' ? { ...courtActions, ...pick(WORLD, ['setScene', 'setBanner', 'setSetting', 'timerSet', 'timerStart', 'timerPause', 'timerReset', 'timerAdd', 'timerHide', 'noteAdd', 'kronosBanner', 'setKronosNote', 'playEnding']) } : WORLD) };
 }
 

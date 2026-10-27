@@ -69,22 +69,23 @@ function CommitteeCard({ conn, c, enter, dm }) {
   const act = (action, ok) => conn.act(action, c.id).then(r => { if (!r.ok) toast(r.error, 'error'); else if (ok) toast(ok, 'good'); });
   const t = c.tension ?? 0;
   const rem = timerRemaining(c.timer, now);
-  const other = c.mode === 'court' ? 'world' : 'court';
-  const reset = async mode => { const r = await conn.request({ t: 'reset', committee: c.id, mode }); toast(r.ok ? (mode === c.mode ? `${c.name} has been reset.` : `${c.name} is now a ${mode === 'court' ? 'court' : 'world crisis'} committee.`) : r.error, r.ok ? 'good' : 'error'); setConfirm(false); };
+  const [pick, setPick] = useState('');
+  const reset = async preset => { const r = await conn.request({ t: 'reset', committee: c.id, preset: preset || undefined }); toast(r.ok ? (preset ? `${c.name} is now ${PRESETS.find(p => p[0] === preset)?.[1] || preset}.` : `${c.name} has been reset.`) : r.error, r.ok ? 'good' : 'error'); setConfirm(false); setPick(''); };
   return html`
     <div class=${cls('k-card-c card', c.eye && 'watching', c.locked && 'frozen')}>
       <div class="kc-top">
         <div class="grow">
           ${renaming ? html`<form onSubmit=${e => { e.preventDefault(); act({ type: 'rename', name }); setRenaming(false); }}><input class="input sm" value=${name} onInput=${e => setName(e.target.value)} autofocus onBlur=${() => setRenaming(false)} /></form>`
             : html`<div class="kc-name" onDblClick=${() => setRenaming(true)} title="Double-click to rename">${c.name}</div>`}
-          <div class="dim small">${c.mode === 'court' ? 'Court' : 'World'} · ${c.id}${c.mode === 'world' ? ` · turn ${c.turn} · ${c.clock}` : c.court ? ` · ${c.court.phase}` : ''}</div>
+          <div class="dim small">${c.mode === 'court' ? 'Court' : c.mode === 'council' ? 'Council' : c.preset === 'cold85' ? 'Cold War 1985' : c.preset === 'latam' ? 'Americas' : 'World'} · ${c.id}${c.mode === 'world' ? ` · turn ${c.turn} · ${c.clock}` : c.court ? ` · ${c.court.phase}` : c.council?.vote ? ` · vote ${c.council.vote}` : ''}</div>
         </div>
-        ${c.mode === 'world' && html`<div class="kc-ring" style=${`--p:${t * 10};--c:${t >= 8 ? '#ff4d5e' : t >= 6 ? '#ff7a45' : t >= 4 ? '#ffb224' : '#3ddc97'}`}><b>${t}</b><span>${c.tensionName}</span></div>`}
+        ${c.mode === 'world' && html`<div class="kc-ring" style=${`--p:${t * 10};--c:${t >= 8 ? '#e2574a' : t >= 6 ? '#ff7a45' : t >= 4 ? '#d9a441' : '#7fbf9a'}`}><b>${t}</b><span>${c.tensionName}</span></div>`}
       </div>
       <div class="kc-stats">
         <div><span class="dim small">Zeus online</span><b>${c.online.length ? c.online.map(o => o.user.replace(`${c.id}-`, '') + (o.view === 'display' ? ' (display)' : '')).join(', ') : html`<span class="neg">nobody</span>`}</b></div>
         <div><span class="dim small">On stage</span><b>${c.scene}</b></div>
         ${c.mode === 'world' ? html`<div><span class="dim small">Wars · Delegates</span><b>${c.wars} · ${c.players}</b></div><div><span class="dim small">Waiting news</span><b class=${c.pending ? 'gold-t' : ''}>${c.pending}</b></div>`
+          : c.mode === 'council' ? html`<div><span class="dim small">Speaking</span><b>${c.council?.speaker || '—'}</b></div><div><span class="dim small">Alert on screen</span><b>${c.council?.alert || '—'}</b></div>`
           : html`<div><span class="dim small">Speaking</span><b>${c.court?.speaker || '—'}</b></div><div><span class="dim small">Verdict</span><b>${c.court?.verdict ? 'Revealed' : 'Pending'}</b></div>`}
         ${(c.timer?.running || rem > 0) && html`<div><span class="dim small">${c.timer.label || 'Timer'}</span><b class="mono">${fmt.clock(rem)}</b></div>`}
       </div>
@@ -96,11 +97,15 @@ function CommitteeCard({ conn, c, enter, dm }) {
         <button class="btn sm" onClick=${dm}>✉${c.unread ? html` <i class="badge inline">${c.unread}</i>` : ''}</button>
         <button class="btn sm ghost" onClick=${() => window.open(`/display?c=${c.id}`, `display-${c.id}`, 'width=1280,height=720')} title="Watch their stage display">▣</button>
         <div class="grow"></div>
-        ${confirm ? html`<button class="btn xs" onClick=${() => setConfirm(false)}>Cancel</button><button class="btn xs ghost" onClick=${() => reset(other)} title="Start over as the other kind of committee">Make it a ${other === 'court' ? 'court' : 'world crisis'}</button><button class="btn xs solid-danger" onClick=${() => reset(c.mode)}>Reset</button>`
+        ${confirm ? html`<button class="btn xs" onClick=${() => { setConfirm(false); setPick(''); }}>Cancel</button>
+          <select class="input sm" style="width:190px" value=${pick} onChange=${e => setPick(e.target.value)} title="Start over as another kind of committee"><option value="">Same kind</option>${PRESETS.map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select>
+          <button class="btn xs solid-danger" onClick=${() => reset(pick)}>${pick ? 'Switch and start' : 'Reset'}</button>`
           : html`<button class="btn xs ghost" onClick=${() => setConfirm(true)}>Reset…</button>`}
       </div>
     </div>`;
 }
+
+const PRESETS = [['modern', 'World crisis · today'], ['cold85', 'World crisis · Cold War 1985'], ['latam', 'World crisis · Americas detail'], ['court', 'Court of justice'], ['who', 'WHO · Human genetic editing'], ['disec', 'DISEC · Chemical weapons'], ['unhcr', 'UNHCR · Sea-level statelessness'], ['gotham', 'Gotham · Arkham has fallen']];
 
 function GlobalControls({ conn }) {
   const [g, setG] = useState(conn.global);

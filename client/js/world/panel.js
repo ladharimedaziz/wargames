@@ -65,7 +65,7 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
   }, []);
 
   return html`
-    <div class=${cls('shell', kronos && 'is-kronos', state.kronos.locked && !kronos && 'is-locked')}>
+    <div class=${cls('shell', state.settings.year && 'era-cold', kronos && 'is-kronos', state.kronos.locked && !kronos && 'is-locked')}>
       <${TopBar} conn=${conn} user=${user} state=${state} logout=${logout} onBack=${onBack} pending=${pending} unread=${unread} openDm=${() => setDmOpen(true)} committee=${committee} />
       <div class="body">
         <nav class="rail">
@@ -166,7 +166,7 @@ function MapView({ conn, state, selected, onSelect, layers, picking, brush }) {
     <div class=${cls('map', picking && 'picking')} ref=${ref}></div>
     ${tip && (c || z) && html`<div class="map-tip" ref=${tipRef} style=${`left:${tip.x + 14}px;top:${tip.y + 14}px`}>
       ${c ? html`
-        <div class="row"><i class="dot" style=${`background:${state.blocs[c.bloc].color}`}></i><b>${c.name}</b><span class="dim ar">${c.ar}</span></div>
+        <div class="row"><i class="dot" style=${`background:${state.blocs[c.bloc].color}`}></i><b>${c.name}</b></div>
         <div class="tip-grid">
           <span>Control</span><b>${c.control === 'player' ? `Delegate${c.delegate ? ` · ${c.delegate}` : ''}` : c.control === 'ai' ? 'Computer' : 'Inactive'}</b>
           <span>Bloc</span><b>${state.blocs[c.bloc].name}</b>
@@ -177,7 +177,7 @@ function MapView({ conn, state, selected, onSelect, layers, picking, brush }) {
           ${c.occupiedBy && html`<span>Occupied</span><b class="neg">by ${state.countries[c.occupiedBy]?.name}</b>`}
           ${state.global.closedAirspace[c.id] && html`<span>Airspace</span><b class="neg">Closed</b>`}
         </div>` : html`
-        <div class="row"><b>${z.name}</b><span class="dim ar">${z.ar}</span></div>
+        <div class="row"><b>${z.name}</b></div>
         ${z.choke && html`<div class="tip-grid"><span>Chokepoint</span><b class=${state.global.chokepoints[tip.zone]?.status !== 'open' ? 'neg' : 'pos'}>${state.global.chokepoints[tip.zone]?.status}</b><span>Oil impact</span><b>+$${z.oil}/bbl if closed</b></div>`}`}
       ${picking && html`<div class="tip-pick">Click to choose as ${picking}</div>`}
     </div>`}`;

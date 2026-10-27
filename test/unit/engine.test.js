@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as geo from '../../server/geo-index.js';
 import { createWorldState, createCourtState } from '../../shared/engine/state.js';
+import { CELL, NI } from '../../shared/engine/control.js';
 import { applyAction } from '../../shared/engine/reducer.js';
 import { parseCommand } from '../../shared/engine/command.js';
 import { atWar, relation, warClosures } from '../../shared/engine/core.js';
@@ -358,7 +359,7 @@ test('fronts are ground held cell by cell, and both sides push the same line', (
 test('a Zeus paints ground for a side and hands it back', () => {
   const { s, zeus, kronos } = world();
   const keys = [];
-  for (let lon = 30; lon < 32; lon += 0.3) for (let lat = 48; lat < 49.5; lat += 0.3) keys.push(Math.floor((90 - lat) / 0.3) * 1200 + Math.floor((lon + 180) / 0.3));
+  for (let lon = 30; lon < 32; lon += CELL) for (let lat = 48; lat < 49.5; lat += CELL) keys.push(Math.floor((90 - lat) / CELL) * NI + Math.floor((lon + 180) / CELL));
   assert.equal(zeus({ type: 'paintControl', owner: RU, keys, mode: 'take' }).ok, false, 'not at war: nothing to take');
   kronos({ type: 'forceWar', a: RU, b: UA });
   assert.ok(zeus({ type: 'paintControl', owner: RU, keys, mode: 'take' }).ok);
@@ -472,4 +473,43 @@ test('Israel, Palestine and Saudi Arabia are out of bounds', () => {
   assert.ok(zeus({ type: 'resolveTurn' }).ok);
   assert.ok(!s.wars.some(w => w.a === IL || w.b === IL));
   assert.ok(!s.units.uX);
+});
+
+test('a council committee runs a floor, a draft vote and a crisis alert', async () => {
+  const { createCouncilState } = await import('../../shared/engine/state.js');
+  const s = createCouncilState({ id: 'c', name: 'Council', seed: 3 }, 'gotham');
+  let now = 5_000_000;
+  const z = a => applyAction(s, a, { role: 'stage', user: 'x', now: (now += 1000), geo });
+  assert.equal(s.mode, 'council');
+  assert.ok(s.council.seats.length > 10 && s.council.map === 'gotham');
+  const [a, b] = s.council.seats.filter(x => x.kind === 'delegation');
+  assert.ok(z({ type: 'setSpeaker', seat: a.id }).ok);
+  assert.ok(z({ type: 'queueAdd', seat: b.id }).ok);
+  assert.equal(z({ type: 'queueNext' }).speaker, b.id);
+  const d = z({ type: 'addDraft', title: 'Seal the bridges', sponsors: 'Mayor', clauses: 'One\nTwo' }).draft;
+  assert.equal(d.clauses.length, 2);
+  assert.ok(z({ type: 'openVote', id: d.id }).ok);
+  assert.ok(z({ type: 'castAll', value: 'yes' }).ok);
+  z({ type: 'castVote', seat: a.id, value: 'no' });
+  assert.ok(z({ type: 'closeVote' }).passed);
+  assert.equal(s.council.drafts.find(x => x.id === d.id).status, 'passed');
+  assert.ok(z({ type: 'alert', title: 'Bridge down', level: 'critical' }).ok && s.council.alert.level === 'critical');
+  assert.ok(z({ type: 'setDistrict', id: 'arkham', status: 'lost' }).ok && s.council.districts.arkham.status === 'lost');
+  assert.equal(z({ type: 'addMarker', x: 5000, y: 5 }).ok, false, 'markers stay on the map');
+  assert.equal(z({ type: 'forceWar', a: '643', b: '804' }).ok, false, 'world actions are not available here');
+});
+
+test('a cold war committee starts in 1985 without drones or stealth', async () => {
+  const { applyScenario } = await import('../../shared/engine/scenarios.js');
+  const s = createWorldState({ id: 'cw', name: 'Cold', seed: 9 }, gi);
+  applyScenario(s, 'cold85');
+  const z = a => applyAction(s, a, { role: 'kronos', user: 'kronos', now: 9_000_000, geo });
+  assert.equal(s.countries['643'].name, 'Soviet Union');
+  assert.equal(s.countries['840'].bloc, 'A');
+  assert.equal(s.countries['643'].bloc, 'B');
+  assert.ok(Object.values(s.countries).every(c => !c.stealth));
+  assert.equal(s.countries['156'].bloc, 'C');
+  assert.equal(z({ type: 'setOp', country: '840', kind: 'drones', target: '643' }).ok, false);
+  const { validateOrder } = await import('../../shared/engine/orders.js');
+  assert.equal(validateOrder(s, { country: '840', type: 'drone', target: '643' }).ok, false);
 });

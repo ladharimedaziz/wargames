@@ -48,6 +48,8 @@ export function createHub(server, store, geo) {
       tension: s.global?.tension, tensionName: s.global ? tensionLevel(s.global.tension).name : null, oil: s.global?.oilPrice, wars: s.wars?.length,
       players: s.countries ? Object.values(s.countries).filter(c => c.control === 'player').length : 0,
       scene: s.display?.scene, eye: s.kronos.eye, locked: s.kronos.locked, pending,
+      council: s.council ? { title: s.council.title, speaker: s.council.seats.find(x => x.id === s.council.speaker)?.name || null, vote: s.council.vote ? (s.council.vote.open ? 'open' : s.council.vote.passed ? 'passed' : 'failed') : null, alert: s.council.alert?.title || null } : null,
+      preset: s.meta?.preset,
       court: s.court ? { phase: s.court.phases[s.court.phase], speaker: s.court.seats.find(x => x.id === s.court.speaker)?.name || null, verdict: !!s.court.verdict.revealedAt } : null,
       timer: s.timer,
       online: here.filter(c => c.user.role !== 'kronos').map(c => ({ user: c.user.username, view: c.view })),
@@ -160,9 +162,10 @@ export function createHub(server, store, geo) {
         const id = m.committee || c.committee;
         if (!id || !canAccess(user, id)) return ack(false, { error: 'No access.' });
         const st = m.state;
-        if (!st || typeof st !== 'object' || !st.meta || !['world', 'court'].includes(st.mode) || !st.kronos) return ack(false, { error: 'That file is not a World Engine save.' });
+        if (!st || typeof st !== 'object' || !st.meta || !['world', 'court', 'council'].includes(st.mode) || !st.kronos) return ack(false, { error: 'That file is not a World Engine save.' });
         if (st.mode === 'world' && (!st.countries || !st.units)) return ack(false, { error: 'That save is incomplete.' });
         if (st.mode === 'court' && !st.court) return ack(false, { error: 'That save is incomplete.' });
+        if (st.mode === 'council' && !st.council) return ack(false, { error: 'That save is incomplete.' });
         store.replace(id, st, user.username);
         broadcastState(id, { rewound: true });
         sendSnapshots(id);
@@ -220,7 +223,7 @@ export function createHub(server, store, geo) {
       }
       case 'reset': {
         if (!COMMITTEE_IDS.includes(m.committee)) return ack(false, { error: 'Unknown committee.' });
-        store.reset(m.committee, m.mode === 'court' ? 'court' : m.mode === 'world' ? 'world' : undefined, user.username);
+        store.reset(m.committee, typeof m.preset === 'string' ? m.preset : m.mode === 'court' ? 'court' : m.mode === 'world' ? 'world' : undefined, user.username);
         broadcastState(m.committee, { rewound: true });
         sendSnapshots(m.committee);
         return ack(true);
@@ -228,7 +231,7 @@ export function createHub(server, store, geo) {
       case 'resetAll': {
         // Every committee starts over in its current mode and name. Each one keeps a "Before reset" save point.
         for (const id of COMMITTEE_IDS) {
-          store.reset(id, store.get(id).mode === 'court' ? 'court' : 'world', user.username);
+          store.reset(id, undefined, user.username);
           broadcastState(id, { rewound: true });
           sendSnapshots(id);
         }

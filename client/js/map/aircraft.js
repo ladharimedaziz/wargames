@@ -2,6 +2,7 @@
 // American strike aircraft get their own silhouettes and runs (B-2, F-117, B-52, B-1B), helicopters get AH-64
 // and CH-47 shapes for the US, paratroopers drop from transports, and every diplomatic or covert order has a
 // short animation. Nothing graphic: light, motion and labels.
+import { AIRCRAFT } from '/shared/data/militaries.js';
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ease = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
@@ -18,6 +19,10 @@ const SHAPES = {
   b52: [[1.1, 0], [0.95, 0.07], [0.3, 0.08], [-0.12, 1.32], [-0.28, 1.32], [-0.14, 0.08], [-0.82, 0.07], [-0.98, 0.46], [-1.1, 0.46], [-1.06, 0]],
   // Blended body with wings swept back for the dash.
   b1b: [[1.18, 0], [0.8, 0.08], [0.35, 0.16], [0.1, 0.36], [-0.48, 0.92], [-0.6, 0.88], [-0.28, 0.2], [-0.78, 0.16], [-0.98, 0.52], [-1.1, 0.52], [-1.08, 0]],
+  // Fighters: single-engine swept wing (F-16, F-35), twin-tail air superiority (F-15, Su-27 family, J-20), canard delta (Rafale, Typhoon, J-10).
+  single: [[1, 0], [0.3, 0.1], [0.0, 0.66], [-0.36, 0.66], [-0.3, 0.12], [-0.72, 0.1], [-0.86, 0.36], [-1, 0.36], [-0.95, 0]],
+  twin: [[1.08, 0], [0.4, 0.12], [0.1, 0.7], [-0.28, 0.72], [-0.3, 0.2], [-0.74, 0.22], [-0.84, 0.5], [-1, 0.5], [-1, 0.16], [-0.9, 0]],
+  delta: [[1, 0], [0.5, 0.1], [0.46, 0.34], [0.38, 0.36], [0.32, 0.1], [-0.1, 0.12], [-0.7, 0.7], [-0.9, 0.7], [-0.88, 0.1], [-0.96, 0]],
   // C-17 style transport: high straight wing, T-tail.
   transport: [[1, 0], [0.82, 0.12], [0.2, 0.14], [0.02, 1.1], [-0.16, 1.1], [-0.12, 0.14], [-0.76, 0.12], [-0.86, 0.42], [-0.98, 0.42], [-0.96, 0]],
 };
@@ -25,10 +30,10 @@ const LABEL = { b2: 'B-2 SPIRIT', f117: 'F-117 NIGHTHAWK', b52: 'B-52 STRATOFORT
 
 export const AIRCRAFT_FX = {
   drawModel(ctx, model, x, y, ang, s, color) {
-    const P = SHAPES[model]; if (!P) return this.drawBomber(ctx, x, y, ang, s, color);
+    const P = SHAPES[model] || SHAPES[AIRCRAFT[model]?.shape]; if (!P) return this.drawBomber(ctx, x, y, ang, s, color);
     this.silhouette(ctx, x, y, ang, s, color, P);
     // B-52: eight engines in four pods under the wings.
-    if (model === 'b52') {
+    if (model === 'b52' || AIRCRAFT[model]?.shape === 'b52') {
       ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.fillStyle = '#9aa3ae';
       for (const side of [-1, 1]) for (const f of [0.32, 0.68]) { const px = 0.18 - f * 0.42, py = side * (0.1 + f * 1.15); ctx.fillRect((px - 0.12) * s, (py - 0.04) * s, 0.22 * s, 0.08 * s); }
       ctx.restore();
@@ -150,6 +155,44 @@ export const AIRCRAFT_FX = {
   },
 
   // Paratroopers: transports cross at altitude and canopies open behind them, drifting down onto the drop zone.
+  // A drone raid: a loose swarm of small delta airframes, low and slow, fanning out toward the target. The ones air
+  // defences pick off burst into a spark mid-flight; the rest arrive one after another as small flashes.
+  fx_drone(ctx, fx, u, now) {
+    const e = fx.e, a = this.pt(e.from) || this.countryPoint(e.owner), b = this.pt(e.to) || this.countryPoint(e.target);
+    if (!a || !b) return;
+    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
+    const owner = this.state.countries[e.owner];
+    const col = owner && owner.bloc !== 'N' ? this.state.blocs[owner.bloc].color : '#cfd6df';
+    let dx = b[0] - a[0], dy = b[1] - a[1]; const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
+    const nx = -dy, ny = dx;
+    // A raid always has room to read: start well back from a close target.
+    const span = Math.max(len, 60 * sc), s0 = [b[0] - dx * span, b[1] - dy * span];
+    const n = Math.min(e.n || 8, 14), downed = Math.max(0, n - (e.hits || 0));
+    const seed = fx.seed || (fx.seed = Array.from({ length: n }, () => ({ lane: Math.random() * 2 - 1, wob: Math.random() * 6, lag: Math.random() * 0.14, kill: 0.45 + Math.random() * 0.25 })));
+    const T = 0.72;
+    for (let i = 0; i < n; i++) {
+      const d = seed[i], v = clamp((u - d.lag) / T, 0, 1); if (v <= 0) continue;
+      const shot = i < downed;
+      if (shot && v > d.kill) {
+        const w = (v - d.kill) / 0.12; if (w > 1) continue;
+        const x = s0[0] + (b[0] - s0[0]) * d.kill + nx * d.lane * 14 * sc, y = s0[1] + (b[1] - s0[1]) * d.kill + ny * d.lane * 14 * sc;
+        ctx.strokeStyle = `rgba(255,200,120,${1 - w})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(x, y, (2 + w * 8) * sc, 0, TAU); ctx.stroke();
+        ctx.fillStyle = `rgba(255,240,200,${0.8 * (1 - w)})`; ctx.beginPath(); ctx.arc(x, y, 1.6 * sc, 0, TAU); ctx.fill();
+        continue;
+      }
+      const e2 = easeInOut(v), fan = (1 - e2) * 12 * d.lane * sc + Math.sin(now / 260 + d.wob) * 0.8 * sc;
+      const x = s0[0] + (b[0] - s0[0]) * e2 + nx * fan * (v < 0.5 ? 1 : 0.4) + nx * d.lane * 5 * sc * (1 - e2), y = s0[1] + (b[1] - s0[1]) * e2 + ny * fan * (v < 0.5 ? 1 : 0.4) + ny * d.lane * 5 * sc * (1 - e2);
+      const ang = Math.atan2(dy, dx);
+      ctx.strokeStyle = 'rgba(200,210,225,0.18)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(x - dx * 9 * sc, y - dy * 9 * sc); ctx.lineTo(x, y); ctx.stroke();
+      this.silhouette(ctx, x, y, ang, 2.6 * sc, v > 0.97 ? '#fff' : col, [[1, 0], [-0.6, 0.9], [-0.3, 0]]);
+      if (v >= 1 && !shot) {
+        const w = clamp((u - d.lag - T) / 0.22, 0, 1);
+        if (w < 1) { const g = ctx.createRadialGradient(x, y, 0, x, y, (3 + 9 * w) * sc); g.addColorStop(0, `rgba(255,245,210,${1 - w})`); g.addColorStop(0.5, `rgba(255,140,60,${0.7 * (1 - w)})`); g.addColorStop(1, 'rgba(255,60,20,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, (3 + 9 * w) * sc, 0, TAU); ctx.fill(); }
+      }
+    }
+    if (u > 0.15 && u < 0.75) this.tag(ctx, b[0], b[1] - 20 * sc, `DRONE SWARM · ${n}`, '#ffd27a');
+  },
+
   fx_airdrop(ctx, fx, u, now) {
     const e = fx.e, b = this.pt(e.to) || this.countryPoint(e.country); if (!b) return;
     const a0 = this.pt(e.from) || this.countryPoint(e.owner);
@@ -210,19 +253,19 @@ export const AIRCRAFT_FX = {
         travel(1, q => this.drawModel(ctx, 'transport', q[0], q[1], q[2], 6 * sc, '#cfd6df'));
         label('ARMS SHIPMENT', 'شحنة أسلحة', '#d5dbe4'); break;
       case 'trade':
-        arc('rgba(61,220,151,0.5)', [4, 4], 1.3, 0.16); arc('rgba(61,220,151,0.35)', [4, 4], 1.3, -0.16);
-        travel(4, q => { ctx.fillStyle = '#3ddc97'; ctx.fillRect(q[0] - 1.8, q[1] - 1.8, 3.6, 3.6); }, 0.16);
-        label('TRADE DEAL', 'اتفاق تجاري', '#3ddc97'); break;
+        arc('rgba(127,191,154,0.5)', [4, 4], 1.3, 0.16); arc('rgba(127,191,154,0.35)', [4, 4], 1.3, -0.16);
+        travel(4, q => { ctx.fillStyle = '#7fbf9a'; ctx.fillRect(q[0] - 1.8, q[1] - 1.8, 3.6, 3.6); }, 0.16);
+        label('TRADE DEAL', 'اتفاق تجاري', '#7fbf9a'); break;
       case 'alliance':
         for (const id of [e.a, e.b]) this.outline?.(ctx, id, `rgba(120,200,255,${0.8 * f})`, 2);
         arc(`rgba(150,220,255,${0.9 * f})`, null, 2);
         label('ALLIANCE', 'تحالف', '#9fd8ff'); break;
       case 'sanction': case 'unsanction': {
         const lift = e.kind === 'unsanction';
-        arc(lift ? 'rgba(61,220,151,0.6)' : 'rgba(255,90,90,0.6)', [6, 4], 1.6, 0.2, ease(u / 0.5));
-        if (B && u > 0.45) { const r = 8 + 3 * Math.sin(now / 150); ctx.strokeStyle = lift ? '#3ddc97' : '#ff5a5a'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(B[0], B[1], r, 0, TAU); ctx.stroke();
+        arc(lift ? 'rgba(127,191,154,0.6)' : 'rgba(255,90,90,0.6)', [6, 4], 1.6, 0.2, ease(u / 0.5));
+        if (B && u > 0.45) { const r = 8 + 3 * Math.sin(now / 150); ctx.strokeStyle = lift ? '#7fbf9a' : '#ff5a5a'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(B[0], B[1], r, 0, TAU); ctx.stroke();
           if (!lift) { ctx.beginPath(); ctx.moveTo(B[0] - r * 0.7, B[1] - r * 0.7); ctx.lineTo(B[0] + r * 0.7, B[1] + r * 0.7); ctx.stroke(); } }
-        label(lift ? 'SANCTIONS LIFTED' : 'SANCTIONS', lift ? 'رفع العقوبات' : 'عقوبات', lift ? '#3ddc97' : '#ff7a7a'); break;
+        label(lift ? 'SANCTIONS LIFTED' : 'SANCTIONS', lift ? 'رفع العقوبات' : 'عقوبات', lift ? '#7fbf9a' : '#ff7a7a'); break;
       }
       case 'ceasefire': case 'peace':
         ctx.globalAlpha = 1; this.fx_peace?.(ctx, { e: { a: e.a, b: e.b } }, u, now);
@@ -260,8 +303,8 @@ export const AIRCRAFT_FX = {
         for (let i = 0; i < 3; i++) { const v = ((u * 1.5) + i / 3) % 1; ctx.strokeStyle = `rgba(255,190,60,${(1 - v) * 0.8 * f})`; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(A[0], A[1], 5 + v * 26, 0, TAU); ctx.stroke(); }
         label('NUCLEAR FORCES ON ALERT', 'القوات النووية في حالة تأهب', '#ffbe3c', A); break;
       case 'lift':
-        for (let i = 0; i < 3; i++) { const v = ((u * 1.5) + i / 3) % 1; ctx.strokeStyle = `rgba(61,220,151,${(1 - v) * 0.7 * f})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(A[0], A[1], 5 + v * 22, 0, TAU); ctx.stroke(); }
-        label('BLOCKADES LIFTED', 'رفع الحصار', '#3ddc97', A); break;
+        for (let i = 0; i < 3; i++) { const v = ((u * 1.5) + i / 3) % 1; ctx.strokeStyle = `rgba(127,191,154,${(1 - v) * 0.7 * f})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(A[0], A[1], 5 + v * 22, 0, TAU); ctx.stroke(); }
+        label('BLOCKADES LIFTED', 'رفع الحصار', '#7fbf9a', A); break;
       case 'roe': {
         const col = e.value === 'forward' ? '#ff8a5c' : e.value === 'defensive' ? '#9fd8ff' : '#ffd678';
         for (let i = 0; i < 3; i++) { const y = A[1] - 6 - i * 5 - (u * 10) % 5; ctx.strokeStyle = col; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(A[0] - 5, y + 3); ctx.lineTo(A[0], y); ctx.lineTo(A[0] + 5, y + 3); ctx.stroke(); }
@@ -269,9 +312,9 @@ export const AIRCRAFT_FX = {
       }
       case 'election': {
         const good = e.outcome !== 'ousted';
-        ctx.strokeStyle = good ? '#3ddc97' : '#ff8a5c'; ctx.lineWidth = 1.4; ctx.strokeRect(A[0] - 5, A[1] - 22, 10, 9);
+        ctx.strokeStyle = good ? '#7fbf9a' : '#ff8a5c'; ctx.lineWidth = 1.4; ctx.strokeRect(A[0] - 5, A[1] - 22, 10, 9);
         if (u > 0.3) { ctx.beginPath(); ctx.moveTo(A[0] - 3, A[1] - 18); ctx.lineTo(A[0] - 1, A[1] - 15.5); ctx.lineTo(A[0] + 3.5, A[1] - 21); ctx.stroke(); }
-        label(good ? 'GOVERNMENT RE-ELECTED' : 'GOVERNMENT OUSTED', good ? 'إعادة انتخاب الحكومة' : 'سقوط الحكومة', good ? '#3ddc97' : '#ff8a5c', A); break;
+        label(good ? 'GOVERNMENT RE-ELECTED' : 'GOVERNMENT OUSTED', good ? 'إعادة انتخاب الحكومة' : 'سقوط الحكومة', good ? '#7fbf9a' : '#ff8a5c', A); break;
       }
     }
     ctx.globalAlpha = 1;

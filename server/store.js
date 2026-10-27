@@ -1,8 +1,11 @@
 // Holds every committee in memory, autosaves to disk, and keeps rewind points.
+import { migrateGrid } from '../shared/engine/control.js';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { readJSON, writeJSON } from './files.js';
 import { COMMITTEE_IDS } from './auth.js';
-import { createWorldState, createCourtState } from '../shared/engine/state.js';
+import { createWorldState, createCourtState, createCouncilState } from '../shared/engine/state.js';
+import { applyScenario } from '../shared/engine/scenarios.js';
+import { COUNCIL_PRESETS } from '../shared/data/councils.js';
 import * as geo from './geo-index.js';
 
 const geoInfo = { ids: geo.atlasCountryIds(), name: geo.atlasName, anchor: geo.anchorOf, neighbors: geo.neighborsOf };
@@ -13,6 +16,8 @@ const DEFAULTS = {
   delta: { name: 'Committee Delta', mode: 'world' },
 };
 const MAX_SNAPSHOTS = 40;
+const PRESET_MODE = { modern: 'world', cold85: 'world', latam: 'world', court: 'court', ...Object.fromEntries(Object.keys(COUNCIL_PRESETS).map(k => [k, 'council'])) };
+const PRESET_LABEL = { cold85: 'Cold War 1985', latam: 'The Americas South of the Border', ...Object.fromEntries(Object.entries(COUNCIL_PRESETS).map(([k, p]) => [k, p.name])) };
 
 export class Store {
   constructor(dir) {
@@ -23,19 +28,25 @@ export class Store {
     this.dms = readJSON(dir, 'dms.json', {});
     for (const id of COMMITTEE_IDS) {
       const saved = readJSON(dir, `committees/${id}.json.gz`, null);
-      this.committees.set(id, saved && saved.id === id ? saved : this.fresh(id));
+      this.committees.set(id, saved && saved.id === id ? migrateGrid(saved) : this.fresh(id));
       const snaps = readJSON(dir, `committees/${id}.snapshots.json.gz`, []);
       this.snapshots.set(id, snaps.map(s => ({ ...s, data: Buffer.from(s.data, 'base64') })));
     }
     this.bootId = Date.now().toString(36);
   }
 
-  fresh(id, mode, name) {
+  // `kind` is a committee type: world, court, council, or a preset (a world scenario or a UN-style agenda).
+  fresh(id, kind, name, keepName) {
     const d = DEFAULTS[id] || { name: id, mode: 'world' };
-    const m = mode || d.mode;
+    const preset = kind && PRESET_MODE[kind] ? kind : null, m = preset ? PRESET_MODE[preset] : (kind || d.mode);
+    const label = preset && PRESET_LABEL[preset];
+    const nm = keepName && name ? name : label || name || d.name;
     const seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
-    const s = m === 'court' ? createCourtState({ id, name: name || d.name, seed }) : createWorldState({ id, name: name || d.name, seed }, geoInfo);
-    s.meta.createdAt = Date.now();
+    const s = m === 'court' ? createCourtState({ id, name: nm, seed })
+      : m === 'council' ? createCouncilState({ id, name: nm, seed }, preset || 'who')
+      : createWorldState({ id, name: nm, seed }, geoInfo);
+    s.meta.createdAt = Date.now(); s.meta.preset = preset || (m === 'world' ? 'modern' : m); migrateGrid(s);
+    if (m === 'world') applyScenario(s, preset || 'modern', geoInfo);
     if (d.disguise && m === 'world') s.display.scene = 'disguise';
     return s;
   }
@@ -76,7 +87,7 @@ export class Store {
     const snap = this.snapshots.get(id).find(s => s.id === snapId);
     if (!snap) return null;
     this.snapshot(id, `Before rewind to "${snap.label}"`, by);
-    const state = JSON.parse(gunzipSync(snap.data).toString('utf8'));
+    const state = migrateGrid(JSON.parse(gunzipSync(snap.data).toString('utf8')));
     state.version = (this.get(id).version || 0) + 1;
     state.kronos = this.get(id).kronos; // rewinding never undoes Kronos's eye or lock
     this.committees.set(id, state);
@@ -85,15 +96,16 @@ export class Store {
   }
   replace(id, state, by, label = 'Before restore') {
     this.snapshot(id, label, by);
-    state.id = id;
+    state.id = id; migrateGrid(state);
     state.version = Math.max(state.version || 0, (this.get(id).version || 0) + 1);
     this.committees.set(id, state);
     this.touch(id);
     return state;
   }
-  reset(id, mode, by) {
+  reset(id, kind, by) {
     this.snapshot(id, 'Before reset', by);
-    const s = this.fresh(id, mode || this.get(id).mode, this.get(id).name);
+    const cur = this.get(id), same = !kind || kind === cur.mode || kind === cur.meta?.preset;
+    const s = this.fresh(id, kind || cur.meta?.preset || cur.mode, cur.name, same);
     s.version = (this.get(id).version || 0) + 1;
     this.committees.set(id, s);
     this.touch(id);

@@ -16,6 +16,7 @@ const VERBS = [
   ['strike', ['strike', 'strikes', 'bomb', 'bombs', 'attack', 'attacks', 'hit', 'hits', 'airstrike', 'airstrikes', 'shell', 'shells']],
   ['neo', ['evacuate citizens from', 'evacuates citizens from', 'evacuate from', 'evacuates from', 'evacuate', 'evacuates', 'evacuation', 'evac', 'neo']],
   ['invade', ['invade', 'invades', 'invasion of', 'invasion', 'march into', 'marches into', 'push into', 'pushes into', 'send troops to', 'sends troops to', 'move troops to', 'moves troops to']],
+  ['force', ['force open', 'forces open', 'force through', 'forces through', 'break open', 'breaks open', 'force']],
   ['blockade', ['blockade', 'blockades', 'close', 'closes', 'seal', 'seals']],
   ['fleet', ['sail to', 'sails to', 'sail', 'sails', 'move fleet to', 'moves fleet to', 'fleet to', 'navy to', 'deploy fleet to', 'deploys fleet to']],
   ['rebase', ['rebase', 'rebases', 'redeploy', 'redeploys', 'deploy', 'deploys', 'station', 'stations', 'base']],
@@ -243,6 +244,7 @@ export function parseCommand(state, text, role = 'stage') {
       counts.n = Math.min(30, mainNum?.num || 1);
       if (verb === 'rebase') counts.type = unitToks.find(u => ['fighter', 'bomber', 'missile', 'airdef'].includes(u.unit))?.unit || 'fighter';
       break;
+    case 'force': order.zone = zone; counts.n = Math.min(24, mainNum?.num || 3); if (!zone) return { ok: false, error: 'Which strait? e.g. "us force open hormuz".' }; break;
     case 'fleet': case 'blockade':
       order.zone = zone; counts.n = Math.min(24, mainNum?.num || 1);
       if (unitToks.some(u => u.unit === 'carrier')) counts.type = 'carrier';
@@ -271,6 +273,7 @@ export function parseCommand(state, text, role = 'stage') {
 export const COMMAND_HELP = [
   ['russia strike ukraine 3 bombers energy escort 2', 'Air strike with chosen units, target type and fighter escort'],
   ['iran blockade hormuz 2', 'Blockade a sea zone with two fleets'],
+  ['us force open hormuz 3', 'Send three fleets to break a blockade'],
   ['us blockade iran 3', 'Blockade a country: warships close its coast'],
   ['us sail to south china sea carrier', 'Move a carrier group'],
   ['china invade taiwan 3', 'Send three army groups (needs a land border or ships nearby)'],

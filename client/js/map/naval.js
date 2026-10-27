@@ -3,7 +3,7 @@
 // numbered fleet whose waters they are in (7th Fleet). A blockade shows as a cordon on the water: around a strait
 // for a sea-zone blockade, or all along the coast for a blockade of a country.
 import { SEA_ZONES } from '/shared/data/places.js';
-import { navalLabel } from '/shared/data/militaries.js';
+import { navalLabel, hasNamedNavy } from '/shared/data/militaries.js';
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -28,14 +28,14 @@ function wake(ctx, x, y, len, a, time, seed) {
 export const NAVAL_FX = {
   // One marker per owner, type and sea zone. Called inside drawUnits with the origin at the marker.
   drawNavalGroup(ctx, g, time, color, scale) {
-    const s = this.state, owner = s.countries[g.owner], us = owner?.a3 === 'USA';
+    const s = this.state, owner = s.countries[g.owner], us = ['USA', 'CHN', 'RUS'].includes(owner?.a3), named = hasNamedNavy(owner?.a3), a3 = owner?.a3;
     const carrier = g.type === 'carrier', count = g.units.length, blockade = g.units.some(u => u.blockade);
     const seed = hash(g.loc.id + g.owner + g.type), heading = (seed % 628) / 100 + Math.sin(time * 0.15 + seed) * 0.08;
     scale *= 1.2;
     ctx.save(); ctx.scale(scale, scale);
     if (blockade) {
       const p = 0.5 + 0.5 * Math.sin(time * 4);
-      ctx.strokeStyle = `rgba(255,77,94,${0.5 + 0.4 * p})`; ctx.lineWidth = 1.3; ctx.setLineDash([3, 2]);
+      ctx.strokeStyle = `rgba(226,87,74,${0.5 + 0.4 * p})`; ctx.lineWidth = 1.3; ctx.setLineDash([3, 2]);
       ctx.beginPath(); ctx.arc(0, 0, carrier ? 22 : 15, time * 0.6, time * 0.6 + TAU); ctx.stroke(); ctx.setLineDash([]);
     }
     if (carrier && us) {
@@ -77,7 +77,7 @@ export const NAVAL_FX = {
     ctx.restore();
     // Labels stay upright.
     const k = this.cam.k, ar = this.opts.lang === 'ar';
-    if (us && !carrier) {
+    if (a3 === 'USA' && !carrier) {
       const n = navalLabel(g.units[0], 'USA', true).split(' ')[0];
       const badge = n.replace(/\D/g, '') + 'F';
       ctx.font = '700 8px JetBrains Mono, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -85,9 +85,9 @@ export const NAVAL_FX = {
       ctx.strokeStyle = color; ctx.lineWidth = 0.8; ctx.stroke(); ctx.fillStyle = color; ctx.fillText(badge, -8 * scale - 6, -9 * scale);
     }
     if (count > 1) { ctx.fillStyle = color; ctx.font = '700 9px JetBrains Mono, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(`×${count}`, (carrier ? 14 : 10) * scale, -6 * scale); }
-    if ((us && k >= 1.6) || k >= 2.6) {
-      let text = us ? navalLabel(g.units[0], 'USA', true) : (carrier ? (ar ? 'مجموعة حاملة' : 'Carrier group') : (ar ? 'أسطول' : 'Fleet'));
-      if (us && carrier && count > 1) text += ` +${count - 1}`;
+    if ((named && k >= 1.6) || k >= 2.6) {
+      let text = named ? navalLabel(g.units[0], a3, true) : (carrier ? (ar ? 'مجموعة حاملة' : 'Carrier group') : (ar ? 'أسطول' : 'Fleet'));
+      if (named && carrier && count > 1) text += ` +${count - 1}`;
       ctx.font = '700 9px Rajdhani, Inter, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.save(); ctx.letterSpacing = '0.8px';
       ctx.strokeStyle = 'rgba(4,6,11,0.85)'; ctx.lineWidth = 3; ctx.strokeText(text.toUpperCase(), 0, (carrier ? 26 : 17) * scale);
@@ -142,6 +142,7 @@ export const NAVAL_FX = {
       ctx.setLineDash([5 / c.k, 4 / c.k]); ctx.lineDashOffset = -time * 14 / c.k; ctx.stroke(path);
       ctx.setLineDash([]); ctx.lineDashOffset = 0;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.patrolShips(ctx, id, sg, time);
     }
     for (const [z, by] of zones) {
       const zz = SEA_ZONES[z], q = zz && this.p(zz.lon, zz.lat); if (!q) continue;
@@ -160,6 +161,54 @@ export const NAVAL_FX = {
       const q = this.p(zs[0].lon, zs[0].lat); if (!q) continue;
       this.tag(ctx, q[0], q[1] - 34, (ar ? 'حصار بحري: ' : '⚓ NAVAL BLOCKADE · ') + (ar ? (s.countries[id]?.ar || s.countries[id]?.name) : s.countries[id]?.name?.toUpperCase()), '#ff8a6b');
     }
+  },
+
+  // The coast of a country's main landmass as a thinned ring of [lon, lat], cached.
+  coastRing(id) {
+    this._rings ||= new Map();
+    if (this._rings.has(id)) return this._rings.get(id);
+    const c = this.atlas?.lo?.byId.get(id); let ring = null;
+    if (c) {
+      const main = c.parts.reduce((a, b) => (b.area > a.area ? b : a));
+      const g = main.f.geometry, r = g.type === 'Polygon' ? g.coordinates[0] : g.coordinates[0]?.[0];
+      if (r?.length > 8) { const step = Math.max(1, Math.floor(r.length / 140)); ring = r.filter((_, i) => i % step === 0); }
+    }
+    this._rings.set(id, ring); return ring;
+  },
+
+  // Warships on patrol off a blockaded coast: a few hulls sail back and forth along the stretch of coast nearest
+  // the blockading fleet, held just beyond the edge of the country's waters, with a dotted line marking where
+  // international waters begin.
+  patrolShips(ctx, id, sg, time) {
+    const ring = this.coastRing(id); if (!ring) return;
+    const T = this.state.countries[id], zone = SEA_ZONES[[...sg.zones][0]]; if (!T || !zone) return;
+    const pts = ring.map(([lo, la]) => this.p(lo, la)).filter(Boolean); if (pts.length < 8) return;
+    const cen = this.p(T.lon, T.lat) || pts[0];
+    const zq = this.p(zone.lon, zone.lat) || pts[0];
+    const off = 7 + 5 * Math.min(2.2, Math.sqrt(this.cam.k));
+    // Pushed out from the land, away from the country's centre.
+    const out = pts.map(q => { const dx = q[0] - cen[0], dy = q[1] - cen[1], d = Math.hypot(dx, dy) || 1; return [q[0] + dx / d * off, q[1] + dy / d * off]; });
+    let near = 0, best = Infinity; out.forEach((q, i) => { const d = Math.hypot(q[0] - zq[0], q[1] - zq[1]); if (d < best) { best = d; near = i; } });
+    const span = Math.max(6, Math.floor(out.length * 0.28)), arc = [];
+    for (let i = 0; i < span; i++) arc.push(out[(near - Math.floor(span / 2) + i + out.length * 2) % out.length]);
+    const cum = [0]; for (let i = 1; i < arc.length; i++) cum.push(cum[i - 1] + Math.hypot(arc[i][0] - arc[i - 1][0], arc[i][1] - arc[i - 1][1]));
+    const total = cum[cum.length - 1]; if (total < 20) return;
+    const owner = this.state.countries[sg.by], col = owner && owner.bloc !== 'N' ? this.state.blocs[owner.bloc].color : '#ff8a6b';
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,170,150,0.45)'; ctx.lineWidth = 1; ctx.setLineDash([1.5, 5]);
+    ctx.beginPath(); arc.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); ctx.setLineDash([]);
+    const at = d => { let i = 1; while (i < cum.length - 1 && cum[i] < d) i++; const f = (d - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1); return [arc[i - 1][0] + (arc[i][0] - arc[i - 1][0]) * f, arc[i - 1][1] + (arc[i][1] - arc[i - 1][1]) * f, Math.atan2(arc[i][1] - arc[i - 1][1], arc[i][0] - arc[i - 1][0])]; };
+    const sc = clamp(Math.sqrt(this.cam.k), 1, 2);
+    for (let n = 0; n < 3; n++) {
+      // Ping-pong along the arc at a steady pace, ships spaced out so they cover it between them.
+      const speed = 9 + n * 1.5, ph = ((time * speed + n * total / 3) % (total * 2)), d = ph < total ? ph : total * 2 - ph, fwd = ph < total;
+      const [x, y, a] = at(d);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(fwd ? a : a + Math.PI); ctx.scale(sc, sc);
+      wake(ctx, 0, 0, 8, 1, time, n);
+      hull(ctx, 0, 0, 7, 2.2); ctx.fillStyle = 'rgba(4,6,11,0.92)'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
   },
 
   // The moment a blockade starts: the cordon is drawn along the coast and the country flashes red.

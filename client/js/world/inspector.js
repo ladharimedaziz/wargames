@@ -3,7 +3,7 @@ import { html, useState, useEffect, run, fmt, cls } from '../lib.js';
 import { SEA_ZONES } from '/shared/data/places.js';
 import { UNIT_TYPES, ROE, BLOCS, tensionLevel, TENSION_LEVELS, relation, isOOB, OOB_ERROR } from '/shared/engine/core.js';
 import { ALLIANCE_NAMES } from '/shared/data/countries.js';
-import { navalLabel } from '/shared/data/militaries.js';
+import { navalLabel, aircraftFor, hasNamedNavy } from '/shared/data/militaries.js';
 
 const Stat = ({ label, value, pct, tone, hint }) => html`
   <div class="stat" title=${hint || ''}>
@@ -66,12 +66,13 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
 
       <div class="sub-h">Quick orders</div>
       <div class="quick-grid">
-        ${[['strike', '✦ Strike'], ['invade', '➤ Invade'], ['fleet', '⛴ Fleet'], ['blockade', '⛓ Blockade sea'], ['siege', '⚓ Blockade country'], ['war', '⚔ War'], ['ceasefire', '✋ Ceasefire'], ['peace', '☮ Peace'], ['sanction', '$ Sanction'], ['aid', '+ Aid'], ['arms', '⇄ Arms'], ['cyber', '⌁ Cyber'], ['spy', '◐ Spy'], ['neo', '✈ Evacuate'], ['helistrike', '🚁 Heli strike'], ['airassault', '⇣ Air assault'], ['airdrop', '☂ Paratroops']].map(([t, l]) => html`<button class="btn xs" onClick=${() => startOrder(t)}>${l}</button>`)}
+        ${[['strike', '✦ Strike'], ['drone', '✈ Drone attack'], ['invade', '➤ Invade'], ['fleet', '⛴ Fleet'], ['blockade', '⛓ Blockade sea'], ['siege', '⚓ Blockade country'], ['war', '⚔ War'], ['ceasefire', '✋ Ceasefire'], ['peace', '☮ Peace'], ['sanction', '$ Sanction'], ['aid', '+ Aid'], ['arms', '⇄ Arms'], ['cyber', '⌁ Cyber'], ['spy', '◐ Spy'], ['neo', '✈ Evacuate'], ['helistrike', '🚁 Heli strike'], ['airassault', '⇣ Air assault'], ['airdrop', '☂ Paratroops']].map(([t, l]) => html`<button class="btn xs" onClick=${() => startOrder(t)}>${l}</button>`)}
       </div>
-      ${c.a3 === 'USA' && html`<div class="quick-grid" style="margin-top:6px">
-        ${[['b2', 'B-2 strike'], ['b2moab', 'B-2 MOAB'], ['f117', 'F-117 strike'], ['b52', 'B-52 run'], ['b1b', 'B-1B run']].map(([k, l]) => html`<button class="btn xs" onClick=${() => startOrder('strike', { counts: k === 'b2moab' ? { aircraft: 'b2', payload: 'moab' } : { aircraft: k } })}>✈ ${l}</button>`)}
+      ${aircraftFor(c.a3, state.settings.year).length > 0 && html`<div class="quick-grid" style="margin-top:6px">
+        ${aircraftFor(c.a3, state.settings.year).flatMap(([k, v]) => k === 'b2' ? [[k, v.name.split(' ')[0] + ' strike', {}], ['b2moab', 'B-2 MOAB', { payload: 'moab' }]] : [[k, v.name.replace(/ .*/, '') + (v.type === 'bomber' ? ' run' : ' strike'), {}]]).map(([k, l, extra]) => html`<button class="btn xs" onClick=${() => startOrder('strike', { counts: { aircraft: k === 'b2moab' ? 'b2' : k, ...extra } })}>✈ ${l}</button>`)}
       </div>`}
-      ${c.a3 === 'USA' && html`<${UsNavy} state=${state} id=${id} />`}
+      <${Ops} conn=${conn} state=${state} id=${id} />
+      ${hasNamedNavy(c.a3) && html`<${UsNavy} state=${state} id=${id} a3=${c.a3} name=${c.name} />`}
       <div class="row" style="margin-top:6px"><span class="dim small">Posture</span><div class="seg sm">${ROE.map(r => html`<button class=${c.roe === r ? 'on' : ''} onClick=${() => run(conn, { type: 'setRoe', country: id, roe: r })}>${r}</button>`)}</div></div>
 
       <div class="sub-h">Economy</div>
@@ -150,15 +151,15 @@ function BriefModal({ conn, state, c, close }) {
 }
 
 // The US Navy by name: each carrier strike group and where the numbered fleets are.
-function UsNavy({ state, id }) {
+function UsNavy({ state, id, a3, name }) {
   const ships = Object.values(state.units).filter(u => u.owner === id && u.strength > 0 && (u.type === 'carrier' || u.type === 'fleet') && u.loc.kind === 'sea');
   if (!ships.length) return '';
   const carriers = ships.filter(u => u.type === 'carrier');
   const fleets = new Map();
-  for (const u of ships.filter(u => u.type === 'fleet')) { const n = navalLabel(u, 'USA', true); fleets.set(n, [...(fleets.get(n) || []), u]); }
+  for (const u of ships.filter(u => u.type === 'fleet')) { const n = navalLabel(u, a3, true); fleets.set(n, [...(fleets.get(n) || []), u]); }
   const where = u => SEA_ZONES[u.loc.id]?.name || u.loc.id;
-  return html`<details class="us-navy" style="margin-top:8px"><summary class="sub-h" style="cursor:pointer">US Navy at sea <span class="dim">(${carriers.length} carrier groups, ${ships.length - carriers.length} surface groups)</span></summary>
-    ${carriers.map(u => html`<div class="row small"><span class="grow">✈ ${navalLabel(u, 'USA').replace(' carrier strike group', '')}</span><span class="dim">${where(u)}${u.blockade ? ' · blockading' : ''}</span></div>`)}
+  return html`<details class="us-navy" style="margin-top:8px"><summary class="sub-h" style="cursor:pointer">${a3 === 'USA' ? 'US' : name} Navy at sea <span class="dim">(${carriers.length} carrier groups, ${ships.length - carriers.length} surface groups)</span></summary>
+    ${carriers.map(u => html`<div class="row small"><span class="grow">✈ ${navalLabel(u, a3).replace(' carrier strike group', '')}</span><span class="dim">${where(u)}${u.blockade ? ' · blockading' : ''}</span></div>`)}
     ${[...fleets].map(([n, us]) => html`<div class="row small"><span class="grow">⛴ ${n} · ${us.length} surface group${us.length > 1 ? 's' : ''}</span><span class="dim">${[...new Set(us.map(where))].join(', ')}</span></div>`)}
   </details>`;
 }
@@ -168,15 +169,15 @@ function ZoneCard({ conn, state, selZone, startOrder }) {
   const ships = Object.values(state.units).filter(u => u.loc.kind === 'sea' && u.loc.id === selZone && u.strength > 0);
   const owners = [...new Set(ships.map(u => u.owner))];
   return html`<div class="pane inspector">
-    <div class="insp-head" style="--bloc:#36e2ff"><div class="grow"><div class="insp-name">${z.name}</div></div></div>
+    <div class="insp-head" style="--bloc:#ece6d6"><div class="grow"><div class="insp-name">${z.name}</div></div></div>
     ${cp && html`<div class="card" style="margin:10px 0"><div class="card-b"><div class="row between"><b>Chokepoint</b><span class=${cls('chip', cp.status === 'closed' ? 'red' : cp.status === 'contested' ? 'gold' : 'green')}>${cp.status}${cp.by ? ` by ${state.countries[cp.by]?.name}` : ''}</span></div><div class="dim small" style="margin-top:4px">Closing it adds about $${z.oil} to a barrel of oil and forces shipping the long way round.</div></div></div>`}
     <div class="sub-h">Coastal states</div>
     <div class="small">${z.coasts.map(id => state.countries[id]?.name).filter(Boolean).join(', ') || 'Open ocean'}</div>
     <div class="sub-h">Warships here</div>
     ${owners.length === 0 && html`<div class="empty">No warships.</div>`}
     ${owners.map(o => html`<div class="row small"><i class="dot" style=${`background:${state.blocs[state.countries[o].bloc].color}`}></i><span class="grow">${state.countries[o].name}</span><span class="mono">${ships.filter(u => u.owner === o).map(u => (u.type === 'carrier' ? 'CV' : 'F')).join(' ')}</span>${ships.some(u => u.owner === o && u.blockade) ? html`<span class="chip red">blockading${(() => { const t = ships.find(u => u.owner === o && u.blockadeOf)?.blockadeOf; return t ? ` ${state.countries[t]?.name}` : ''; })()}</span>` : ''}</div>
-      ${state.countries[o].a3 === 'USA' && ships.filter(u => u.owner === o).map(u => html`<div class="dim small" style="padding-left:16px">${u.type === 'carrier' ? '✈' : '⛴'} ${navalLabel(u, 'USA')}</div>`)}`)}
-    <div class="row" style="margin-top:12px"><button class="btn sm" onClick=${() => startOrder('fleet', { zone: selZone, country: null })}>Send a fleet here</button><button class="btn sm" onClick=${() => startOrder('blockade', { zone: selZone, country: null })}>Blockade</button></div>
+      ${hasNamedNavy(state.countries[o].a3) && ships.filter(u => u.owner === o).map(u => html`<div class="dim small" style="padding-left:16px">${u.type === 'carrier' ? '✈' : '⛴'} ${navalLabel(u, state.countries[o].a3)}</div>`)}`)}
+    <div class="row" style="margin-top:12px"><button class="btn sm" onClick=${() => startOrder('fleet', { zone: selZone, country: null })}>Send a fleet here</button><button class="btn sm" onClick=${() => startOrder('blockade', { zone: selZone, country: null })}>Blockade</button>${SEA_ZONES[selZone]?.choke && html`<button class="btn sm danger" title="Sail in against the blockade: shore batteries and the blockading fleet fight back" onClick=${() => startOrder('force', { zone: selZone, country: null })}>Force open</button>`}</div>
     <button class="btn sm ghost" style="margin-top:6px" onClick=${() => run(conn, { type: 'setFocus', zone: selZone })}>Zoom stage here</button>
   </div>`;
 }
@@ -194,7 +195,7 @@ function WorldOverview({ conn, state, setSelected }) {
   return html`<div class="pane inspector">
     <div class="pane-h"><h2>The world</h2><span class="dim small">Click a country or sea</span></div>
     <div class="tension-ladder">
-      ${[...TENSION_LEVELS].reverse().map((l, i) => html`<div class=${cls('tl-row', lvl.name === l.name && 'on')} style=${`--c:${['#ff4d5e', '#ff7a45', '#ffb224', '#7fd4ff', '#3ddc97'][i]}`}><span>${l.name}</span><span class="dim">${l.max - 1.5 > 0 ? l.max - 2 + 0.5 : 0}–${l.max}</span></div>`)}
+      ${[...TENSION_LEVELS].reverse().map((l, i) => html`<div class=${cls('tl-row', lvl.name === l.name && 'on')} style=${`--c:${['#e2574a', '#ff7a45', '#d9a441', '#7fd4ff', '#7fbf9a'][i]}`}><span>${l.name}</span><span class="dim">${l.max - 1.5 > 0 ? l.max - 2 + 0.5 : 0}–${l.max}</span></div>`)}
       <div class="tl-val">${g.tension}<span>/10</span></div>
     </div>
     <div class="spark-grid">
@@ -213,7 +214,7 @@ function WorldOverview({ conn, state, setSelected }) {
 }
 
 // War fronts: how much ground each attacker holds, and the Zeus's orders for each front.
-const MODES = [['auto', 'Battle decides', 'The engine moves the front from each turn\'s fighting'], ['advance', 'Advance', 'The attacker gains ground every turn'], ['hold', 'Hold', 'The line does not move'], ['retreat', 'Fall back', 'The defender retakes ground every turn']];
+const MODES = [['auto', 'Battle decides', 'The engine moves the front from each turn\'s fighting'], ['advance', 'Advance', 'The attacker gains ground every turn'], ['encircle', 'Encircle', 'The attacker drives for a ring around the capital, closes it, then squeezes'], ['hold', 'Hold', 'The line does not move'], ['retreat', 'Fall back', 'The defender retakes ground every turn']];
 
 function Fronts({ conn, state, id, enemies, setSelected, setBrush }) {
   const c = state.countries[id];
@@ -241,16 +242,14 @@ function CivilWar({ conn, state, c, setSelected }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [share, setShare] = useState(30);
-  const rebels = state.countries[`${c.id}r`];
   if (c.rebelOf) return null;
-  if (rebels && state.wars.some(w => w.civil && (w.a === rebels.id || w.b === rebels.id))) {
-    return html`<div class="row small" style="margin-top:6px"><span class="chip gold">Civil war</span><b class="click" onClick=${() => setSelected(rebels.id)}>${rebels.name}</b><span class="dim">are fighting ${c.name}</span></div>`;
-  }
+  const factions = Object.values(state.countries).filter(f => f.rebelOf === c.id && state.wars.some(w => w.civil && (w.a === f.id || w.b === f.id)));
+  const fight = factions.length ? html`<div class="row small wrap" style="margin-top:6px"><span class="chip gold">Civil war</span>${factions.map(f => html`<b class="click" onClick=${() => setSelected(f.id)}>${f.name}</b>`)}<span class="dim">vs ${c.name}</span></div>` : null;
   const go = async () => {
     const r = await run(conn, { type: 'civilWar', country: c.id, share, name: name.trim() });
     if (r.ok) { setOpen(false); setName(''); }
   };
-  if (!open) return html`<div class="row" style="margin-top:6px"><button class="btn xs" onClick=${() => setOpen(true)} title="A rebel faction seizes part of the country, with defecting troops">✊ Start a civil war</button></div>`;
+  if (!open) return html`${fight}<div class="row" style="margin-top:6px"><button class="btn xs" onClick=${() => setOpen(true)} title="A rebel faction seizes part of the country, with defecting troops">✊ ${factions.length ? 'Add another faction' : 'Start a civil war'}</button></div>`;
   return html`<div class="civil-box col">
     <div class="row between"><b class="small">Civil war in ${c.name}</b><button class="btn xs ghost" onClick=${() => setOpen(false)}>✕</button></div>
     <input class="input sm" placeholder=${`Rebel name, e.g. Free ${c.name} Army`} value=${name} onInput=${e => setName(e.target.value)} />
@@ -276,4 +275,21 @@ function FrontRow({ conn, state, c, setSelected, named }) {
       <button class="btn xs" onClick=${() => push(10)}>+10</button><button class="btn xs" onClick=${() => push(25)}>+25</button>
     </div>
   </div>`;
+}
+
+// Standing operations for a country: set once, they repeat every turn until stopped.
+const OPS = [['bombing', '✦ Bombing campaign', 'Strikes every turn on a rotating target type'], ['drones', '✈ Drone raids', 'A drone swarm every turn'], ['invasion', '➤ Combined-arms invasion', 'Invasion each turn, with bombing and air patrols alongside (Kronos can switch the extras off)'], ['patrol', '◎ Air patrol', 'Fighters fly patrols over home each turn']];
+function Ops({ conn, state, id }) {
+  const c = state.countries[id];
+  const mine = (state.ops || []).filter(o => o.country === id);
+  const foes = [...new Set(state.wars.filter(w => w.a === id || w.b === id).map(w => (w.a === id ? w.b : w.a)))];
+  const [target, setTarget] = useState('');
+  const t = target || foes[0] || '';
+  const others = Object.values(state.countries).filter(o => o.id !== id && !isOOB(o.id) && o.control !== 'inactive' && !o.rebelOf).sort((a, b) => a.name.localeCompare(b.name));
+  return html`<div class="sub-h" style="margin-top:8px">Standing operations</div>
+    <div class="row wrap" style="gap:6px"><select class="input" style="flex:1" value=${t} onChange=${e => setTarget(e.target.value)}>
+      <option value="">Target…</option>${foes.length ? html`<optgroup label="At war">${foes.map(f => html`<option value=${f}>${state.countries[f].name}</option>`)}</optgroup>` : ''}<optgroup label="Everyone">${others.map(o => html`<option value=${o.id}>${o.name}</option>`)}</optgroup>
+    </select></div>
+    <div class="quick-grid" style="margin-top:4px">${OPS.map(([k, l, hint]) => html`<button class=${cls('btn xs', mine.some(o => o.kind === k && (k === 'patrol' || o.target === t)) && 'on')} title=${hint} onClick=${() => run(conn, { type: 'setOp', country: id, kind: k, target: t || undefined, on: !mine.some(o => o.kind === k && (k === 'patrol' || o.target === t)) })}>${l}</button>`)}</div>
+    ${mine.length > 0 && html`<div class="small dim" style="margin-top:4px">${mine.map(o => html`<span class="chip" style="margin-right:4px">${OPS.find(x => x[0] === o.kind)?.[1].slice(2)}${o.target ? ` → ${state.countries[o.target]?.name}` : ''} <a onClick=${() => run(conn, { type: 'setOp', country: id, kind: o.kind, target: o.target, on: false })} style="cursor:pointer">✕</a></span>`)}</div>`}`;
 }

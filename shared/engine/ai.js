@@ -21,9 +21,10 @@ function proposeJoin(state, ctx, c, friend, foe, treaty, defending) {
   if (card) {
     card.countries = [...members(card), c.id]; card.country = card.countries[0];
     card.friends = [...new Set([...(card.friends || [card.friend]), friend.id])]; card.treaty ||= treaty;
+    card.why = { ...(card.why || {}), [c.id]: { friend: friend.id, treaty: !!treaty } };
     joinText(state, card); return true;
   }
-  const r = { id: newId(state, 'j'), turn, kind: 'join', status: 'pending', priority: 6, at: ctx.now, country: c.id, countries: [c.id], target: foe, friend: friend.id, friends: [friend.id], treaty, defending };
+  const r = { id: newId(state, 'j'), turn, kind: 'join', status: 'pending', priority: 6, at: ctx.now, country: c.id, countries: [c.id], target: foe, friend: friend.id, friends: [friend.id], treaty, defending, why: { [c.id]: { friend: friend.id, treaty: !!treaty } } };
   joinText(state, r);
   state.review.push(r);
   return true;

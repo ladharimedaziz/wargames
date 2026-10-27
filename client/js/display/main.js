@@ -1,4 +1,5 @@
 // The stage display: what the room sees on the projector or stream. View-only; the Stage Zeus drives it.
+import { CouncilDisplay } from './council.js';
 import { html, render, useState, useEffect, useRef, useMemo, Connection, useConnState, useNow, timerRemaining, fmt, cls } from '../lib.js';
 import { WorldMap } from '../map/renderer.js';
 import { KronosEye } from '../fx/eye.js';
@@ -56,8 +57,8 @@ function Stage({ conn }) {
   const bannerShown = state.display.banner && !['disguise', 'ending', 'intro', 'reveal'].includes(state.display.scene);
   const timerShown = state.timer.visible !== false && (state.timer.running || state.timer.remaining > 0) && !['disguise', 'ending', 'intro', 'reveal'].includes(state.display.scene);
   return html`
-    <div class=${cls('stage', `lang-${lang}`, bannerShown && 'has-banner', timerShown && 'has-timer', state.kronos.eye && 'has-eye')} dir=${isAr(lang) ? 'rtl' : 'ltr'} onClick=${!soundOn ? enableSound : undefined}>
-      ${state.mode === 'court' ? html`<${CourtDisplay} conn=${conn} state=${state} lang=${lang} />` : html`<${WorldStage} conn=${conn} state=${state} lang=${lang} />`}
+    <div class=${cls('stage', `lang-${lang}`, state.settings.year && 'era-cold', bannerShown && 'has-banner', timerShown && 'has-timer', state.kronos.eye && 'has-eye')} dir=${isAr(lang) ? 'rtl' : 'ltr'} onClick=${!soundOn ? enableSound : undefined}>
+      ${state.mode === 'court' ? html`<${CourtDisplay} conn=${conn} state=${state} lang=${lang} />` : state.mode === 'council' ? html`<${CouncilDisplay} conn=${conn} state=${state} />` : html`<${WorldStage} conn=${conn} state=${state} lang=${lang} />`}
       ${bannerShown && html`<${Banner} b=${state.display.banner} lang=${lang} />`}
       ${timerShown && html`<${StageTimer} conn=${conn} timer=${state.timer} />`}
       ${(global.pause || state.display.scene === 'pause') && html`<${PauseScreen} p=${global.pause} lang=${lang} />`}
@@ -275,7 +276,7 @@ function Intro({ state, lang, elapsed }) {
   ];
   return html`<div class=${cls('intro', e > 12.5 && 'fade')}>
     <div class="intro-stars"></div>
-    <div class=${cls('intro-globe', e > 9.5 && 'zoom')}><${Globe} className="intro-globe-c" speed=${Math.max(4, 40 - e * 5)} tilt=${-20} glow="#36e2ff" /></div>
+    <div class=${cls('intro-globe', e > 9.5 && 'zoom')}><${Globe} className="intro-globe-c" speed=${Math.max(4, 40 - e * 5)} tilt=${-20} glow="#ece6d6" /></div>
     <div class="intro-text">
       ${lines.map(([at, txt], i) => e > at && html`<div class="intro-line" key=${i}>${txt}</div>`)}
       ${e > 7.4 && html`<h1 class="intro-title">${state.name}</h1>`}
@@ -396,9 +397,9 @@ function Report({ state, lang }) {
     <div class="ps-head"><${Bi} k="report" lang=${lang} cls="ps-title" /><span class="ps-kicker">${state.name} · ${state.meta.turn - 1} ${state.meta.turn - 1 === 1 ? 'week' : 'weeks'}</span></div>
     <div class="rep-grid">
       <${LineChart} data=${h.map(x => x.tension)} max=${10} color="#ff7a45" label=${t('tension', lang)} />
-      <${LineChart} data=${h.map(x => x.oil)} color="#ffb224" label=${t('oil', lang) + ' $'} />
-      <${LineChart} data=${h.map(x => Math.round(x.gdpIndex * 100))} max=${110} color="#36e2ff" label=${t('economy', lang) + ' %'} />
-      <${LineChart} data=${h.map(x => x.wars)} color="#ff4d5e" label=${t('wars', lang)} />
+      <${LineChart} data=${h.map(x => x.oil)} color="#d9a441" label=${t('oil', lang) + ' $'} />
+      <${LineChart} data=${h.map(x => Math.round(x.gdpIndex * 100))} max=${110} color="#ece6d6" label=${t('economy', lang) + ' %'} />
+      <${LineChart} data=${h.map(x => x.wars)} color="#e2574a" label=${t('wars', lang)} />
     </div>
     <div class="rep-figs">
       <div><b>${state.treaties.filter(x => x.type === 'peace' || x.type === 'ceasefire').length}</b><span>agreements</span></div>
@@ -445,7 +446,7 @@ function Standby({ state, lang, now }) {
     <div class="sb-card-clock mono">${clock}</div>
   </div>`;
   return html`<div class="standby">
-    <div class="sb-orb"><${Globe} className="sb-globe" speed=${4} glow="#36e2ff" arcs=${false} /></div>
+    <div class="sb-orb"><${Globe} className="sb-globe" speed=${4} glow="#ece6d6" arcs=${false} /></div>
     <div class="sb-name">${state.name}</div>
     <div class="sb-sub"><${Bi} k="standby" lang=${lang} /></div>
     <div class="sb-clock mono">${clock}</div>

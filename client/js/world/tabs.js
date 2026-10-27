@@ -3,6 +3,7 @@ import { html, useState, useMemo, useEffect, run, toast, fmt, cls, download, use
 import { SEA_ZONES } from '/shared/data/places.js';
 import { UNIT_TYPES, TARGET_TYPES, ENDINGS, BLOCS, isOOB } from '/shared/engine/core.js';
 import { ORDER_TYPES, CYBER_KINDS, SPY_KINDS, validateOrder, autoUnits, describeOrder } from '/shared/engine/orders.js';
+import { aircraftFor } from '/shared/data/militaries.js';
 
 export function sortedCountries(state, filter = () => true) {
   return Object.values(state.countries).filter(c => !isOOB(c.id)).filter(filter).sort((a, b) => (b.control === 'player') - (a.control === 'player') || (b.major - a.major) || a.name.localeCompare(b.name));
@@ -59,10 +60,11 @@ export function ReviewTab({ conn, state }) {
               <div class="news-en">${r.kind === 'ending' ? html`<span class="chip gold">Ending</span> ` : r.kind === 'join' ? html`<span class="chip red">Needs approval</span> ` : ''}${r.en}</div>
               ${r.detail && html`<div class="dim small">${r.detail}</div>`}
               ${r.kind === 'join' && (r.countries || []).length > 1 && html`<div class="row wrap join-members">${r.countries.map(id => html`
-                <span class="chip join-chip" key=${id}>${state.countries[id]?.name || id}
+                <span class="chip join-chip" key=${id}>${state.countries[id]?.name || id}${r.why?.[id] && html` <i class="dim" title=${r.why[id].treaty ? 'Bound by treaty' : 'Chooses to join'}>${r.why[id].treaty ? '⚖ treaty with' : '→ backs'} ${state.countries[r.why[id].friend]?.name}</i>`}
                   <button class="btn xs ghost" title="Approve just this country" onClick=${() => run(conn, { type: 'airItem', id: r.id, only: id }, 'War declared')}>✓</button>
                   <button class="btn xs ghost" title="Drop this country from the request" onClick=${() => run(conn, { type: 'killItem', id: r.id, only: id })}>✕</button>
                 </span>`)}</div>`}
+              ${r.kind === 'join' && r.why && Object.values(r.why).some(w => w.treaty) && (r.countries || []).some(id => !r.why[id]?.treaty) && html`<div class="row"><button class="btn xs" title="Approve only the countries bound by treaty; the rest stay out" onClick=${async () => { for (const id of r.countries.filter(i => r.why[i]?.treaty)) await run(conn, { type: 'airItem', id: r.id, only: id }, 'Treaty-bound country joins'); }}>⚖ Approve treaty-bound only</button></div>`}
               <div class="row news-actions">
                 <span class="dim small">T${r.turn} · P${r.priority}</span><div class="grow"></div>
                 ${r.kind === 'join'
@@ -143,11 +145,11 @@ export function OrdersTab({ conn, state, draft, setDraft, picking, setPicking, s
               <label class="field" style="width:70px">How many<input class="input" type="number" min="1" max="12" value=${d.counts?.n || 1} onInput=${e => set({ counts: { ...d.counts, n: +e.target.value } })} /></label>
               <label class="field" style="width:70px">Escort<input class="input" type="number" min="0" max="8" value=${d.counts?.escort || 0} onInput=${e => set({ counts: { ...d.counts, escort: +e.target.value } })} /></label>
             </div>
-            ${state.countries[d.country]?.a3 === 'USA' && html`<label class="field">US aircraft<div class="seg wrap">
-              ${[['', 'Any'], ['b2', 'B-2 Spirit'], ['f117', 'F-117 Nighthawk'], ['b52', 'B-52'], ['b1b', 'B-1B Lancer']].map(([k, l]) => html`<button class=${(d.counts?.aircraft || '') === k ? 'on' : ''} onClick=${() => set({ counts: { ...d.counts, aircraft: k || undefined, type: k ? undefined : d.counts?.type, payload: k === 'b2' ? d.counts?.payload : undefined } })}>${l}</button>`)}
+            ${aircraftFor(state.countries[d.country]?.a3, state.settings.year).length > 0 && html`<label class="field">Aircraft<div class="seg wrap">
+              ${[['', 'Any'], ...aircraftFor(state.countries[d.country]?.a3, state.settings.year).map(([k, v]) => [k, v.name])].map(([k, l]) => html`<button class=${(d.counts?.aircraft || '') === k ? 'on' : ''} onClick=${() => set({ counts: { ...d.counts, aircraft: k || undefined, type: k ? undefined : d.counts?.type, payload: k === 'b2' ? d.counts?.payload : undefined } })}>${l}</button>`)}
             </div>${d.counts?.aircraft === 'b2' && html`<label class="row small" style="margin-top:4px"><input type="checkbox" checked=${d.counts?.payload === 'moab'} onChange=${e => set({ counts: { ...d.counts, payload: e.target.checked ? 'moab' : undefined } })} /> Carry the heavy bomb (MOAB)</label>`}</label>`}
             <label class="field">Target type<div class="seg wrap">${TARGET_TYPES.map(t => html`<button class=${d.category === t ? 'on' : ''} onClick=${() => set({ category: t })}>${t}</button>`)}</div></label>`}
-          ${['invade', 'fleet', 'blockade', 'siege', 'rebase'].includes(d.type) && html`<label class="field">Units<input class="input" type="number" min="1" max="10" value=${d.counts?.n || 1} onInput=${e => set({ counts: { ...d.counts, n: +e.target.value } })} /></label>`}
+          ${['invade', 'fleet', 'blockade', 'force', 'siege', 'rebase'].includes(d.type) && html`<label class="field">Units<input class="input" type="number" min="1" max="10" value=${d.counts?.n || 1} onInput=${e => set({ counts: { ...d.counts, n: +e.target.value } })} /></label>`}
           ${d.type === 'rebase' && html`<label class="field">Unit type<select class="input" value=${d.counts?.type || 'fighter'} onChange=${e => set({ counts: { ...d.counts, type: e.target.value } })}>${['fighter', 'bomber', 'missile', 'airdef'].map(t => html`<option value=${t}>${UNIT_TYPES[t].name}</option>`)}</select></label>`}
           ${needs.includes('amount') && html`<label class="field">Amount ($ billion)<input class="input" type="number" min="1" value=${d.amount || 10} onInput=${e => set({ amount: +e.target.value })} /></label>`}
           ${needs.includes('unitType') && html`<label class="field">What to transfer<select class="input" value=${d.unitType || 'fighter'} onChange=${e => set({ unitType: e.target.value })}>${Object.entries(UNIT_TYPES).map(([k, t]) => html`<option value=${k}>${t.name}</option>`)}</select></label>`}

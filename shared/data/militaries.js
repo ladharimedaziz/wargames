@@ -85,13 +85,49 @@ export const AIR_BASES = {
   RUS: { fighter: ['SYR', 'BLR'] },
 };
 
-// American aircraft a Zeus can pick by name for a strike. Stealth scales the chance of being intercepted.
-export const US_AIRCRAFT = {
-  b2:   { name: 'B-2 Spirit', type: 'bomber', stealth: 0.12, power: 0.1, precise: true },
-  f117: { name: 'F-117 Nighthawk', type: 'fighter', stealth: 0.22, power: 0.055, precise: true },
-  b52:  { name: 'B-52 Stratofortress', type: 'bomber', stealth: 1, power: 0.085 },
-  b1b:  { name: 'B-1B Lancer', type: 'bomber', stealth: 0.7, power: 0.085 },
+// Named aircraft a Zeus can pick for a strike. `by` is the countries (alpha-3) that fly it; stealth scales the chance of
+// being intercepted; `shape` picks the silhouette the map draws.
+export const AIRCRAFT = {
+  b2:   { y: 1997, name: 'B-2 Spirit', type: 'bomber', stealth: 0.12, power: 0.1, precise: true, by: ['USA'], shape: 'b2' },
+  f117: { y: 1990, name: 'F-117 Nighthawk', type: 'fighter', stealth: 0.22, power: 0.055, precise: true, by: ['USA'], shape: 'f117' },
+  b52:  { y: 1955, name: 'B-52 Stratofortress', type: 'bomber', stealth: 1, power: 0.085, by: ['USA'], shape: 'b52' },
+  b1b:  { y: 1986, name: 'B-1B Lancer', type: 'bomber', stealth: 0.7, power: 0.085, by: ['USA'], shape: 'b1b' },
+  f15:  { y: 1976, name: 'F-15E Strike Eagle', type: 'fighter', stealth: 0.9, power: 0.05, by: ['USA'], shape: 'twin' },
+  f16:  { y: 1978, name: 'F-16 Fighting Falcon', type: 'fighter', stealth: 0.9, power: 0.04, by: ['USA'], shape: 'single' },
+  f22:  { y: 2005, name: 'F-22 Raptor', type: 'fighter', stealth: 0.3, power: 0.05, by: ['USA'], shape: 'twin' },
+  f35:  { y: 2016, name: 'F-35 Lightning II', type: 'fighter', stealth: 0.28, power: 0.05, precise: true, by: ['USA', 'GBR', 'ITA', 'JPN', 'KOR', 'AUS', 'NLD', 'NOR', 'POL', 'DNK'], shape: 'single' },
+  su34: { y: 1990, name: 'Su-34 Fullback', type: 'fighter', stealth: 0.85, power: 0.055, by: ['RUS'], shape: 'twin' },
+  su35: { y: 2014, name: 'Su-35S Flanker-E', type: 'fighter', stealth: 0.8, power: 0.045, by: ['RUS'], shape: 'twin' },
+  su57: { y: 2020, name: 'Su-57 Felon', type: 'fighter', stealth: 0.45, power: 0.05, by: ['RUS'], shape: 'twin' },
+  tu95: { y: 1956, name: 'Tu-95 Bear', type: 'bomber', stealth: 1, power: 0.08, by: ['RUS'], shape: 'b52' },
+  tu160:{ y: 1987, name: 'Tu-160 Blackjack', type: 'bomber', stealth: 0.7, power: 0.09, by: ['RUS'], shape: 'b1b' },
+  j10:  { y: 2005, name: 'J-10C Vigorous Dragon', type: 'fighter', stealth: 0.85, power: 0.04, by: ['CHN'], shape: 'delta' },
+  j16:  { y: 2013, name: 'J-16 Flanker', type: 'fighter', stealth: 0.8, power: 0.05, by: ['CHN'], shape: 'twin' },
+  j20:  { y: 2017, name: 'J-20 Mighty Dragon', type: 'fighter', stealth: 0.4, power: 0.05, by: ['CHN'], shape: 'twin' },
+  h6:   { y: 2011, name: 'H-6K Bomber', type: 'bomber', stealth: 1, power: 0.08, by: ['CHN'], shape: 'b52' },
+  typhoon: { y: 2003, name: 'Eurofighter Typhoon', type: 'fighter', stealth: 0.8, power: 0.045, by: ['GBR', 'DEU', 'ITA', 'ESP', 'AUT', 'SAU'], shape: 'delta' },
+  tornado: { y: 1979, name: 'Panavia Tornado', type: 'fighter', stealth: 0.9, power: 0.045, by: ['DEU', 'GBR', 'ITA', 'SAU'], shape: 'single' },
+  rafale: { y: 2001, name: 'Dassault Rafale', type: 'fighter', stealth: 0.75, power: 0.05, precise: true, by: ['FRA', 'IND', 'EGY', 'QAT', 'ARE', 'GRC'], shape: 'delta' },
+  m2000: { y: 1984, name: 'Mirage 2000D', type: 'fighter', stealth: 0.85, power: 0.04, by: ['FRA'], shape: 'delta' },
 };
+// Aircraft of the 1980s, for the Cold War committee.
+Object.assign(AIRCRAFT, {
+  f14:   { y: 1974, name: 'F-14 Tomcat', type: 'fighter', stealth: 0.9, power: 0.05, by: ['USA'], shape: 'twin' },
+  f111:  { y: 1967, name: 'F-111 Aardvark', type: 'bomber', stealth: 0.85, power: 0.07, by: ['USA'], shape: 'b1b' },
+  mig29: { y: 1983, name: 'MiG-29 Fulcrum', type: 'fighter', stealth: 0.9, power: 0.04, by: ['RUS'], shape: 'twin' },
+  su27:  { y: 1985, name: 'Su-27 Flanker', type: 'fighter', stealth: 0.9, power: 0.05, by: ['RUS'], shape: 'twin' },
+  mig25: { y: 1970, name: 'MiG-25 Foxbat', type: 'fighter', stealth: 0.95, power: 0.04, by: ['RUS'], shape: 'twin' },
+  su24:  { y: 1974, name: 'Su-24 Fencer', type: 'fighter', stealth: 0.9, power: 0.05, by: ['RUS'], shape: 'delta' },
+  tu22m: { y: 1972, name: 'Tu-22M Backfire', type: 'bomber', stealth: 0.9, power: 0.08, by: ['RUS'], shape: 'b1b' },
+  h6d:   { y: 1969, name: 'H-6 Bomber', type: 'bomber', stealth: 1, power: 0.07, by: ['CHN'], shape: 'b52' },
+  j7:    { y: 1967, name: 'J-7 (MiG-21)', type: 'fighter', stealth: 0.95, power: 0.03, by: ['CHN'], shape: 'delta' },
+  jaguar:{ y: 1973, name: 'SEPECAT Jaguar', type: 'fighter', stealth: 0.9, power: 0.035, by: ['GBR', 'FRA'], shape: 'single' },
+  harrier:{ y: 1969, name: 'Harrier GR3', type: 'fighter', stealth: 0.9, power: 0.03, by: ['GBR'], shape: 'single' },
+  mirf1: { y: 1973, name: 'Mirage F1', type: 'fighter', stealth: 0.9, power: 0.035, by: ['FRA'], shape: 'delta' },
+});
+export const US_AIRCRAFT = AIRCRAFT; // older name
+// The named aircraft a country can send: [id, spec] pairs.
+export const aircraftFor = (a3, year = 9999) => Object.entries(AIRCRAFT).filter(([, v]) => v.by.includes(a3) && (v.y || 0) <= year);
 
 // Countries with the amphibious fleets to land troops on a defended coast. Any country with a carrier group also qualifies.
 export const AMPHIBIOUS_A3 = ['USA', 'CHN', 'RUS', 'GBR', 'FRA', 'JPN', 'KOR', 'IND', 'ITA', 'ESP', 'TUR', 'AUS', 'NLD', 'BRA', 'EGY'];
@@ -132,22 +168,40 @@ export function usFleetOf(zone) {
   return '2nd';
 }
 
-// A name for a new carrier group, if its navy names them: the first American carrier not already at sea.
+// The other great navies by name: carriers in the order of the starting deployments, and which fleet commands which waters.
+export const NAVIES = {
+  USA: { prefix: 'USS', carriers: US_CARRIERS },
+  RUS: { prefix: '', carriers: [['Admiral Kuznetsov', '']],
+    fleets: { Northern: ['barents', 'norwegian_sea', 'north_atlantic'], Baltic: ['baltic', 'danish', 'north_sea'], 'Black Sea': ['black_sea', 'bosporus', 'aegean'], Pacific: ['japan_sea', 'north_pacific', 'philippine_sea', 'east_china'], 'Mediterranean Squadron': ['east_med', 'central_med', 'west_med', 'suez', 'red_sea'] } },
+  CHN: { prefix: 'PLAN', carriers: [['Liaoning', 'CV-16'], ['Shandong', 'CV-17'], ['Fujian', 'CV-18']],
+    fleets: { 'North Sea': ['japan_sea', 'philippine_sea'], 'East Sea': ['east_china', 'north_pacific'], 'South Sea': ['south_china', 'malacca', 'java_sea', 'bay_bengal', 'indian_ocean'], 'Escort Task Force': ['gulf_aden', 'arabian_sea', 'bab', 'red_sea'] } },
+  GBR: { prefix: 'HMS', carriers: [['Queen Elizabeth', 'R08'], ['Prince of Wales', 'R09']], fleets: { Home: ['north_sea', 'atlantic_east', 'north_atlantic', 'norwegian_sea'], 'Mediterranean Task Group': ['east_med', 'central_med', 'west_med'] } },
+  FRA: { prefix: 'FS', carriers: [['Charles de Gaulle', 'R91']], fleets: { Atlantic: ['atlantic_east', 'north_atlantic'], Mediterranean: ['west_med', 'central_med', 'east_med'] } },
+  IND: { prefix: 'INS', carriers: [['Vikramaditya', 'R33'], ['Vikrant', 'R11']], fleets: { Western: ['arabian_sea', 'gulf_aden'], Eastern: ['bay_bengal', 'indian_ocean', 'malacca'] } },
+  JPN: { prefix: 'JS', carriers: [['Izumo', 'DDH-183'], ['Kaga', 'DDH-184']], fleets: { 'Escort Flotilla': ['japan_sea', 'philippine_sea', 'east_china', 'north_pacific'] } },
+};
+export const hasNamedNavy = a3 => !!NAVIES[a3];
+const navyFleetOf = (a3, zone) => Object.entries(NAVIES[a3]?.fleets || {}).find(([, zs]) => zs.includes(zone))?.[0];
+
+// A name for a new carrier group, if its navy names them: the first carrier of that navy not already at sea.
 export function carrierName(units, a3) {
-  if (a3 !== 'USA') return undefined;
-  const used = new Set(Object.values(units).filter(u => u.type === 'carrier' && u.name).map(u => u.name));
-  const free = US_CARRIERS.find(([n]) => !used.has(n));
+  const navy = NAVIES[a3]; if (!navy) return undefined;
+  const used = new Set(Object.values(units).filter(u => u.type === 'carrier' && u.name && navy.carriers.some(c => c[0] === u.name)).map(u => u.name));
+  const free = navy.carriers.find(([n]) => !used.has(n));
   return free ? free[0] : undefined;
 }
 
 // How a warship group is called in the panel and on the map. Short form for map labels.
 export function navalLabel(u, a3, short = false) {
-  if (a3 === 'USA') {
-    if (u.type === 'carrier') {
-      const hull = US_CARRIERS.find(([n]) => n === u.name)?.[1];
-      return u.name ? (short ? `USS ${u.name}` : `USS ${u.name}${hull ? ` (${hull})` : ''} carrier strike group`) : (short ? 'Carrier strike group' : 'US carrier strike group');
-    }
-    if (u.type === 'fleet' && u.loc?.kind === 'sea') return short ? `${usFleetOf(u.loc.id)} Fleet` : `${usFleetOf(u.loc.id)} Fleet surface action group`;
+  const navy = NAVIES[a3];
+  if (navy && u.type === 'carrier') {
+    const hull = navy.carriers.find(([n]) => n === u.name)?.[1], pre = navy.prefix ? `${navy.prefix} ` : '';
+    return u.name ? (short ? `${pre}${u.name}` : `${pre}${u.name}${hull ? ` (${hull})` : ''} carrier strike group`) : (short ? 'Carrier strike group' : 'Carrier strike group');
+  }
+  if (a3 === 'USA' && u.type === 'fleet' && u.loc?.kind === 'sea') return short ? `${usFleetOf(u.loc.id)} Fleet` : `${usFleetOf(u.loc.id)} Fleet surface action group`;
+  if (navy && u.type === 'fleet' && u.loc?.kind === 'sea') {
+    const f = navyFleetOf(a3, u.loc.id);
+    if (f) return short ? `${f}${/Squadron|Group|Force|Flotilla/.test(f) ? '' : ' Fleet'}` : `${f}${/Squadron|Group|Force|Flotilla/.test(f) ? '' : ' Fleet'} surface action group`;
   }
   return u.type === 'carrier' ? 'Carrier group' : 'Fleet';
 }

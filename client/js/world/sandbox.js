@@ -3,8 +3,9 @@ import { html, useState, run, cls } from '../lib.js';
 import { SEA_ZONES } from '/shared/data/places.js';
 import { UNIT_TYPES, TARGET_TYPES } from '/shared/engine/core.js';
 import { CountrySelect, ZoneSelect } from './tabs.js';
+import { altFlagUrl, randomFlag } from '../map/altflag.js';
 
-const EVENTS = [['earthquake', 'Earthquake'], ['flood', 'Floods'], ['pandemic', 'Outbreak'], ['blackout', 'Blackout'], ['coup', 'Military coup'], ['discovery', 'Oil discovery']];
+const EVENTS = [['earthquake', 'Earthquake'], ['flood', 'Floods'], ['pandemic', 'Outbreak'], ['blackout', 'Blackout'], ['discovery', 'Oil discovery']];
 const STATS = [['support', 'Support %', 0, 100, 1], ['stability', 'Stability %', 0, 100, 1], ['gdp', 'GDP $bn', 1, 30000, 1], ['treasury', 'Treasury $bn', -2000, 5000, 1], ['industry', 'Industry', 0.05, 1.2, 0.05], ['energy', 'Energy', 0.05, 1.2, 0.05], ['damage', 'Damage', 0, 1, 0.05], ['airDefense', 'Air defence', 0, 12, 1], ['inflation', 'Inflation %', -2, 80, 0.5]];
 
 export function SandboxTab({ conn, state, selected, selZone }) {
@@ -44,11 +45,14 @@ export function SandboxTab({ conn, state, selected, selZone }) {
         <button class=${cls('btn sm', state.settings.aiNukes && 'solid-danger')} onClick=${() => k({ type: 'setAiNukes', value: !state.settings.aiNukes })}>${state.settings.aiNukes ? 'Computer may NOT use nukes' : 'Let computer use nukes'}</button>
         <button class=${cls('btn sm', state.settings.nuclearExchange === false && 'solid-danger')} onClick=${() => k({ type: 'setNuclearExchange', value: state.settings.nuclearExchange === false })}>${state.settings.nuclearExchange === false ? 'Nukes: single strikes only' : 'Nukes: full exchange'}</button>
         <button class=${cls('btn sm', state.settings.autoNavy === false && 'solid-danger')} onClick=${() => k({ type: 'setWarOption', key: 'autoNavy', value: state.settings.autoNavy === false })}>${state.settings.autoNavy === false ? 'Computer fleets: idle' : 'Computer fleets: hunt and blockade'}</button>
+        <button class=${cls('btn sm', state.settings.combinedArms === false && 'solid-danger')} onClick=${() => k({ type: 'setWarOption', key: 'combinedArms', value: state.settings.combinedArms === false })}>${state.settings.combinedArms === false ? 'Combined arms: off' : 'Combined arms: on'}</button>
         <button class="btn sm good" onClick=${() => k({ type: 'forcePeace', all: true }, 'Every war is over')}>End every war</button>
         <button class="btn sm good" disabled=${!Object.values(state.countries).some(c => c.outbreak)} onClick=${() => k({ type: 'endAllOutbreaks' }, 'Every outbreak is over')}>☣ End all outbreaks</button>
         <button class="btn sm good" disabled=${!Object.values(state.countries).some(c => c.blackout)} onClick=${() => k({ type: 'restoreAllPower' }, 'Power is back everywhere')}>⚡ Restore all power</button>
       </div>
       <div class="row"><span class="dim small">Date</span><input class="input sm" type="date" value=${state.meta.clock} onChange=${e => k({ type: 'setClock', clock: e.target.value })} /><span class="dim small">Days per turn</span><input class="input sm" style="width:60px" type="number" min="1" max="90" value=${state.meta.turnDays} onChange=${e => k({ type: 'setClock', turnDays: +e.target.value })} /></div>
+
+      <${CivilWars} conn=${conn} state=${state} />
 
       <div class="sub-h">Country</div>
       <${CountrySelect} state=${state} value=${cid} onChange=${setCountry} />
@@ -72,6 +76,8 @@ export function SandboxTab({ conn, state, selected, selZone }) {
           <button class="btn sm gold" onClick=${() => k({ type: 'spawnUnits', country: cid, unitType, count, zone }, `${count} spawned`)}>Spawn</button>
         </div>
         ${UNIT_TYPES[unitType].domain === 'sea' && html`<div style="margin-top:6px"><${ZoneSelect} sm value=${zone} onChange=${setZone} /></div>`}
+
+        <${CoupBox} conn=${conn} c=${c} />
 
         <div class="sub-h">Acts of god</div>
         <div class="row wrap">${EVENTS.map(([e, l]) => html`<button class="btn xs" onClick=${() => k({ type: 'disaster', country: cid, kind: e }, `${l} in ${c.name}`)}>${l}</button>`)}</div>
@@ -105,5 +111,46 @@ export function SandboxTab({ conn, state, selected, selZone }) {
       <div class="sub-h">Chokepoints</div>
       ${Object.entries(state.global.chokepoints).map(([z, cp]) => html`<div class="row small" style="margin-bottom:4px"><span class="grow">${SEA_ZONES[z].name}</span>
         <div class="seg sm">${['auto', 'open', 'contested', 'closed'].map(s => html`<button class=${(s === 'auto' ? !cp.forced : cp.forced && cp.status === s) ? 'on' : ''} title=${s === 'auto' ? 'Let fleets and blockades decide' : `Hold it ${s} until set back to auto`} onClick=${() => k({ type: 'setChokepoint', zone: z, status: s, by: cid })}>${s}</button>`)}</div></div>`)}
+    </div>`;
+}
+
+// Civil wars: every faction's stance toward every other, and outside powers backing a side.
+const STANCES = [['war', 'War'], ['peace', 'Truce'], ['ally', 'Allied']];
+function CivilWars({ conn, state }) {
+  const [backer, setBacker] = useState('');
+  const seed = state.settings.detail === 'americas' && !Object.values(state.countries).some(f => f.rebelOf === '484')
+    ? html`<div class="row"><button class="btn sm gold" onClick=${() => run(conn, { type: 'seedFactions' }, 'Four armed groups rise in Mexico')}>Raise Mexico's armed groups</button></div>` : null;
+  const roots = [...new Set(Object.values(state.countries).filter(f => f.rebelOf && state.wars.some(w => w.civil && (w.a === f.id || w.b === f.id))).map(f => f.rebelOf))];
+  if (!roots.length) return html`<div class="sub-h">Civil wars</div>${seed}<p class="pane-hint">None yet. Pick a country on the map and use "Start a civil war", then add more factions from the same card.</p>`;
+  const stance = (a, b) => state.wars.some(w => (w.a === a && w.b === b) || (w.a === b && w.b === a)) ? 'war' : state.treaties.some(t => t.type === 'alliance' && t.parties.includes(a) && t.parties.includes(b)) ? 'ally' : 'peace';
+  return html`<div class="sub-h">Civil wars</div>
+    ${roots.map(r => {
+      const members = [state.countries[r], ...Object.values(state.countries).filter(f => f.rebelOf === r)];
+      const pairs = members.flatMap((A, i) => members.slice(i + 1).map(B => [A, B]));
+      return html`<div class="card"><div class="card-b col">
+        <b>${state.countries[r].name}</b>
+        ${pairs.map(([A, B]) => html`<div class="row small wrap"><span class="grow">${A.name} ↔ ${B.name}</span><div class="seg sm">${STANCES.map(([k, l]) => html`<button class=${stance(A.id, B.id) === k ? 'on' : ''} onClick=${() => run(conn, { type: 'factionStance', a: A.id, b: B.id, stance: k })}>${l}</button>`)}</div></div>`)}
+        <div class="row small wrap"><span class="dim">Outside power backs</span>
+          <${CountrySelect} state=${state} value=${backer} onChange=${setBacker} />
+          ${members.map(m => html`<button class="btn xs" disabled=${!backer} onClick=${() => run(conn, { type: 'civilAssist', country: backer, side: m.id })}>${m.name}</button>`)}
+        </div>
+      </div></div>`;
+    })}`;
+}
+
+// A coup, planned ahead: the regime that takes over, its made-up flag, then success or failure.
+function CoupBox({ conn, c }) {
+  const plan = c.coupPlan || {};
+  const [regime, setRegime] = useState(plan.regime || '');
+  const [flag, setFlag] = useState(plan.flag || null);
+  const save = (r = regime, f = flag) => run(conn, { type: 'setCoupPlan', country: c.id, regime: r, flag: f });
+  const reroll = () => { const f = randomFlag(); setFlag(f); save(regime, f); };
+  return html`<div class="sub-h">Coup in ${c.name}</div>
+    <div class="row"><input class="input sm grow" placeholder=${`New regime, e.g. National Salvation Council`} value=${regime} onInput=${e => setRegime(e.target.value)} onChange=${() => save()} />
+      <button class="btn xs" onClick=${reroll} title="Invent a flag for the new regime">🎲 Flag</button>${flag && html`<img src=${altFlagUrl(flag)} alt="" style="height:26px;border-radius:2px;border:1px solid #fff3" />`}</div>
+    <div class="row wrap" style="margin-top:6px">
+      <button class="btn xs danger" onClick=${async () => { await save(); run(conn, { type: 'coup', country: c.id, outcome: 'success' }, `Coup succeeds in ${c.name}`); }}>Coup succeeds</button>
+      <button class="btn xs" onClick=${() => run(conn, { type: 'coup', country: c.id, outcome: 'fail' }, `Coup fails in ${c.name}`)}>Coup fails</button>
+      ${c.origName && html`<button class="btn xs good" onClick=${() => run(conn, { type: 'setCoupPlan', country: c.id, regime: c.origName, flag: null }).then(() => run(conn, { type: 'restoreRegime', country: c.id }))}>Restore old regime</button>`}
     </div>`;
 }

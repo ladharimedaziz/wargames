@@ -8,18 +8,18 @@ import {
   enemiesOf, isActive, countryName, boundAllies, airContested, closesAirspace, warClosures,
   isOOB, OUT_OF_BOUNDS,
 } from './core.js';
-import { validateOrder, blockedFor, describeOrder } from './orders.js';
+import { validateOrder, blockedFor, describeOrder, autoUnits } from './orders.js';
 import { tickEconomy } from './economy.js';
-import { hasGeo, cellsOf, cellCenter, advance, holdings, releaseCells, occupyCells, heldCenter, behindLines, dropPocket, nearestHeld } from './control.js';
+import { CELL, hasGeo, cellsOf, cellCenter, advance, holdings, releaseCells, occupyCells, heldCenter, behindLines, dropPocket, nearestHeld } from './control.js';
 import { planAI } from './ai.js';
 import { headlinesFrom } from './news.js';
 import { detectEndings } from './endings.js';
 import { snapshotStats } from './state.js';
 
 const PRIORITY = ['roe', 'overflight', 'war', 'alliance', 'ceasefire', 'peace', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'lift',
-  'rebase', 'cap', 'fleet', 'blockade', 'siege', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'neo', 'strike', 'helistrike', 'invade', 'airdrop', 'airassault', 'nuke', 'election'];
+  'rebase', 'cap', 'fleet', 'blockade', 'force', 'siege', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'neo', 'drone', 'strike', 'helistrike', 'invade', 'airdrop', 'airassault', 'nuke', 'election'];
 
-const ANIMATED = ['exchange', 'strike', 'battle', 'naval', 'fleet', 'siege', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo', 'heli', 'civil_war', 'airdrop',
+const ANIMATED = ['exchange', 'force', 'drone', 'strike', 'battle', 'naval', 'fleet', 'siege', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo', 'heli', 'civil_war', 'airdrop',
   'ceasefire', 'peace', 'alliance', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'overflight', 'cyber', 'intel', 'spy', 'satellite', 'propaganda', 'alert', 'lift', 'roe', 'election'];
 
 const pt = c => ({ lat: c.lat, lon: c.lon });
@@ -140,6 +140,20 @@ function aimPoint(state, tgt, category, ctx, attacker) {
   const pick = (major.length ? major : cities)[Math.floor(rand(state) * (major.length || cities.length))];
   const q = { lat: pick.lat + between(state, -0.15, 0.15), lon: pick.lon + between(state, -0.15, 0.15) };
   return inside(q) ? q : { lat: pick.lat, lon: pick.lon };
+}
+
+// A drone raid: every country has them. A swarm of cheap airframes, many of which air defences pick off; the rest
+// hit one category of target, lightly, and the strike counts as an attack like any other.
+function resolveDrone(state, o, ctx, ev) {
+  const atk = state.countries[o.country], tgt = state.countries[o.target];
+  if (!atWar(state, o.country, o.target)) declareWar(state, o.country, o.target, ev, 'strike');
+  const n = 6 + Math.floor(rand(state) * 6);
+  const p = clamp(0.2 + 0.6 * interceptPower(state, o.target, o.country), 0.2, 0.85);
+  let hits = 0; for (let i = 0; i < n; i++) if (!chance(state, p)) hits++;
+  const category = o.category || 'military';
+  if (hits) applyStrikeDamage(state, tgt, category, 0.006 * hits * Q(state, o.country, 'air'), ev, o.country);
+  tgt.lastStruck = state.meta.turn;
+  ev.push({ kind: 'drone', owner: o.country, target: o.target, category, from: pt(atk), to: aimPoint(state, tgt, category, ctx, o.country), n, hits });
 }
 
 function resolveStrike(state, o, ctx, ev, salvos) {
@@ -302,7 +316,7 @@ function resolveInvasions(state, orders, ev) {
       // The front moves forward a little each turn; the country falls once the attacker holds all of it.
       // The Zeus can overrule the engine for any front: advance, hold or fall back.
       const mine = T.front && (T.front.by === lead || sameSide(state, T.front.by, lead));
-      if (!mine) T.front = { by: lead, pct: 0, prev: 0, from: origin, turn: state.meta.turn, mode: T.front?.mode || 'auto' };
+      if (!mine) T.front = { by: lead, pct: 0, prev: 0, from: origin, turn: state.meta.turn, mode: T.front?.mode || (state.countries[lead]?.a3 === 'USA' && state.settings.combinedArms !== false ? 'encircle' : 'auto') };
       else if (sea && T.front.pct < 5) T.front.from = origin;
       const engine = survivors.length ? clamp(10 + 30 * (ratio - 1), 8, 30) + (remainingDef < 15 ? 12 : 0) : 0;
       const occupied = moveFront(state, T, frontDelta(T.front.mode, engine, 15), ev);
@@ -393,6 +407,7 @@ function updateChokepoints(state, ev) {
 function frontDelta(mode, engine, push) {
   if (mode === 'hold') return 0;
   if (mode === 'advance') return Math.max(engine, push);
+  if (mode === 'encircle') return Math.max(engine * 0.85, push);
   if (mode === 'retreat') return -Math.max(12, push);
   return engine;
 }
@@ -435,7 +450,7 @@ function resolveHelicopters(state, o, ev) {
 
 // A push is measured against the country, but capped at the size of a large theatre, so "+10" in Russia takes
 // about as much ground as "+10" in Ukraine rather than a tenth of Siberia.
-const FRONT_CAP = 1100;
+const FRONT_CAP = Math.round(1100 * (0.3 / CELL) ** 2);
 
 // Moves a front by `delta` points: the attacker takes cells along the line (or, going back, the defender retakes
 // its own). Holding all of it occupies the country; losing all of it ends the front. Returns true when the
@@ -458,7 +473,7 @@ export function moveFront(state, T, delta, ev) {
   const n = Math.max(1, Math.round(Math.abs(delta) / 100 * Math.min(total, FRONT_CAP)));
   const wasOccupied = !!T.occupiedBy;
   if (delta > 0) {
-    const took = advance(state, f.by, T.id, n, { target: T.id, from: f.from, toward: pt(T) });
+    const took = advance(state, f.by, T.id, n, { target: T.id, from: f.from, toward: pt(T), encircle: f.mode === 'encircle' ? pt(T) : null });
     if (took.length) { const [lon, lat] = cellCenter(took[took.length - 1]); f.from = { lat, lon }; }
   } else {
     if (T.occupiedBy && total > 5000 && !holdings(state, T.id).held[f.by]) occupyCells(state, T.id, f.by);
@@ -525,7 +540,7 @@ function updateFronts(state, ev) {
     const press = unitsOf(state, f.by, 'army').reduce((t, u) => t + u.strength, 0);
     const mode = f.mode || 'auto';
     let delta = 0;
-    if (mode === 'advance') delta = T.occupiedBy ? 0 : clamp(12 + 8 * (press / Math.max(40, held) - 1), 10, 22);
+    if (mode === 'advance' || mode === 'encircle') delta = T.occupiedBy ? 0 : clamp(12 + 8 * (press / Math.max(40, held) - 1), 10, 22);
     else if (mode === 'retreat') delta = -15;
     else if (mode === 'auto' && !T.occupiedBy && held >= 40) delta = -6;
     if (delta) moveFront(state, T, delta, ev); else f.prev = f.pct;
@@ -554,6 +569,26 @@ function sailToCover(state, o, ev) {
   const route = seaRoute(u.loc.id, o.zone, blockedFor(state, o.country)); if (!route) return;
   ev.push({ kind: 'fleet', owner: o.country, unitType: u.type, path: route.map(z => ({ lat: SEA_ZONES[z].lat, lon: SEA_ZONES[z].lon })) });
   u.loc = { kind: 'sea', id: o.zone };
+}
+
+// Forcing a strait: the fleet sails in against whoever holds it. Holding it makes the holder an enemy, the shore
+// batteries of every hostile country on the strait wear the ships down as they pass, and whatever fleet is still
+// blockading fights them in the naval round. The strait only opens if the holders are beaten or driven off.
+function forceStrait(state, o, ev) {
+  const cp = state.global.chokepoints[o.zone], z = SEA_ZONES[o.zone];
+  if (cp?.by && !atWar(state, o.country, cp.by)) declareWar(state, o.country, cp.by, ev, 'strait', o.country);
+  const ids = o.units.filter(id => state.units[id]);
+  moveFleet(state, { ...o, type: 'fleet', units: ids }, ev);
+  for (const id of ids) {
+    const u = state.units[id]; if (!u || u.loc.id !== o.zone) continue;
+    u.forcing = true;
+    for (const cid of z.coasts) {
+      const C = state.countries[cid]; if (!C || !isActive(C) || !(atWar(state, o.country, cid) || (cp?.by && sameSide(state, cid, cp.by)))) continue;
+      damageUnit(state, u, clamp(4 + C.airDefense * 1.4, 4, 16) * between(state, 0.7, 1.3), ev, `shore batteries in ${z.name}`);
+      if (!state.units[id]) break;
+    }
+  }
+  ev.push({ kind: 'force', owner: o.country, zone: o.zone, by: cp?.by || null, at: { lat: z.lat, lon: z.lon } });
 }
 
 function moveFleet(state, o, ev) {
@@ -685,10 +720,12 @@ function runOrders(state, list, ctx, ev) {
     o.status = 'done';
     switch (o.type) {
       case 'strike': resolveStrike(state, o, ctx, ev, salvos); break;
+      case 'drone': resolveDrone(state, o, ctx, ev); break;
       case 'invade': if (o.sail) sailToCover(state, o, ev); invasions.push(o); break;
       case 'airdrop': invasions.push(o); break;
       case 'rebase': for (const id of o.units) { const u = state.units[id]; if (u) { ev.push({ kind: 'move', owner: o.country, unitType: u.type, from: anchor(state, u.loc), to: pt(state.countries[o.target]) }); u.loc = { kind: 'country', id: o.target }; } } break;
       case 'fleet': case 'blockade': moveFleet(state, o, ev); break;
+      case 'force': forceStrait(state, o, ev); break;
       case 'siege': siegeCoast(state, o, ev); break;
       case 'lift': for (const u of unitsOf(state, o.country)) { u.blockade = false; delete u.blockadeOf; } ev.push({ kind: 'lift', a: o.country }); break;
       case 'cap': for (const u of unitsOf(state, o.country, 'fighter')) if (u.loc.id === o.country) u.cap = true; break;
@@ -745,6 +782,45 @@ function enforceOOB(state) {
   if (state.control) for (const k of Object.keys(state.control)) if (isOOB(state.control[k])) delete state.control[k];
 }
 
+// Standing operations: orders a Zeus sets once that then repeat every turn until stopped. A bombing campaign is a
+// strike each turn on a rotating target type; patrols and drone raids repeat; a combined-arms invasion presses the
+// invasion with bombing and air patrols beside it (unless Kronos has switched combined arms off). They end when the
+// war does, or when the ground is taken.
+const OP_KINDS = ['bombing', 'patrol', 'drones', 'invasion'];
+const BOMB_ROTATION = ['military', 'infrastructure', 'energy', 'industry'];
+export { OP_KINDS };
+function standingOrders(state, ctx) {
+  const turn = state.meta.turn, out = [];
+  state.ops = (state.ops || []).filter(op => {
+    const T = state.countries[op.target], C = state.countries[op.country];
+    if (!C || !isActive(C) || (T && !isActive(T))) return false;
+    if (op.kind === 'patrol') return true;
+    if (!T) return false;
+    if (T.capitulated || T.occupiedBy === op.country) return false;
+    return atWar(state, op.country, op.target) || op.fresh;
+  });
+  const push = (type, extra, counts) => {
+    let o = { id: newId(state, 'o'), turn, country: null, type, status: 'queued', by: 'OPS', at: ctx.now, ...extra };
+    if (counts) o = autoUnits(state, o, counts);
+    if (validateOrder(state, o).ok) out.push(o);
+  };
+  for (const op of state.ops) {
+    delete op.fresh;
+    const base = { country: op.country, target: op.target };
+    if (op.kind === 'patrol') push('cap', { country: op.country });
+    else if (op.kind === 'drones') push('drone', { ...base, category: BOMB_ROTATION[(turn + (op.k || 0)) % 4] });
+    else if (op.kind === 'bombing') push('strike', { ...base, category: BOMB_ROTATION[(turn + (op.k || 0)) % 4] }, { n: 2 });
+    else if (op.kind === 'invasion') {
+      push('invade', base, { n: 12 });
+      if (state.settings.combinedArms !== false) {
+        push('strike', { ...base, category: 'military' }, { n: 2, escort: 1 });
+        push('cap', { country: op.country });
+      }
+    }
+  }
+  return out;
+}
+
 export function resolveTurn(state, ctx) {
   enforceOOB(state);
   const ev = [];
@@ -754,11 +830,13 @@ export function resolveTurn(state, ctx) {
   const aiOrders = planAI(state, ctx);
   delete state._aiEvents;
   for (const o of aiOrders) state.orders.push(o);
+  for (const o of standingOrders(state, ctx)) state.orders.push(o);
   const queued = state.orders.filter(o => o.turn === turn && o.status === 'queued');
   // CAP resets every turn; it only lasts while ordered.
   for (const u of Object.values(state.units)) u.cap = false;
   const invasions = runOrders(state, queued, ctx, ev);
   resolveNaval(state, ev);
+  for (const u of Object.values(state.units)) delete u.forcing;
   resolveInvasions(state, invasions, ev);
   updateFronts(state, ev);
   updateChokepoints(state, ev);

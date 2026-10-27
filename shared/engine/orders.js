@@ -10,6 +10,7 @@ export const ORDER_TYPES = {
   rebase:     { label: 'Rebase air wings', group: 'military', needs: ['target'] },
   fleet:      { label: 'Move fleet', group: 'military', needs: ['zone'] },
   blockade:   { label: 'Blockade a sea zone', group: 'military', needs: ['zone'] },
+  force:      { label: 'Force open a strait', group: 'military', needs: ['zone'] },
   siege:      { label: 'Naval blockade of a country', group: 'military', needs: ['target'] },
   lift:       { label: 'Lift blockade', group: 'military', needs: [] },
   cap:        { label: 'Air patrol over home', group: 'military', needs: [] },
@@ -31,6 +32,7 @@ export const ORDER_TYPES = {
   satellite:  { label: 'Blind enemy satellites', group: 'covert', needs: ['target'] },
   propaganda: { label: 'Propaganda campaign', group: 'covert', needs: [] },
   neo:        { label: 'Evacuate citizens (NEO)', group: 'military', needs: ['target'] },
+  drone:      { label: 'Drone attack', group: 'military', needs: ['target'] },
   helistrike: { label: 'Helicopter strike', group: 'military', needs: ['target'] },
   airassault: { label: 'Air assault behind the lines', group: 'military', needs: ['target'] },
   airdrop:    { label: 'Paratroop drop', group: 'military', needs: ['target'] },
@@ -75,7 +77,7 @@ export function validateOrder(state, o) {
       if (o.aircraft) {
         const spec = US_AIRCRAFT[o.aircraft];
         if (!spec) return fail('Unknown aircraft.');
-        if (c.a3 !== 'USA') return fail(`Only the United States flies the ${spec.name}.`);
+        if (!spec.by.includes(c.a3)) return fail(`${c.name} does not fly the ${spec.name}.`);
         if (units.some(u => u.type !== spec.type)) return fail(`The ${spec.name} flies from ${spec.type === 'bomber' ? 'bomber' : 'fighter'} wings.`);
         if (o.payload === 'moab' && o.aircraft !== 'b2') return fail('The heavy bomb is a B-2 option.');
       }
@@ -121,6 +123,20 @@ export function validateOrder(state, o) {
         const route = seaRoute(u.loc.id, o.zone, blockedFor(state, o.country));
         if (!route) return fail(`No open sea route from ${SEA_ZONES[u.loc.id].name} to ${SEA_ZONES[o.zone].name}.`);
         if (route.length - 1 > FLEET_MOVES_PER_TURN * 2) return fail(`${SEA_ZONES[o.zone].name} is ${route.length - 1} zones away; a fleet can sail at most ${FLEET_MOVES_PER_TURN * 2} in one turn.`);
+      }
+      return { ok: true };
+    }
+    case 'force': {
+      const z = SEA_ZONES[o.zone], cp = state.global.chokepoints[o.zone];
+      if (!z?.choke || !cp) return fail('Pick a strait or canal.');
+      if (cp.status === 'open') return fail(`${z.name} is already open.`);
+      if (cp.by && sameSide(state, o.country, cp.by)) return fail(`${z.name} is held by ${c.name}'s own side.`);
+      const ships = units.filter(u => u.type === 'fleet' || u.type === 'carrier');
+      if (!ships.length) return fail(`${c.name} has no fleet to send through.`);
+      for (const u of ships) {
+        const route = seaRoute(u.loc.id, o.zone, blockedFor(state, o.country));
+        if (!route) return fail(`No open sea route to ${z.name}.`);
+        if (route.length - 1 > FLEET_MOVES_PER_TURN * 2) return fail(`${z.name} is ${route.length - 1} zones away; a fleet can sail at most ${FLEET_MOVES_PER_TURN * 2} in one turn.`);
       }
       return { ok: true };
     }
@@ -186,6 +202,10 @@ export function validateOrder(state, o) {
       if (o.type === 'airassault') o.units = [army.find(u => u.loc.id === o.target)?.id || army[0].id];
       return { ok: true };
     }
+    case 'drone':
+      if (state.settings.year && state.settings.year < 2000) return fail('There are no combat drones in 1985.');
+      if (sameSide(state, o.country, o.target)) return fail(`${T.name} is on the same side as ${c.name}.`);
+      return { ok: true };
     case 'lift': case 'cap': case 'propaganda': case 'election': case 'intel': case 'satellite':
     case 'alliance': case 'sanction': case 'unsanction': case 'trade': case 'overflight':
       return { ok: true };
@@ -283,7 +303,7 @@ export function autoUnits(state, o, counts = {}) {
     const armies = unitsOf(state, o.country, 'army').filter(u => u.loc.kind === 'country' && u.loc.id !== o.target && u.strength > 20 && airdropReach(state, o.country, o.target, u));
     armies.sort((a, b) => b.strength - a.strength);
     o.units = armies.slice(0, Math.min(counts.n || 1, 2)).map(u => u.id);
-  } else if ((o.type === 'fleet' || o.type === 'blockade') && SEA_ZONES[o.zone]) {
+  } else if ((o.type === 'fleet' || o.type === 'blockade' || o.type === 'force') && SEA_ZONES[o.zone]) {
     const ships = unitsOf(state, o.country).filter(u => (u.type === 'fleet' || u.type === 'carrier') && !(counts.type && u.type !== counts.type));
     const blocked = blockedFor(state, o.country);
     const scored = ships.map(u => ({ u, r: seaRoute(u.loc.id, o.zone, blocked) })).filter(x => x.r).sort((a, b) => a.r.length - b.r.length);
@@ -315,9 +335,11 @@ export function describeOrder(state, o, lang = 'en') {
     case 'rebase': return `${c} rebases ${parts.join(', ')} to ${t}`;
     case 'fleet': return `${c} sails ${parts.join(', ')} to ${n(o.zone)}`;
     case 'blockade': return `${c} blockades ${n(o.zone)} with ${parts.join(', ')}`;
+    case 'force': return `${c} forces ${n(o.zone)} open with ${parts.join(', ') || 'its fleet'}`;
     case 'siege': return `${c} blockades the coast of ${t} with ${parts.join(', ') || 'no warships'}`;
     case 'lift': return `${c} lifts its blockades`;
     case 'cap': return `${c} flies air patrols over its territory`;
+    case 'drone': return `${c} launches a drone attack on ${t}`;
     case 'alert': return `${c} puts its nuclear forces on alert`;
     case 'nuke': return `${c} launches a nuclear weapon at ${t}`;
     case 'war': return `${c} declares war on ${t}`;

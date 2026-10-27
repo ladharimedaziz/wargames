@@ -1,0 +1,27 @@
+/* Skin: flat, printed-chart look. Overrides tokens and strips glows/gradients from the base kit. */
+:root {
+  --bg: #0d0f12; --bg-1: #121519; --bg-2: #171b20; --bg-3: #1d2229; --bg-4: #272d36;
+  --line: #242a32; --line-2: #343c47;
+  --text: #ebe6d8; --text-2: #b0aa9a; --text-3: #7b776b;
+  --accent: #ebe6d8; --accent-2: #c9c2ae; --accent-glow: rgba(235, 230, 216, 0);
+  --radius: 4px; --radius-sm: 3px;
+  --shadow: 0 6px 20px rgba(0, 0, 0, .45);
+  --font: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-hud: 'IBM Plex Sans Condensed', 'IBM Plex Sans', system-ui, sans-serif;
+  --font-mono: 'IBM Plex Mono', ui-monospace, Menlo, Consolas, monospace;
+  --font-serif: 'Newsreader', Georgia, 'Times New Roman', serif;
+}
+.hud { letter-spacing: .03em; }
+.btn { box-shadow: none; transition: background .12s, border-color .12s; font-weight: 500; }
+.btn:active { transform: none; }
+.btn:hover { border-color: var(--text-3); }
+.btn.primary, .btn.danger, .btn.kronos { background-image: none; box-shadow: none; }
+.card, .chip, .pane, .panel, .modal, .toast { box-shadow: none; background-image: none; }
+.modal, .toast { box-shadow: var(--shadow); }
+h1, h2, .insp-name, .kc-name, .pane-h h2 { font-family: var(--font-serif); font-weight: 600; letter-spacing: 0; }
+.up { letter-spacing: .08em; font-weight: 600; }
+::-webkit-scrollbar-thumb { border-radius: 2px; }
+/* standing-operation buttons wrap instead of overflowing */
+.quick-grid .btn { white-space: normal; height: auto; min-height: 22px; line-height: 1.2; padding-top: 3px; padding-bottom: 3px; text-align: left; }
+.ops-row, .standing { display: flex; flex-wrap: wrap; gap: 6px; }
+.ops-row .btn, .standing .btn { white-space: normal; height: auto; min-height: 26px; padding-top: 3px; padding-bottom: 3px; }
