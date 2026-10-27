@@ -69,14 +69,22 @@ function victory(c, W, H, t, S) {
   c.save(); c.translate(W / 2, H / 2); c.rotate(t * 0.08);
   for (let i = 0; i < 18; i++) { c.rotate(TAU / 18); const g = c.createLinearGradient(0, 0, H, 0); g.addColorStop(0, rgba(col, 0.28 * a)); g.addColorStop(1, rgba(col, 0)); c.fillStyle = g; c.beginPath(); c.moveTo(0, 0); c.lineTo(H, -H * 0.05); c.lineTo(H, H * 0.05); c.fill(); }
   c.restore();
-  // laurel wreath, drawn leaf by leaf
-  const n = 26, draw = clamp((t - 0.6) / 4) * n;
-  for (const side of [-1, 1]) for (let i = 0; i < n; i++) {
-    if (i > draw) break;
-    const ang = Math.PI * (0.18 + i / n * 0.78), r = H * 0.33, x = W / 2 + side * Math.sin(ang) * r * 1.25, y = H / 2 + Math.cos(ang) * r;
-    c.save(); c.translate(x, y); c.rotate(side * (ang + 0.6) + (side < 0 ? Math.PI : 0)); c.fillStyle = rgba('#f2d98a', 0.85 * clamp(draw - i));
-    c.beginPath(); c.ellipse(0, 0, H * 0.035, H * 0.014, 0, 0, TAU); c.fill(); c.restore();
+  // laurel wreath: two branches rising from the bottom, leaves along the stem, then a star
+  const R = H * 0.3, cx = W / 2, cy = H * 0.5, n = 22, draw = clamp((t - 0.6) / 4) * n;
+  for (const side of [-1, 1]) {
+    c.strokeStyle = rgba('#d9b95a', 0.7 * a); c.lineWidth = Math.max(2, H * 0.004); c.beginPath();
+    for (let i = 0; i <= Math.min(draw, n); i++) { const th = Math.PI / 2 + side * (0.25 + i / n * 2.35); const x = cx + Math.cos(th) * R, y = cy + Math.sin(th) * R; i ? c.lineTo(x, y) : c.moveTo(x, y); }
+    c.stroke();
+    for (let i = 1; i < n; i++) {
+      if (i > draw) break;
+      const th = Math.PI / 2 + side * (0.25 + i / n * 2.35), x = cx + Math.cos(th) * R, y = cy + Math.sin(th) * R, tan = th + side * Math.PI / 2, k = 1 - i / n * 0.35;
+      for (const o of [-1, 1]) { c.save(); c.translate(x, y); c.rotate(tan + o * 0.7); c.fillStyle = rgba(o > 0 ? '#e8cd75' : '#c9a747', 0.9 * clamp(draw - i)); c.beginPath(); c.ellipse(H * 0.03 * k, 0, H * 0.034 * k, H * 0.0125 * k, 0, 0, TAU); c.fill(); c.restore(); }
+    }
   }
+  const sa = clamp((t - 3) / 1.2), pulse = 1 + Math.sin(t * 2.4) * 0.03;
+  c.save(); c.translate(cx, H * 0.21); c.scale(sa * pulse, sa * pulse); c.shadowColor = col; c.shadowBlur = 40; c.fillStyle = col; c.beginPath();
+  for (let i = 0; i < 10; i++) { const r = i % 2 ? H * 0.04 : H * 0.1, ang = -Math.PI / 2 + i * Math.PI / 5; i ? c.lineTo(Math.cos(ang) * r, Math.sin(ang) * r) : c.moveTo(Math.cos(ang) * r, Math.sin(ang) * r); }
+  c.closePath(); c.fill(); c.restore();
   // fireworks
   for (let b = 0; b < 14; b++) {
     const at = 1 + b * 1.1, u = t - at; if (u < 0 || u > 3) continue;
