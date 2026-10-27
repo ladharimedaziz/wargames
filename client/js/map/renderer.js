@@ -34,6 +34,13 @@ function hatch(color, size = 7, width = 1.4) {
   return c;
 }
 
+// Bounding box of a group's contour rings (arrays of [x, y]).
+function ringBox(rings) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const r of rings) for (const p of r) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
+  return [[x0, y0], [x1, y1]];
+}
+
 export class WorldMap {
   constructor(el, opts = {}) {
     this.el = el;
@@ -114,6 +121,12 @@ export class WorldMap {
       const main = c.parts.reduce((a, b) => (b.area > a.area ? b : a));
       const b = geoPath(proj).bounds(main.f);
       return [c.id, b];
+    }));
+    // Bounds of every part of a country, so an occupier's flag can be stretched over all of it.
+    this.fullBounds = new Map(this.atlas.lo.countries.map(c => {
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const part of c.parts) { const b = geoPath(proj).bounds(part.f); if (!(b[0][0] < Infinity)) continue; x0 = Math.min(x0, b[0][0]); y0 = Math.min(y0, b[0][1]); x1 = Math.max(x1, b[1][0]); y1 = Math.max(y1, b[1][1]); }
+      return [c.id, [[x0, y0], [x1, y1]]];
     }));
     this.centroids = new Map(this.atlas.lo.countries.map(c => [c.id, proj(c.centroid)]));
     // Centre of the main landmass, so the US emblem sits on the lower 48 rather than drifting toward Alaska.
@@ -306,8 +319,7 @@ export class WorldMap {
         ctx.save(); ctx.clip(cpath);
         ctx.fillStyle = 'rgba(6,8,14,0.3)'; ctx.fill(sh.path, 'evenodd');
         // The invader's flag covers the ground it holds, faded so cities and roads still show through.
-        const flag = this.flagFill(g.owner, k);
-        if (flag) { ctx.globalAlpha = 0.55; ctx.fillStyle = flag; ctx.fill(sh.path, 'evenodd'); ctx.globalAlpha = 1; ctx.fillStyle = hexA(col, 0.14); ctx.fill(sh.path, 'evenodd'); }
+        if (this.flagReady(g.owner)) { ctx.save(); ctx.clip(sh.path, 'evenodd'); this.drawFlag(ctx, g.owner, sh.box ||= ringBox(sh.rings), 0.55); ctx.restore(); ctx.fillStyle = hexA(col, 0.14); ctx.fill(sh.path, 'evenodd'); }
         else { ctx.fillStyle = hexA(col, 0.6); ctx.fill(sh.path, 'evenodd'); const pat = this.pattern('front' + col, 'rgba(255,255,255,0.22)'); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(sh.path, 'evenodd'); }
         ctx.restore();
         // The line itself, only where it is a real front: a hot glow with marching dashes.
@@ -623,6 +635,24 @@ export class WorldMap {
     return e.pat;
   }
 
+  // One flag, stretched over a box, instead of a tiled pattern: it grows and shrinks with the ground it covers.
+  flagReady(id) { return !!this.flagImage(id); }
+  flagImage(id) {
+    this.flagImgs ||= new Map();
+    let e = this.flagImgs.get(id);
+    if (!e) {
+      const img = new Image(); e = { img, ok: false, pat: null };
+      img.onload = () => { e.ok = true; e.pat = this.bctx.createPattern(img, 'repeat'); this.dirty = true; };
+      img.src = `/client/img/flags/${id}.webp`; this.flagImgs.set(id, e);
+    }
+    return e.ok ? e.img : null;
+  }
+  drawFlag(ctx, id, box, alpha) {
+    const img = this.flagImage(id); if (!img) return;
+    const [[x0, y0], [x1, y1]] = box, w = x1 - x0, h = y1 - y0; if (!(w > 0 && h > 0)) return;
+    ctx.globalAlpha = alpha; ctx.drawImage(img, x0, y0, w, h); ctx.globalAlpha = 1;
+  }
+
   // --- base layer ---
   drawBase() {
     const ctx = this.bctx, s = this.state, { k, x, y } = this.cam, dpr = this.dpr;
@@ -654,8 +684,7 @@ export class WorldMap {
         if (c.occupiedBy && s.countries[c.occupiedBy] && !sweeping) {
           const oc = s.blocs[s.countries[c.occupiedBy].bloc]?.color || '#ff4d5e';
           // The occupier's flag over the whole country, with a bloc-coloured tint so it reads as held ground.
-          const flag = this.flagFill(c.occupiedBy, k);
-          if (flag) { ctx.fillStyle = 'rgba(6,8,14,0.35)'; ctx.fill(path); ctx.globalAlpha = 0.62; ctx.fillStyle = flag; ctx.fill(path); ctx.globalAlpha = 1; ctx.fillStyle = hexA(oc, 0.16); ctx.fill(path); }
+          if (this.flagReady(c.occupiedBy) && this.fullBounds.get(id)) { ctx.fillStyle = 'rgba(6,8,14,0.35)'; ctx.fill(path); ctx.save(); ctx.clip(path); this.drawFlag(ctx, c.occupiedBy, this.fullBounds.get(id), 0.62); ctx.restore(); ctx.fillStyle = hexA(oc, 0.16); ctx.fill(path); }
           else { const pat = this.pattern('occ' + oc, hexA(oc, 0.85)); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(path); }
         }
         if (c.capitulated) { ctx.fillStyle = 'rgba(30,30,30,0.55)'; ctx.fill(path); }
