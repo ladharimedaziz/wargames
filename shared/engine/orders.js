@@ -75,7 +75,7 @@ export function validateOrder(state, o) {
       if (o.aircraft) {
         const spec = US_AIRCRAFT[o.aircraft];
         if (!spec) return fail('Unknown aircraft.');
-        if (c.a3 !== 'USA') return fail(`Only the United States flies the ${spec.name}.`);
+        if (!spec.by.includes(c.a3)) return fail(`${c.name} does not fly the ${spec.name}.`);
         if (units.some(u => u.type !== spec.type)) return fail(`The ${spec.name} flies from ${spec.type === 'bomber' ? 'bomber' : 'fighter'} wings.`);
         if (o.payload === 'moab' && o.aircraft !== 'b2') return fail('The heavy bomb is a B-2 option.');
       }

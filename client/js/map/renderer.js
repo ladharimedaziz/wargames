@@ -3,6 +3,7 @@
 import { geoEqualEarth, geoPath, geoGraticule10, geoInterpolate } from 'd3-geo';
 import { SEA_ZONES } from '/shared/data/places.js';
 import { CITIES } from '/shared/data/cities.js';
+import { AIRCRAFT } from '/shared/data/militaries.js';
 import { relation, isOOB, OUT_OF_BOUNDS } from '/shared/engine/core.js';
 import { loadAtlas, makeCountryAt, makeLandAt, pairBorder } from './atlas.js';
 import { contours as d3contours } from 'd3-contour';
@@ -1708,7 +1709,7 @@ export class WorldMap {
   fx_strike(ctx, fx, u, now) {
     const t = fx.e.unitType;
     if (t === 'missile') return this.strikeMissiles(ctx, fx, u);
-    if (fx.e.model === 'b2' || fx.e.model === 'f117') return this.strikeStealth(ctx, fx, u, now);
+    if (AIRCRAFT[fx.e.model]?.stealth < 0.5) return this.strikeStealth(ctx, fx, u, now);
     if (t === 'bomber') return this.strikeBomber(ctx, fx, u, now);
     return this.strikeJets(ctx, fx, u, now);
   }
@@ -1908,7 +1909,7 @@ export class WorldMap {
     this.drawModel(ctx, e.model || 'bomber', pos[0], pos[1], ang, 8 * sc, '#e8eef8');
     this.escorts(ctx, e, pos, ang, sc, col);
     ctx.globalAlpha = 1;
-    if (e.model && u > T1 - 0.05 && u < T2 + 0.08) this.tag(ctx, b[0], b[1] - 24 * sc, e.model === 'b52' ? 'B-52 · CARPET BOMBING' : 'B-1B LANCER · LOW-LEVEL RUN', '#ffd27a');
+    if (e.model && u > T1 - 0.05 && u < T2 + 0.08) this.tag(ctx, b[0], b[1] - 24 * sc, e.model === 'b52' ? 'B-52 · CARPET BOMBING' : e.model === 'b1b' ? 'B-1B LANCER · LOW-LEVEL RUN' : `${AIRCRAFT[e.model]?.name.toUpperCase() || ''} · BOMBING RUN`, '#ffd27a');
     // Bombs fall behind the aircraft and burst one after another along the line.
     for (const sp of fx.parts) {
       const rel = T1 + sp.f * (T2 - T1), fallT = 0.035;
@@ -1957,7 +1958,8 @@ export class WorldMap {
       ctx.strokeStyle = 'rgba(255,200,140,0.35)'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(p0[0] + off[0], p0[1] + off[1]); ctx.lineTo(q[0] + off[0], q[1] + off[1]); ctx.stroke();
       const fade = u > 0.9 ? (1 - u) / 0.1 : 1;
       ctx.globalAlpha = fade;
-      this.drawJet(ctx, q[0] + off[0], q[1] + off[1], downed && k === 1 && u > meet ? q[2] + Math.PI : q[2], 4.6 * sc, col);
+      if (e.model) this.drawModel(ctx, e.model, q[0] + off[0], q[1] + off[1], downed && k === 1 && u > meet ? q[2] + Math.PI : q[2], 5 * sc, col);
+      else this.drawJet(ctx, q[0] + off[0], q[1] + off[1], downed && k === 1 && u > meet ? q[2] + Math.PI : q[2], 4.6 * sc, col);
       ctx.globalAlpha = 1;
     }
     if (downed) { this.shootDown(ctx, this.pt(e.at) || b, where(meet), (u - 0.18) / (meet - 0.18), (u - meet) / 0.35); return; }
@@ -1969,7 +1971,7 @@ export class WorldMap {
       for (const [sx, sy] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
         ctx.beginPath(); ctx.moveTo(b[0] + sx * r, b[1] + sy * r * 0.5); ctx.lineTo(b[0] + sx * r, b[1] + sy * r); ctx.lineTo(b[0] + sx * r * 0.5, b[1] + sy * r); ctx.stroke();
       }
-      if (lockIv >= 1) this.tag(ctx, b[0], b[1] - 20 * sc, 'TARGET LOCKED', '#7dffb0');
+      if (lockIv >= 1) this.tag(ctx, b[0], b[1] - 20 * sc, e.model && AIRCRAFT[e.model] ? `${AIRCRAFT[e.model].name.toUpperCase()} · LOCKED` : 'TARGET LOCKED', '#7dffb0');
       const lead = where(u);
       if (u > T1 - 0.08) { ctx.strokeStyle = 'rgba(120,255,170,0.55)'; ctx.setLineDash([2, 2]); ctx.beginPath(); ctx.moveTo(lead[0], lead[1]); ctx.lineTo(b[0], b[1]); ctx.stroke(); ctx.setLineDash([]); }
       ctx.fillStyle = `rgba(140,255,180,${0.6 + 0.4 * Math.sin(now / 60)})`; ctx.beginPath(); ctx.arc(b[0], b[1], 1.6, 0, TAU); ctx.fill();

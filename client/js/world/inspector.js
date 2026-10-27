@@ -3,7 +3,7 @@ import { html, useState, useEffect, run, fmt, cls } from '../lib.js';
 import { SEA_ZONES } from '/shared/data/places.js';
 import { UNIT_TYPES, ROE, BLOCS, tensionLevel, TENSION_LEVELS, relation, isOOB, OOB_ERROR } from '/shared/engine/core.js';
 import { ALLIANCE_NAMES } from '/shared/data/countries.js';
-import { navalLabel } from '/shared/data/militaries.js';
+import { navalLabel, aircraftFor } from '/shared/data/militaries.js';
 
 const Stat = ({ label, value, pct, tone, hint }) => html`
   <div class="stat" title=${hint || ''}>
@@ -68,8 +68,8 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
       <div class="quick-grid">
         ${[['strike', '✦ Strike'], ['invade', '➤ Invade'], ['fleet', '⛴ Fleet'], ['blockade', '⛓ Blockade sea'], ['siege', '⚓ Blockade country'], ['war', '⚔ War'], ['ceasefire', '✋ Ceasefire'], ['peace', '☮ Peace'], ['sanction', '$ Sanction'], ['aid', '+ Aid'], ['arms', '⇄ Arms'], ['cyber', '⌁ Cyber'], ['spy', '◐ Spy'], ['neo', '✈ Evacuate'], ['helistrike', '🚁 Heli strike'], ['airassault', '⇣ Air assault'], ['airdrop', '☂ Paratroops']].map(([t, l]) => html`<button class="btn xs" onClick=${() => startOrder(t)}>${l}</button>`)}
       </div>
-      ${c.a3 === 'USA' && html`<div class="quick-grid" style="margin-top:6px">
-        ${[['b2', 'B-2 strike'], ['b2moab', 'B-2 MOAB'], ['f117', 'F-117 strike'], ['b52', 'B-52 run'], ['b1b', 'B-1B run']].map(([k, l]) => html`<button class="btn xs" onClick=${() => startOrder('strike', { counts: k === 'b2moab' ? { aircraft: 'b2', payload: 'moab' } : { aircraft: k } })}>✈ ${l}</button>`)}
+      ${aircraftFor(c.a3).length > 0 && html`<div class="quick-grid" style="margin-top:6px">
+        ${aircraftFor(c.a3).flatMap(([k, v]) => k === 'b2' ? [[k, v.name.split(' ')[0] + ' strike', {}], ['b2moab', 'B-2 MOAB', { payload: 'moab' }]] : [[k, v.name.replace(/ .*/, '') + (v.type === 'bomber' ? ' run' : ' strike'), {}]]).map(([k, l, extra]) => html`<button class="btn xs" onClick=${() => startOrder('strike', { counts: { aircraft: k === 'b2moab' ? 'b2' : k, ...extra } })}>✈ ${l}</button>`)}
       </div>`}
       ${c.a3 === 'USA' && html`<${UsNavy} state=${state} id=${id} />`}
       <div class="row" style="margin-top:6px"><span class="dim small">Posture</span><div class="seg sm">${ROE.map(r => html`<button class=${c.roe === r ? 'on' : ''} onClick=${() => run(conn, { type: 'setRoe', country: id, roe: r })}>${r}</button>`)}</div></div>

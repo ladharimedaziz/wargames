@@ -2,6 +2,7 @@
 // American strike aircraft get their own silhouettes and runs (B-2, F-117, B-52, B-1B), helicopters get AH-64
 // and CH-47 shapes for the US, paratroopers drop from transports, and every diplomatic or covert order has a
 // short animation. Nothing graphic: light, motion and labels.
+import { AIRCRAFT } from '/shared/data/militaries.js';
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ease = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
@@ -18,6 +19,10 @@ const SHAPES = {
   b52: [[1.1, 0], [0.95, 0.07], [0.3, 0.08], [-0.12, 1.32], [-0.28, 1.32], [-0.14, 0.08], [-0.82, 0.07], [-0.98, 0.46], [-1.1, 0.46], [-1.06, 0]],
   // Blended body with wings swept back for the dash.
   b1b: [[1.18, 0], [0.8, 0.08], [0.35, 0.16], [0.1, 0.36], [-0.48, 0.92], [-0.6, 0.88], [-0.28, 0.2], [-0.78, 0.16], [-0.98, 0.52], [-1.1, 0.52], [-1.08, 0]],
+  // Fighters: single-engine swept wing (F-16, F-35), twin-tail air superiority (F-15, Su-27 family, J-20), canard delta (Rafale, Typhoon, J-10).
+  single: [[1, 0], [0.3, 0.1], [0.0, 0.66], [-0.36, 0.66], [-0.3, 0.12], [-0.72, 0.1], [-0.86, 0.36], [-1, 0.36], [-0.95, 0]],
+  twin: [[1.08, 0], [0.4, 0.12], [0.1, 0.7], [-0.28, 0.72], [-0.3, 0.2], [-0.74, 0.22], [-0.84, 0.5], [-1, 0.5], [-1, 0.16], [-0.9, 0]],
+  delta: [[1, 0], [0.5, 0.1], [0.46, 0.34], [0.38, 0.36], [0.32, 0.1], [-0.1, 0.12], [-0.7, 0.7], [-0.9, 0.7], [-0.88, 0.1], [-0.96, 0]],
   // C-17 style transport: high straight wing, T-tail.
   transport: [[1, 0], [0.82, 0.12], [0.2, 0.14], [0.02, 1.1], [-0.16, 1.1], [-0.12, 0.14], [-0.76, 0.12], [-0.86, 0.42], [-0.98, 0.42], [-0.96, 0]],
 };
@@ -25,10 +30,10 @@ const LABEL = { b2: 'B-2 SPIRIT', f117: 'F-117 NIGHTHAWK', b52: 'B-52 STRATOFORT
 
 export const AIRCRAFT_FX = {
   drawModel(ctx, model, x, y, ang, s, color) {
-    const P = SHAPES[model]; if (!P) return this.drawBomber(ctx, x, y, ang, s, color);
+    const P = SHAPES[model] || SHAPES[AIRCRAFT[model]?.shape]; if (!P) return this.drawBomber(ctx, x, y, ang, s, color);
     this.silhouette(ctx, x, y, ang, s, color, P);
     // B-52: eight engines in four pods under the wings.
-    if (model === 'b52') {
+    if (model === 'b52' || AIRCRAFT[model]?.shape === 'b52') {
       ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.fillStyle = '#9aa3ae';
       for (const side of [-1, 1]) for (const f of [0.32, 0.68]) { const px = 0.18 - f * 0.42, py = side * (0.1 + f * 1.15); ctx.fillRect((px - 0.12) * s, (py - 0.04) * s, 0.22 * s, 0.08 * s); }
       ctx.restore();
