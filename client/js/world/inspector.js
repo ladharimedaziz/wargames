@@ -62,7 +62,7 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
       </div>
 
       <${Fronts} conn=${conn} state=${state} id=${id} enemies=${enemies} setSelected=${setSelected} setBrush=${setBrush} />
-      <${CivilWar} conn=${conn} state=${state} c=${c} setSelected=${setSelected} />
+      <${CivilWar} conn=${conn} state=${state} c=${c} setSelected=${setSelected} setBrush=${setBrush} />
 
       <div class="sub-h">Quick orders</div>
       <div class="quick-grid">
@@ -238,23 +238,24 @@ function Fronts({ conn, state, id, enemies, setSelected, setBrush }) {
 }
 
 // Civil war: part of the country breaks away under a rebel banner.
-function CivilWar({ conn, state, c, setSelected }) {
+function CivilWar({ conn, state, c: sel, setSelected, setBrush }) {
   const [open, setOpen] = useState(false);
   const [name, setName] = useState('');
   const [share, setShare] = useState(30);
-  if (c.rebelOf) return null;
+  const c = sel.rebelOf && state.countries[sel.rebelOf] ? state.countries[sel.rebelOf] : sel; // a faction's card adds to its parent's war
   const factions = Object.values(state.countries).filter(f => f.rebelOf === c.id && state.wars.some(w => w.civil && (w.a === f.id || w.b === f.id)));
   const fight = factions.length ? html`<div class="row small wrap" style="margin-top:6px"><span class="chip gold">Civil war</span>${factions.map(f => html`<b class="click" onClick=${() => setSelected(f.id)}>${f.name}</b>`)}<span class="dim">vs ${c.name}</span></div>` : null;
   const go = async () => {
     const r = await run(conn, { type: 'civilWar', country: c.id, share, name: name.trim() });
-    if (r.ok) { setOpen(false); setName(''); }
+    if (r.ok) setName('');
   };
   if (!open) return html`${fight}<div class="row" style="margin-top:6px"><button class="btn xs" onClick=${() => setOpen(true)} title="A rebel faction seizes part of the country, with defecting troops">✊ ${factions.length ? 'Add another faction' : 'Start a civil war'}</button></div>`;
   return html`<div class="civil-box col">
     <div class="row between"><b class="small">Civil war in ${c.name}</b><button class="btn xs ghost" onClick=${() => setOpen(false)}>✕</button></div>
     <input class="input sm" placeholder=${`Rebel name, e.g. Free ${c.name} Army`} value=${name} onInput=${e => setName(e.target.value)} />
     <div class="row small"><span class="dim">Rebels take</span><div class="seg sm">${[15, 30, 45, 60].map(p => html`<button class=${share === p ? 'on' : ''} onClick=${() => setShare(p)}>${p}%</button>`)}</div></div>
-    <button class="btn sm danger" onClick=${go}>Start the civil war</button>
+    <div class="row wrap" style="gap:6px"><button class="btn sm danger" onClick=${go}>${factions.length ? 'Add this faction' : 'Start the civil war'}</button>
+      ${setBrush && html`<button class="btn sm" title="Click corners on the map to outline the rebel ground; the inside fills in when you submit" onClick=${() => { setBrush({ mode: 'border', country: c.id, name: name.trim(), ring: [] }); setOpen(false); }}>✎ Draw their border</button>`}</div>
   </div>`;
 }
 

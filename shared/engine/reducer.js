@@ -8,7 +8,7 @@ import {
 } from './core.js';
 import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.js';
 import { OP_KINDS, resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
-import { bindGeo, hasGeo, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter, mainland } from './control.js';
+import { bindGeo, hasGeo, controller, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter, mainland } from './control.js';
 import { courtActions } from './court.js';
 import { councilActions } from './council.js';
 import { joinText } from './ai.js';
@@ -520,7 +520,23 @@ const WORLD = {
     let nth = 1, id = `${P.id}r`;
     while (s.countries[id] && s.countries[id].control !== 'inactive' && atWar(s, id, P.id)) { nth++; id = `${P.id}r${nth}`; }
     if (nth > 6) return err(`${P.name} already has six factions.`);
-    const share = clamp(Number(a.share) || 30, 5, 80);
+    // A drawn border: the rebels take every cell of the country inside the ring (points are [lat, lon]).
+    let ringKeys = null;
+    if (Array.isArray(a.ring) && hasGeo()) {
+      const ring = a.ring.slice(0, 80).map(p => [Number(p?.[0]), Number(p?.[1])]).filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+      if (ring.length < 3) return err('Draw a border with at least three points.');
+      const inside = (lon, lat) => {
+        let c = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const [ya, xa] = ring[i], [yb, xb] = ring[j];
+          if ((ya > lat) !== (yb > lat) && lon < (xb - xa) * (lat - ya) / (yb - ya) + xa) c = !c;
+        }
+        return c;
+      };
+      ringKeys = cellsOf(P.id).filter(k => controller(s, k) === P.id && inside(...cellCenter(k)));
+      if (!ringKeys.length) return err(`Draw the border inside ${P.name}, on ground it still holds.`);
+    }
+    const share = ringKeys ? clamp(Math.round(ringKeys.length / Math.max(1, cellsOf(P.id).length) * 100), 5, 80) : clamp(Number(a.share) || 30, 5, 80);
     const name = String(a.name || '').trim().slice(0, 40) || `${P.name} Rebels`;
     const ar = String(a.ar || '').trim().slice(0, 40) || `متمردو ${P.ar}`;
     const bloc = nth > 1 ? 'N' : BLOCS.includes(a.bloc) ? a.bloc : (P.bloc === 'A' ? 'B' : P.bloc === 'B' ? 'A' : 'C');
@@ -547,7 +563,11 @@ const WORLD = {
     if (warClosures(s, id, P.id).includes(P.id)) s.global.closedAirspace[P.id] ||= { turn: s.meta.turn, at: ctx.now, war: true };
     const ev = [{ kind: 'civil_war', country: P.id, rebels: id }];
     // The rebels rise far from the capital, or where the Zeus clicked.
-    if (hasGeo()) {
+    if (hasGeo() && ringKeys) {
+      paintCells(s, id, ringKeys, 'take');
+      const c = heldCenter(s, P.id, id); if (c) { R.lat = c.lat; R.lon = c.lon; }
+      syncFront(s, P, ev);
+    } else if (hasGeo()) {
       const cells = cellsOf(P.id);
       let seed = a.at && Number.isFinite(a.at.lat) ? a.at : null;
       if (!seed && cells.length) {

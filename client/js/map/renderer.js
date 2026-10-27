@@ -525,7 +525,7 @@ export class WorldMap {
     }, { passive: false });
     fx.addEventListener('pointerdown', e => {
       // With a brush, the left button paints; any other button still pans the map.
-      if (this.brush && e.button === 0) {
+      if (this.brush && this.brush.mode !== 'border' && e.button === 0) {
         const r = fx.getBoundingClientRect();
         this.painting = true; this.paint = new Set(); this.stroke = []; this.paintTo(e.clientX - r.left, e.clientY - r.top); fx.setPointerCapture(e.pointerId); return;
       }
@@ -566,6 +566,12 @@ export class WorldMap {
       fx.style.cursor = this.brush ? 'crosshair' : 'grab';
       if (this.dragging) { this.dragging = false; this.dirty = true; }
       if (drag && !moved && e.button === 2) { drag = null; return; } // the right button is for sending a selected fleet
+      if (drag && !moved && this.brush?.mode === 'border' && e.button === 0) {
+        // Drawing a border: each click adds a corner (a click near the first corner closes it, which is the same as submitting).
+        const r = fx.getBoundingClientRect(), ll = this.screenToLonLat(e.clientX - r.left, e.clientY - r.top);
+        if (ll) this.opts.onBorder?.([...(this.brush.ring || []), [ll[1], ll[0]]]);
+        drag = null; return;
+      }
       if (drag && !moved) {
         const r = fx.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
         // A click on a ship picks its fleet; a click anywhere else lets go of it.
@@ -1224,6 +1230,16 @@ export class WorldMap {
   }
   drawBrush(ctx) {
     if (!this.brush) return;
+    if (this.brush.mode === 'border') {
+      const pts = (this.brush.ring || []).map(([lat, lon]) => this.p(lon, lat)).filter(Boolean);
+      if (!pts.length) return;
+      ctx.save(); ctx.lineJoin = 'round';
+      ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])));
+      if (pts.length > 2) { ctx.closePath(); ctx.fillStyle = 'rgba(255,138,61,.22)'; ctx.fill(); }
+      ctx.strokeStyle = '#ff8a3d'; ctx.lineWidth = 2; ctx.setLineDash(pts.length > 2 ? [] : [5, 4]); ctx.stroke(); ctx.setLineDash([]);
+      for (const q of pts) { ctx.beginPath(); ctx.arc(q[0], q[1], 3.5, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke(); }
+      ctx.restore(); return;
+    }
     const col = this.brush.mode === 'restore' ? '#e6edf7' : (this.state?.countries?.[this.brush.owner] && this.state.blocs[this.state.countries[this.brush.owner].bloc]?.color) || '#ff8a3d';
     if (this.paint?.size) {
       // The cells that will change, faintly, under a smooth stroke that follows the pointer.

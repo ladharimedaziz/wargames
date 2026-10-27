@@ -85,9 +85,9 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
           ${tab === 'sandbox' && html`<${SandboxTab} conn=${conn} state=${state} selected=${selected} selZone=${selZone} />`}
         </aside>
         <main class="mid">
-          <${MapView} conn=${conn} state=${state} selected=${selected} onSelect=${onMapSelect} layers=${layers} picking=${picking} draft=${draft} brush=${brush} />
+          <${MapView} conn=${conn} state=${state} selected=${selected} onSelect=${onMapSelect} layers=${layers} picking=${picking} draft=${draft} brush=${brush} setBrush=${setBrush} />
           <${MapOverlay} state=${state} conn=${conn} layers=${layers} setLayers=${setLayers} picking=${picking} cancelPick=${() => setPicking(null)} />
-          ${brush && html`<${DrawBar} state=${state} brush=${brush} setBrush=${setBrush} />`}
+          ${brush && html`<${DrawBar} conn=${conn} state=${state} brush=${brush} setBrush=${setBrush} />`}
           <${CommandBar} conn=${conn} state=${state} role=${user.role} />
         </main>
         <aside class="right">
@@ -141,7 +141,7 @@ function TopBar({ conn, user, state, logout, onBack, pending, unread, openDm, co
     </header>`;
 }
 
-function MapView({ conn, state, selected, onSelect, layers, picking, brush }) {
+function MapView({ conn, state, selected, onSelect, layers, picking, brush, setBrush }) {
   const ref = useRef(), mapRef = useRef(), tipRef = useRef();
   const [tip, setTip] = useState(null);
   const onSelectRef = useRef(onSelect); onSelectRef.current = onSelect;
@@ -150,7 +150,7 @@ function MapView({ conn, state, selected, onSelect, layers, picking, brush }) {
   const onPaint = (keys, b) => run(conn, { type: 'paintControl', owner: b.owner, keys, mode: b.mode });
   const onPaintRef = useRef(onPaint); onPaintRef.current = onPaint;
   useEffect(() => {
-    const m = new WorldMap(ref.current, { interactive: true, onSelect: (...a) => onSelectRef.current(...a), onHover: (h, x, y) => setTip(h ? { ...h, x, y } : null), onPaint: (...a) => onPaintRef.current(...a), onFleetMove: f => run(conn, { type: 'queueOrder', order: { country: f.owner, type: f.type, zone: f.zone, point: f.point, units: f.units }, now: true }, f.type === 'force' ? 'Forcing the strait' : 'Fleet under way') });
+    const m = new WorldMap(ref.current, { interactive: true, onSelect: (...a) => onSelectRef.current(...a), onHover: (h, x, y) => setTip(h ? { ...h, x, y } : null), onPaint: (...a) => onPaintRef.current(...a), onBorder: ring => setBrush(b => (b && b.mode === 'border' ? { ...b, ring } : b)), onFleetMove: f => run(conn, { type: 'queueOrder', order: { country: f.owner, type: f.type, zone: f.zone, point: f.point, units: f.units }, now: true }, f.type === 'force' ? 'Forcing the strait' : 'Fleet under way') });
     mapRef.current = m;
     m.ready.then(() => m.setState(stateRef.current, { layers }));
     window.__map = m;
@@ -184,8 +184,20 @@ function MapView({ conn, state, selected, onSelect, layers, picking, brush }) {
 }
 
 // Drawing ground by hand: pick the side, take or give back, brush size.
-function DrawBar({ state, brush, setBrush }) {
+function DrawBar({ state, brush, setBrush, conn }) {
   const set = patch => setBrush(b => ({ ...b, ...patch }));
+  if (brush.mode === 'border') {
+    const country = state.countries[brush.country], n = (brush.ring || []).length;
+    const submit = async () => { const r = await run(conn, { type: 'civilWar', country: brush.country, name: (brush.name || '').trim(), ring: brush.ring }); if (r.ok) setBrush(null); };
+    return html`<div class="draw-bar">
+      <b class="small">Border of the rebels in ${country?.name}</b>
+      <input class="input sm" style="width:170px" placeholder="Faction name" value=${brush.name || ''} onInput=${e => set({ name: e.target.value })} />
+      <span class="dim small grow">Click corners on the map to draw the border (${n} so far), then submit and the inside is filled in.</span>
+      <button class="btn sm" disabled=${!n} onClick=${() => set({ ring: brush.ring.slice(0, -1) })}>Undo</button>
+      <button class="btn sm primary" disabled=${n < 3} onClick=${submit}>Submit</button>
+      <button class="btn sm ghost" onClick=${() => setBrush(null)}>Cancel</button>
+    </div>`;
+  }
   const owner = state.countries[brush.owner];
   const enemies = owner ? state.wars.filter(w => w.a === owner.id || w.b === owner.id).map(w => state.countries[w.a === owner.id ? w.b : w.a]?.name).filter(Boolean) : [];
   return html`<div class="draw-bar">

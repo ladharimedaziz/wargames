@@ -384,6 +384,21 @@ test('civil war splits off a rebel faction with its own ground and army', () => 
   assert.ok(zeus({ type: 'resolveTurn' }).ok, 'the turn resolves with rebels on the map');
 });
 
+test('civil war: several factions, and a drawn border fills in', () => {
+  const { s, zeus } = world();
+  const SY = '760';
+  assert.ok(zeus({ type: 'civilWar', country: SY, share: 20, name: 'A' }).ok);
+  assert.ok(zeus({ type: 'civilWar', country: SY, share: 20, name: 'B' }).ok);
+  assert.ok(s.countries[SY + 'r2']);
+  const c = s.countries[SY];
+  const d = 1.5, ring = [[c.lat - d, c.lon - d], [c.lat - d, c.lon + d], [c.lat + d, c.lon + d], [c.lat + d, c.lon - d]];
+  const r = zeus({ type: 'civilWar', country: SY, name: 'C', ring });
+  assert.ok(r.ok, r.error);
+  assert.ok(s.countries[SY + 'r3']);
+  assert.ok(Object.values(s.control).filter(o => o === SY + 'r3').length > 5);
+  assert.equal(zeus({ type: 'civilWar', country: SY, name: 'D', ring: [[0, 0], [0, 1], [1, 1]] }).ok, false);
+});
+
 test('a war only closes airspace that is contested and within the enemy\'s reach', () => {
   const { s } = world();
   assert.deepEqual(warClosures(s, US, '004'), []); // no air force to fight over Afghanistan
