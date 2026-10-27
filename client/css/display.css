@@ -477,6 +477,11 @@ html, body { background: #000; }
 .v-detail { font: italic 1.5em/1.5 Georgia, serif; color: var(--ink-2); }
 .recess { background: rgba(10, 8, 6, .94); backdrop-filter: none; font: italic 600 3em/1 Georgia, serif; color: var(--ink); }
 
-/* Standby: PasionMUN's logo (a transparent PNG) sits above the spinning world, kept small so the world stays the centrepiece. */
-.sb-logo { width: min(26vw, 46vh); margin-bottom: 1.4em; filter: drop-shadow(0 .2em .6em rgba(0, 0, 0, .55)); animation: sb-logo-in 1.4s var(--ease-out) both; }
-@keyframes sb-logo-in { from { opacity: 0; transform: translateY(-.6em); filter: blur(6px); } }
+/* Standby: PasionMUN's logo card. The logo is a white-background image, so the whole screen goes white and the
+   splatter bleeds to the edges; multiply drops the white so it can never show a box. */
+.standby.sb-card { background: #fff; color: #3a1015; display: grid; place-items: center; align-content: center; gap: 0; padding: 0; }
+.sb-logo { width: min(92vw, 168vh); max-height: 78vh; object-fit: contain; mix-blend-mode: multiply; animation: sb-logo-in 1.4s var(--ease-out) both; }
+@keyframes sb-logo-in { from { opacity: 0; transform: scale(.96); filter: blur(6px); } }
+.sb-card-name { margin-top: -1.2em; font: 600 1.5em/1 'Iowan Old Style', 'Palatino Linotype', Georgia, serif; letter-spacing: .16em; text-transform: uppercase; color: #5b1a22; animation: fade-in 1.6s .5s both; }
+.sb-card-clock { position: absolute; right: 1.6em; bottom: 1.2em; font-size: 1.2em; color: rgba(91, 26, 34, .55); }
+.stage:has(.sb-card) .sound-pill { color: #5b1a22; background: rgba(255, 255, 255, .8); border-color: rgba(91, 26, 34, .25); }
