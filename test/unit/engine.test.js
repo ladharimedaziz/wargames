@@ -513,3 +513,16 @@ test('a cold war committee starts in 1985 without drones or stealth', async () =
   const { validateOrder } = await import('../../shared/engine/orders.js');
   assert.equal(validateOrder(s, { country: '840', type: 'drone', target: '643' }).ok, false);
 });
+
+test('tanker countries strike anywhere; weaker nuclear powers have limited nuke range', () => {
+  const { s } = world();
+  s.global.tension = 10;
+  const far = validateOrder(s, { id: 'a', country: US, type: 'strike', target: JP === '392' ? '036' : JP, counts: {} });
+  assert.ok(far.ok || !/range/.test(far.reason || ''), far.reason);
+  const pak = validateOrder(s, { id: 'b', country: '586', type: 'nuke', target: US });
+  assert.ok(!pak.ok && /reach/.test(pak.reason), 'Pakistan cannot hit the US: ' + pak.reason);
+  const nearby = validateOrder(s, { id: 'c', country: '586', type: 'nuke', target: '356' });
+  assert.ok(nearby.ok, nearby.reason);
+  const ru = validateOrder(s, { id: 'd', country: RU, type: 'nuke', target: US });
+  assert.ok(ru.ok, ru.reason);
+});

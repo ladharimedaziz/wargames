@@ -1,5 +1,6 @@
 // Order definitions, validation and unit selection. Used for live previews in the panel and again at resolution.
 import { SEA_ZONES, FLEET_MOVES_PER_TURN } from '../data/places.js';
+import { NUKE_RANGE_KM } from '../data/countries.js';
 import { AMPHIBIOUS_A3, NEO_A3, AIRBORNE_KM, US_AIRCRAFT } from '../data/militaries.js';
 import { distanceKm, seaRoute, zonesTouching } from '../geo.js';
 import { clamp, UNIT_TYPES, TARGET_TYPES, ROE, anchor, unitRange, unitsOf, atWar, sameSide, countryName, isActive, isOOB, OOB_ERROR } from './core.js';
@@ -157,6 +158,8 @@ export function validateOrder(state, o) {
     case 'nuke': {
       if (!c.nuclear.has) return fail(`${c.name} has no nuclear weapons.`);
       if (state.global.tension < 10 && !state.global.nukeOverride) return fail(`Nuclear launch is impossible below Global Tension 10 (currently ${state.global.tension}).`);
+      const reach = NUKE_RANGE_KM[o.country];
+      if (reach && T) { const d = distanceKm(c, T); if (d > reach) return fail(`${T.name} is ${Math.round(d).toLocaleString('en-US')} km from ${c.name}; its missiles reach ${reach.toLocaleString('en-US')} km.`); }
       return { ok: true };
     }
     case 'alert': if (!c.nuclear.has) return fail(`${c.name} has no nuclear weapons.`); return { ok: true };
