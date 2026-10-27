@@ -384,6 +384,21 @@ test('civil war splits off a rebel faction with its own ground and army', () => 
   assert.ok(zeus({ type: 'resolveTurn' }).ok, 'the turn resolves with rebels on the map');
 });
 
+test('civil war: several factions, and a drawn border fills in', () => {
+  const { s, zeus } = world();
+  const SY = '760';
+  assert.ok(zeus({ type: 'civilWar', country: SY, share: 20, name: 'A' }).ok);
+  assert.ok(zeus({ type: 'civilWar', country: SY, share: 20, name: 'B' }).ok);
+  assert.ok(s.countries[SY + 'r2']);
+  const c = s.countries[SY];
+  const d = 1.5, ring = [[c.lat - d, c.lon - d], [c.lat - d, c.lon + d], [c.lat + d, c.lon + d], [c.lat + d, c.lon - d]];
+  const r = zeus({ type: 'civilWar', country: SY, name: 'C', ring });
+  assert.ok(r.ok, r.error);
+  assert.ok(s.countries[SY + 'r3']);
+  assert.ok(Object.values(s.control).filter(o => o === SY + 'r3').length > 5);
+  assert.equal(zeus({ type: 'civilWar', country: SY, name: 'D', ring: [[0, 0], [0, 1], [1, 1]] }).ok, false);
+});
+
 test('a war only closes airspace that is contested and within the enemy\'s reach', () => {
   const { s } = world();
   assert.deepEqual(warClosures(s, US, '004'), []); // no air force to fight over Afghanistan
@@ -525,4 +540,15 @@ test('tanker countries strike anywhere; weaker nuclear powers have limited nuke 
   assert.ok(nearby.ok, nearby.reason);
   const ru = validateOrder(s, { id: 'd', country: RU, type: 'nuke', target: US });
   assert.ok(ru.ok, ru.reason);
+});
+
+test('a fleet can be sent to a free point at sea, and land is refused', () => {
+  const { s, zeus } = world();
+  const ship = Object.values(s.units).find(u => u.owner === US && u.type === 'fleet' && u.loc.kind === 'sea' && u.loc.id === 'us_east');
+  const land = zeus({ type: 'queueOrder', order: { country: US, type: 'fleet', units: [ship.id], point: { lat: 40, lon: -100 } }, now: true });
+  assert.ok(land.ok || /water/.test(land.error || ''), 'inland points are nudged or refused');
+  const r = zeus({ type: 'queueOrder', order: { country: US, type: 'fleet', units: [ship.id], point: { lat: 38, lon: -50 } }, now: true });
+  assert.ok(r.ok, r.error);
+  assert.equal(s.units[ship.id].loc.lat, 38);
+  assert.equal(s.units[ship.id].loc.lon, -50);
 });

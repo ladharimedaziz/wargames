@@ -361,7 +361,11 @@ function resolveNaval(state, ev) {
       const [a, b, key] = pair; fought.add(key);
       // Each side is the belligerent plus any of its allies also at war with the other side.
       const side = (x, y) => ships.filter(u => u.owner === x || (sameSide(state, u.owner, x) && atWar(state, u.owner, y)));
-      const sideA = side(a, b), sideB = side(b, a);
+      // Free positions: only ships within missile and air-wing reach (700 km) of the enemy take part.
+      const near = (list, others) => list.filter(u => others.some(x => distanceKm(anchor(state, u.loc), anchor(state, x.loc)) <= 700));
+      const rawA = side(a, b), rawB = side(b, a);
+      const sideA = near(rawA, rawB), sideB = near(rawB, rawA);
+      if (!sideA.length || !sideB.length) continue;
       const coast = SEA_ZONES[zone]?.coasts || [];
       // Three rounds of exchange. Every surviving ship fires at a random enemy ship: carriers launch an air wing
       // (heavy hits, strongest in round one), surface groups trade missile salvos, and the defender close to its own
@@ -417,7 +421,8 @@ function updateChokepoints(state, ev) {
     if (cp.forced) continue;
     const ships = unitsAt(state, 'sea', zone);
     // A blockade of a country's coast does not close the strait it sits in; only a blockade of the zone itself does.
-    const blockaders = ships.filter(u => u.blockade && !u.blockadeOf);
+    const zc = { lat: SEA_ZONES[zone].lat, lon: SEA_ZONES[zone].lon };
+    const blockaders = ships.filter(u => u.blockade && !u.blockadeOf && distanceKm(anchor(state, u.loc), zc) <= 600);
     const prev = cp.status;
     if (!blockaders.length) { cp.status = 'open'; cp.by = null; }
     else {
@@ -618,15 +623,19 @@ function forceStrait(state, o, ev) {
 }
 
 function moveFleet(state, o, ev) {
+  const zp = z => ({ lat: SEA_ZONES[z].lat, lon: SEA_ZONES[z].lon });
   for (const id of o.units) {
     const u = state.units[id]; if (!u) continue;
     const route = seaRoute(u.loc.id, o.zone, blockedFor(state, o.country));
     if (!route) continue;
-    const steps = route.slice(0, FLEET_MOVES_PER_TURN * 2 + 1);
-    ev.push({ kind: 'fleet', owner: o.country, unitType: u.type, blockade: o.type === 'blockade' && steps[steps.length - 1] === o.zone, path: steps.map(z => ({ lat: SEA_ZONES[z].lat, lon: SEA_ZONES[z].lon })) });
-    u.loc = { kind: 'sea', id: steps[steps.length - 1] };
+    const steps = route.slice(0, FLEET_MOVES_PER_TURN * 2 + 1), last = steps[steps.length - 1];
+    // The track starts where the ship really is and ends on the ordered point (or the zone centre when none was given).
+    const arrive = o.point && last === o.zone ? { lat: o.point.lat, lon: o.point.lon } : zp(last);
+    const path = [anchor(state, u.loc) || zp(steps[0]), ...steps.slice(1, -1).map(zp), arrive];
+    ev.push({ kind: 'fleet', owner: o.country, unitType: u.type, blockade: o.type === 'blockade' && last === o.zone, path });
+    u.loc = o.point && last === o.zone ? { kind: 'sea', id: last, lat: arrive.lat, lon: arrive.lon } : { kind: 'sea', id: last };
     // Any new move ends a blockade the ship was holding, unless it is ordered to blockade where it arrives.
-    u.blockade = o.type === 'blockade' && steps[steps.length - 1] === o.zone; delete u.blockadeOf;
+    u.blockade = o.type === 'blockade' && last === o.zone; delete u.blockadeOf;
   }
 }
 

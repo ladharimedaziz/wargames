@@ -82,3 +82,10 @@ export function routeLengthKm(route) {
 export function zonesTouching(countryId) {
   return Object.keys(SEA_ZONES).filter(z => SEA_ZONES[z].coasts.includes(countryId));
 }
+
+// The sea zone whose centre is closest to a point: the zone a ship parked there counts as being in.
+export function nearestZone(lat, lon) {
+  let best = null, bd = Infinity;
+  for (const [id, z] of Object.entries(SEA_ZONES)) { const d = distanceKm({ lat, lon }, z); if (d < bd) { bd = d; best = id; } }
+  return best;
+}

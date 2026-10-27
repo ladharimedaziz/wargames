@@ -525,7 +525,7 @@ export class WorldMap {
     }, { passive: false });
     fx.addEventListener('pointerdown', e => {
       // With a brush, the left button paints; any other button still pans the map.
-      if (this.brush && e.button === 0) {
+      if (this.brush && this.brush.mode !== 'border' && e.button === 0) {
         const r = fx.getBoundingClientRect();
         this.painting = true; this.paint = new Set(); this.stroke = []; this.paintTo(e.clientX - r.left, e.clientY - r.top); fx.setPointerCapture(e.pointerId); return;
       }
@@ -566,12 +566,18 @@ export class WorldMap {
       fx.style.cursor = this.brush ? 'crosshair' : 'grab';
       if (this.dragging) { this.dragging = false; this.dirty = true; }
       if (drag && !moved && e.button === 2) { drag = null; return; } // the right button is for sending a selected fleet
+      if (drag && !moved && this.brush?.mode === 'border' && e.button === 0) {
+        // Drawing a border: each click adds a corner (a click near the first corner closes it, which is the same as submitting).
+        const r = fx.getBoundingClientRect(), ll = this.screenToLonLat(e.clientX - r.left, e.clientY - r.top);
+        if (ll) this.opts.onBorder?.([...(this.brush.ring || []), [ll[1], ll[0]]]);
+        drag = null; return;
+      }
       if (drag && !moved) {
         const r = fx.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
         // A click on a ship picks its fleet; a click anywhere else lets go of it.
         const fleet = this.opts.interactive && this.opts.onFleetMove && !e.shiftKey ? this.fleetAt(mx, my) : null;
         if (fleet) {
-          this.selFleet = { owner: fleet.g.owner, type: fleet.g.type, zone: fleet.g.loc.id };
+          this.selFleet = { owner: fleet.g.owner, type: fleet.g.type, zone: fleet.g.loc.id, lat: fleet.g.loc.lat, lon: fleet.g.loc.lon };
           this.opts.onSelect?.({ id: fleet.g.owner, zone: null }, e);
           this.dirty = true; drag = null; return;
         }
@@ -594,7 +600,7 @@ export class WorldMap {
       if (!dest || !ids.length) return;
       const cp = this.state.global.chokepoints?.[dest.zone];
       const hostile = cp && cp.status !== 'open' && cp.by && !sameSide(this.state, f.owner, cp.by);
-      this.opts.onFleetMove({ owner: f.owner, units: ids, zone: dest.zone, type: hostile ? 'force' : 'fleet' });
+      this.opts.onFleetMove({ owner: f.owner, units: ids, zone: dest.zone, point: dest.point, type: hostile ? 'force' : 'fleet' });
     });
     fx.addEventListener('pointerleave', () => { this.hover = null; this.brushPos = null; this.opts.onHover?.(null); });
     fx.addEventListener('contextmenu', e => { if (this.brush) e.preventDefault(); });
@@ -1121,23 +1127,23 @@ export class WorldMap {
   }
   // The ships of the selected fleet as they stand now (a fleet is every unit of one type an owner has in one sea zone).
   fleetUnits(f) {
-    return Object.values(this.state.units).filter(u => u.strength > 0 && u.owner === f.owner && u.type === f.type && u.loc.kind === 'sea' && u.loc.id === f.zone);
+    const same = (u) => (f.lat == null ? u.loc.lat == null : u.loc.lat != null && Math.abs(u.loc.lat - f.lat) < 0.06 && Math.abs(u.loc.lon - f.lon) < 0.06);
+    return Object.values(this.state.units).filter(u => u.strength > 0 && u.owner === f.owner && u.type === f.type && u.loc.kind === 'sea' && u.loc.id === f.zone && same(u));
   }
   // Where a right-click wants a fleet to go: open water picks the nearest sea zone, a coast picks the nearest zone off that country.
   seaTarget(mx, my) {
-    const ll = this.screenToLonLat(mx, my); if (!ll) return null;
-    const cid = this.countryAt(ll[0], ll[1]);
-    const pool = cid && zonesTouching(cid).length ? zonesTouching(cid) : (cid ? [] : Object.keys(SEA_ZONES));
+    const ll = this.screenToLonLat(mx, my); if (!ll || ll[1] > 82 || ll[1] < -75) return null;
+    const point = this.seaPoint(ll[0], ll[1]); if (!point) return null;
     let best = null, bd = 1e9;
-    for (const z of pool) { const d = distanceKm({ lat: ll[1], lon: ll[0] }, SEA_ZONES[z]); if (d < bd) { bd = d; best = z; } }
-    return best ? { zone: best, coast: cid || null } : null;
+    for (const z of Object.keys(SEA_ZONES)) { const d = distanceKm(point, SEA_ZONES[z]); if (d < bd) { bd = d; best = z; } }
+    return { zone: best, point: { lat: Math.round(point.lat * 100) / 100, lon: Math.round(point.lon * 100) / 100 } };
   }
   // A ring round the selected fleet and, as the mouse moves, the water route it would take to the spot under the pointer.
   drawFleetSelection(ctx, time) {
     const f = this.selFleet; if (!f || !this.opts.interactive) return;
     const ships = this.fleetUnits(f);
     if (!ships.length) { this.selFleet = null; return; }
-    const hit = (this.fleetHits || []).find(h => h.g.owner === f.owner && h.g.type === f.type && h.g.loc.id === f.zone); if (!hit) return;
+    const hit = (this.fleetHits || []).find(h => h.g.owner === f.owner && h.g.type === f.type && h.g.loc.id === f.zone && (f.lat == null ? h.g.loc.lat == null : Math.abs((h.g.loc.lat ?? 999) - f.lat) < 0.06)); if (!hit) return;
     const col = this.colorOf(this.state.countries[f.owner], '#ece6d6'), pulse = 0.5 + 0.5 * Math.sin(time * 5);
     ctx.save(); ctx.strokeStyle = `rgba(255,255,255,${0.7 + 0.3 * pulse})`; ctx.lineWidth = 1.6; ctx.setLineDash([4, 3]); ctx.lineDashOffset = -time * 14;
     ctx.beginPath(); ctx.arc(hit.x, hit.y, hit.r + 5, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
@@ -1147,7 +1153,9 @@ export class WorldMap {
     const from = SEA_ZONES[f.zone], zroute = seaRoute(f.zone, dest.zone, new Set());
     const reach = zroute && zroute.length - 1 <= 6, sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
     const ok = zroute && reach;
-    const pts = this.screenRoute(this.seaWayVia((zroute || [f.zone, dest.zone]).map(z => SEA_ZONES[z])));
+    const startPt = f.lat != null ? { lat: f.lat, lon: f.lon } : SEA_ZONES[f.zone];
+    const legs = (zroute || [f.zone, dest.zone]).map(z => SEA_ZONES[z]);
+    const pts = this.screenRoute(this.seaWayVia([startPt, ...legs.slice(1, -1), dest.point]));
     ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.strokeStyle = ok ? hexA(col, 0.85) : 'rgba(255,110,100,0.8)'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.lineDashOffset = -time * 18;
     this.strokeRoute(ctx, pts); ctx.setLineDash([]);
@@ -1222,6 +1230,16 @@ export class WorldMap {
   }
   drawBrush(ctx) {
     if (!this.brush) return;
+    if (this.brush.mode === 'border') {
+      const pts = (this.brush.ring || []).map(([lat, lon]) => this.p(lon, lat)).filter(Boolean);
+      if (!pts.length) return;
+      ctx.save(); ctx.lineJoin = 'round';
+      ctx.beginPath(); pts.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1])));
+      if (pts.length > 2) { ctx.closePath(); ctx.fillStyle = 'rgba(255,138,61,.22)'; ctx.fill(); }
+      ctx.strokeStyle = '#ff8a3d'; ctx.lineWidth = 2; ctx.setLineDash(pts.length > 2 ? [] : [5, 4]); ctx.stroke(); ctx.setLineDash([]);
+      for (const q of pts) { ctx.beginPath(); ctx.arc(q[0], q[1], 3.5, 0, TAU); ctx.fillStyle = '#fff'; ctx.fill(); ctx.stroke(); }
+      ctx.restore(); return;
+    }
     const col = this.brush.mode === 'restore' ? '#e6edf7' : (this.state?.countries?.[this.brush.owner] && this.state.blocs[this.state.countries[this.brush.owner].bloc]?.color) || '#ff8a3d';
     if (this.paint?.size) {
       // The cells that will change, faintly, under a smooth stroke that follows the pointer.
@@ -1763,16 +1781,19 @@ export class WorldMap {
     for (const u of Object.values(s.units)) {
       if (u.strength <= 0 || !this.visibleTo(u)) continue;
       // At sea, fleets and carrier groups get their own markers.
-      const key = `${u.loc.kind}:${u.loc.id}:${u.owner}${u.loc.kind === 'sea' ? ':' + u.type : ''}`;
+      // A ship parked at a free position forms its own group there; ships at a zone centre group by zone.
+      const free = u.loc.kind === 'sea' && u.loc.lat != null;
+      const key = `${u.loc.kind}:${u.loc.id}${free ? `@${u.loc.lat.toFixed(1)},${u.loc.lon.toFixed(1)}` : ''}:${u.owner}${u.loc.kind === 'sea' ? ':' + u.type : ''}`;
       if (!groups.has(key)) groups.set(key, { loc: u.loc, owner: u.owner, type: u.type, units: [] });
       groups.get(key).units.push(u);
     }
     const perLoc = new Map();
     for (const g of groups.values()) {
+      const freeG = g.loc.kind === 'sea' && g.loc.lat != null;
       const lk = `${g.loc.kind}:${g.loc.id}`;
-      const i = perLoc.get(lk) || 0; perLoc.set(lk, i + 1);
+      const i = freeG ? 0 : (perLoc.get(lk) || 0); if (!freeG) perLoc.set(lk, i + 1);
       let base;
-      if (g.loc.kind === 'sea') { const z = SEA_ZONES[g.loc.id]; base = z && this.p(z.lon, z.lat); }
+      if (g.loc.kind === 'sea') { const z = freeG ? { lon: g.loc.lon, lat: g.loc.lat } : SEA_ZONES[g.loc.id]; base = z && this.p(z.lon, z.lat); }
       else base = this.countryPoint(g.loc.id);
       if (!base) continue;
       const ang = i * 2.1 + 0.6, rr = i ? (g.loc.kind === 'sea' ? (30 + i * 6) * Math.min(1.5, 0.85 + this.cam.k * 0.12) : 11 + i * 2) : 0;

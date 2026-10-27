@@ -2,13 +2,13 @@
 // actions tagged 'kronos' are sandbox powers only Kronos has.
 import { SEA_ZONES } from '../data/places.js';
 import { carrierName } from '../data/militaries.js';
-import { zonesTouching } from '../geo.js';
+import { zonesTouching, nearestZone } from '../geo.js';
 import {
   UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures, isOOB, OOB_ERROR, aggressorOf, enemiesOf, unVoters, aiVote,
 } from './core.js';
 import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.js';
 import { OP_KINDS, resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
-import { bindGeo, hasGeo, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter, mainland } from './control.js';
+import { bindGeo, hasGeo, controller, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter, mainland } from './control.js';
 import { courtActions } from './court.js';
 import { councilActions } from './council.js';
 import { joinText } from './ai.js';
@@ -26,6 +26,17 @@ const DISASTERS = {
 };
 
 const err = error => ({ ok: false, error });
+// A point at sea: the point itself if it is water, else the nearest water within about 2 degrees (searching outward), else null.
+function snapToSea(geo, lat, lon) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 85) return null;
+  const sea = (la, lo) => !geo?.countryAt || !geo.countryAt(((lo + 540) % 360) - 180, la);
+  if (sea(lat, lon)) return { lat: Math.round(lat * 100) / 100, lon: Math.round(lon * 100) / 100 };
+  for (let r = 0.25; r <= 2; r += 0.25) for (let k = 0; k < 16; k++) {
+    const a = (k / 16) * Math.PI * 2, la = lat + Math.sin(a) * r, lo = lon + Math.cos(a) * r / Math.max(0.3, Math.cos(lat * Math.PI / 180));
+    if (Math.abs(la) < 85 && sea(la, lo)) return { lat: Math.round(la * 100) / 100, lon: Math.round(((lo + 540) % 360 - 180) * 100) / 100 };
+  }
+  return null;
+}
 const ok = (result = {}) => ({ ok: true, ...result });
 const C = (s, id) => s.countries?.[id];
 const at = c => ({ lat: c.lat, lon: c.lon });
@@ -132,6 +143,12 @@ const WORLD = {
       country: src.country, type: src.type, target: src.target || null, zone: src.zone || null, category: src.category || 'military',
       units: Array.isArray(src.units) ? src.units.filter(id => s.units[id]) : undefined, escort: src.escort, amount: Number(src.amount) || 0,
       unitType: src.unitType, kind: src.kind, terms: src.terms || null, note: src.note ? String(src.note).slice(0, 200) : '' };
+    // A fleet can be sent to any open-water point, not only a zone centre: land is refused, a point on the coast is
+    // nudged out to the nearest water, and the zone the ship counts as being in is the nearest one.
+    if (src.point && ['fleet', 'blockade', 'force'].includes(o.type)) {
+      const pt = snapToSea(ctx.geo, Number(src.point.lat), Number(src.point.lon)); if (!pt) return err('That is not open water.');
+      o.point = pt; o.zone = nearestZone(pt.lat, pt.lon);
+    }
     if (!o.units || !o.units.length) o = autoUnits(s, o, src.counts || {});
     const v = validateOrder(s, o);
     if (!v.ok) return err(o._why ? `${v.reason} ${o._why}` : v.reason);
@@ -503,7 +520,23 @@ const WORLD = {
     let nth = 1, id = `${P.id}r`;
     while (s.countries[id] && s.countries[id].control !== 'inactive' && atWar(s, id, P.id)) { nth++; id = `${P.id}r${nth}`; }
     if (nth > 6) return err(`${P.name} already has six factions.`);
-    const share = clamp(Number(a.share) || 30, 5, 80);
+    // A drawn border: the rebels take every cell of the country inside the ring (points are [lat, lon]).
+    let ringKeys = null;
+    if (Array.isArray(a.ring) && hasGeo()) {
+      const ring = a.ring.slice(0, 80).map(p => [Number(p?.[0]), Number(p?.[1])]).filter(p => Number.isFinite(p[0]) && Number.isFinite(p[1]));
+      if (ring.length < 3) return err('Draw a border with at least three points.');
+      const inside = (lon, lat) => {
+        let c = false;
+        for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+          const [ya, xa] = ring[i], [yb, xb] = ring[j];
+          if ((ya > lat) !== (yb > lat) && lon < (xb - xa) * (lat - ya) / (yb - ya) + xa) c = !c;
+        }
+        return c;
+      };
+      ringKeys = cellsOf(P.id).filter(k => controller(s, k) === P.id && inside(...cellCenter(k)));
+      if (!ringKeys.length) return err(`Draw the border inside ${P.name}, on ground it still holds.`);
+    }
+    const share = ringKeys ? clamp(Math.round(ringKeys.length / Math.max(1, cellsOf(P.id).length) * 100), 5, 80) : clamp(Number(a.share) || 30, 5, 80);
     const name = String(a.name || '').trim().slice(0, 40) || `${P.name} Rebels`;
     const ar = String(a.ar || '').trim().slice(0, 40) || `متمردو ${P.ar}`;
     const bloc = nth > 1 ? 'N' : BLOCS.includes(a.bloc) ? a.bloc : (P.bloc === 'A' ? 'B' : P.bloc === 'B' ? 'A' : 'C');
@@ -530,7 +563,11 @@ const WORLD = {
     if (warClosures(s, id, P.id).includes(P.id)) s.global.closedAirspace[P.id] ||= { turn: s.meta.turn, at: ctx.now, war: true };
     const ev = [{ kind: 'civil_war', country: P.id, rebels: id }];
     // The rebels rise far from the capital, or where the Zeus clicked.
-    if (hasGeo()) {
+    if (hasGeo() && ringKeys) {
+      paintCells(s, id, ringKeys, 'take');
+      const c = heldCenter(s, P.id, id); if (c) { R.lat = c.lat; R.lon = c.lon; }
+      syncFront(s, P, ev);
+    } else if (hasGeo()) {
       const cells = cellsOf(P.id);
       let seed = a.at && Number.isFinite(a.at.lat) ? a.at : null;
       if (!seed && cells.length) {
