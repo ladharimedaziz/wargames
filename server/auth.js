@@ -11,6 +11,7 @@ export const COMMITTEE_IDS = ['ww3', 'bravo', 'charlie', 'delta'];
 
 let SECRET;
 let rotations = {};
+let custom = { passwords: {}, signouts: {} }; // passwords Kronos typed in, and forced sign-outs
 let dataDir;
 
 export function initAuth(dir) {
@@ -23,6 +24,7 @@ export function initAuth(dir) {
     if (!saved) writeJSON(dir, 'secret.json', { secret: SECRET });
   }
   rotations = readJSON(dir, 'rotations.json', {});
+  custom = { passwords: {}, signouts: {}, ...readJSON(dir, 'custom-accounts.json', {}) };
 }
 
 const hmac = (...parts) => createHmac('sha256', SECRET).update(parts.join('\u0000')).digest();
@@ -39,6 +41,7 @@ export const findAccount = u => accounts().find(a => a.username === String(u || 
 
 export function passwordFor(username) {
   if (username === 'kronos' && process.env.KRONOS_PASSWORD) return process.env.KRONOS_PASSWORD;
+  if (custom.passwords[username]) return custom.passwords[username];
   const h = hmac('pw', username, rotations[username] || 0);
   return `${ADJ[h[0] % ADJ.length]}-${NOUN[h[1] % NOUN.length]}-${100 + (h.readUInt16BE(2) % 900)}`;
 }
@@ -54,14 +57,36 @@ export function rotatePassword(username) {
   if (!findAccount(username) || username === 'kronos') return null;
   rotations[username] = (rotations[username] || 0) + 1;
   writeJSON(dataDir, 'rotations.json', rotations);
+  if (custom.passwords[username]) { delete custom.passwords[username]; saveCustom(); }
   return passwordFor(username);
 }
+
+// Kronos picks a Zeus password by hand. Like a rotation, it signs that account out everywhere.
+export function setPassword(username, password) {
+  const pw = String(password || '').trim();
+  if (!findAccount(username) || username === 'kronos') return 'Cannot change that account.';
+  if (pw.length < 6 || pw.length > 60 || /\s/.test(pw)) return 'Use 6 to 60 characters, no spaces.';
+  custom.passwords[username] = pw;
+  custom.signouts[username] = (custom.signouts[username] || 0) + 1;
+  saveCustom();
+  return null;
+}
+
+// Signs an account out of every device without changing its password.
+export function signOut(username) {
+  if (!findAccount(username) || username === 'kronos') return false;
+  custom.signouts[username] = (custom.signouts[username] || 0) + 1;
+  saveCustom();
+  return true;
+}
+const saveCustom = () => writeJSON(dataDir, 'custom-accounts.json', custom);
+const generation = username => `${rotations[username] || 0}s${custom.signouts[username] || 0}`;
 
 // Signed, stateless session tokens: username.expiry.generation.signature
 const DAY = 86400000;
 export function issueToken(username) {
   const exp = Date.now() + 14 * DAY;
-  const gen = rotations[username] || 0;
+  const gen = generation(username);
   const body = `${username}.${exp}.${gen}`;
   return `${body}.${hmac('session', body).toString('base64url')}`;
 }
@@ -74,7 +99,7 @@ export function verifyToken(token) {
   const expect = hmac('session', `${username}.${exp}.${gen}`).toString('base64url');
   if (sig.length !== expect.length || !timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return null;
   if (Number(exp) < Date.now()) return null;
-  if (Number(gen) !== (rotations[username] || 0)) return null; // rotating a password signs that account out
+  if (gen !== generation(username)) return null; // a new password or a forced sign-out ends old sessions
   return findAccount(username);
 }
 

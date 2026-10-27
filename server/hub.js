@@ -3,7 +3,7 @@
 import { WebSocketServer } from 'ws';
 import { applyAction } from '../shared/engine/reducer.js';
 import { tensionLevel } from '../shared/engine/core.js';
-import { verifyToken, parseCookies, accounts, passwordFor, rotatePassword, COMMITTEE_IDS } from './auth.js';
+import { verifyToken, parseCookies, accounts, passwordFor, rotatePassword, setPassword, signOut, COMMITTEE_IDS } from './auth.js';
 import { readJSON, writeJSON } from './files.js';
 
 export function createHub(server, store, geo) {
@@ -228,8 +228,24 @@ export function createHub(server, store, geo) {
         handle(c, { t: 'accounts' });
         return ack(true, { result: { password: pw } });
       }
+      case 'setPassword': {
+        const e = setPassword(m.username, m.password);
+        if (e) return ack(false, { error: e });
+        for (const x of clients) if (x.user.username === m.username) x.ws.close(4001, 'Password changed');
+        handle(c, { t: 'accounts' });
+        return ack(true);
+      }
       case 'kick': {
-        for (const x of clients) if (x.user.username === m.username && x.user.role !== 'kronos') x.ws.close(4002, 'Disconnected by Kronos');
+        // Logs the account out for good: its session cookies stop working, so a reload lands on the login page.
+        if (!signOut(m.username)) return ack(false, { error: 'Cannot log out that account.' });
+        for (const x of clients) if (x.user.username === m.username) x.ws.close(4001, 'Logged out by Kronos');
+        handle(c, { t: 'accounts' });
+        return ack(true);
+      }
+      case 'kickAll': {
+        for (const a of accounts()) if (a.role !== 'kronos') signOut(a.username);
+        for (const x of clients) if (x.user.role !== 'kronos') x.ws.close(4001, 'Logged out by Kronos');
+        handle(c, { t: 'accounts' });
         return ack(true);
       }
       default: return ack(false, { error: `Unknown message "${m.t}".` });
