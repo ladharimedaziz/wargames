@@ -451,6 +451,9 @@ export function moveFront(state, T, delta, ev) {
     if (f.pct <= 0) T.front = null;
     return false;
   }
+  // Already fully held: pushing further changes nothing. (Without this a big country held without listing its cells
+  // was re-measured from the few cells actually held and the front collapsed to a few percent.)
+  if (delta > 0 && T.occupiedBy) { f.turn = state.meta.turn; f.pct = 100; return false; }
   const total = cellsOf(T.id).length;
   const n = Math.max(1, Math.round(Math.abs(delta) / 100 * Math.min(total, FRONT_CAP)));
   const wasOccupied = !!T.occupiedBy;
