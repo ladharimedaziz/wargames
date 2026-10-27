@@ -1194,58 +1194,8 @@ export class WorldMap {
     this.drawFx(now, dt);
   }
 
-  // Living ocean: slow swells crossing the water, a glint where the sun catches them, and coastlines that breathe.
-  // The water mask (everything that is not land) is rebuilt only when the camera has settled.
-  seaTile() {
-    if (this._seaTile) return this._seaTile;
-    const n = 256, c = document.createElement('canvas'); c.width = c.height = n; const g = c.getContext('2d');
-    for (let i = 0; i < 46; i++) {
-      // Soft diagonal streaks, wrapped so the tile repeats without seams.
-      const x = Math.random() * n, y = Math.random() * n, len = 26 + Math.random() * 60, a = 0.05 + Math.random() * 0.16;
-      for (const [ox, oy] of [[0, 0], [-n, 0], [n, 0], [0, -n], [0, n]]) {
-        const gr = g.createLinearGradient(x + ox, y + oy, x + ox + len, y + oy - len * 0.18);
-        gr.addColorStop(0, 'rgba(120,190,255,0)'); gr.addColorStop(0.5, `rgba(150,215,255,${a})`); gr.addColorStop(1, 'rgba(120,190,255,0)');
-        g.strokeStyle = gr; g.lineWidth = 1 + Math.random() * 1.4; g.beginPath(); g.moveTo(x + ox, y + oy); g.lineTo(x + ox + len, y + oy - len * 0.18); g.stroke();
-      }
-    }
-    return (this._seaTile = c);
-  }
-  drawSea(ctx, time, withCam) {
-    if (this.moving || !this.atlas?.lo?.paths || this.layers.sea === false) return;
-    const W = this.fx.width, H = this.fx.height, dpr = this.dpr, k = this.cam.k;
-    if (!this.seaMask || this.seaMask.width !== W || this.seaMask.height !== H) {
-      this.seaMask = Object.assign(document.createElement('canvas'), { width: W, height: H });
-      this.seaLayer = Object.assign(document.createElement('canvas'), { width: W, height: H });
-      this.seaStamp = -1;
-    }
-    if (this.seaStamp !== this.baseStamp) {
-      const m = this.seaMask.getContext('2d');
-      m.setTransform(1, 0, 0, 1, 0, 0); m.clearRect(0, 0, W, H);
-      m.setTransform(dpr * k, 0, 0, dpr * k, dpr * this.cam.x, dpr * this.cam.y);
-      m.fillStyle = '#fff'; m.fill(this.sphere);
-      m.globalCompositeOperation = 'destination-out';
-      for (const p of this.atlas.lo.paths.values()) m.fill(p);
-      m.globalCompositeOperation = 'source-over';
-      this.seaStamp = this.baseStamp;
-    }
-    const L = this.seaLayer.getContext('2d'), tile = this.seaTile();
-    L.setTransform(1, 0, 0, 1, 0, 0); L.globalCompositeOperation = 'source-over'; L.clearRect(0, 0, W, H);
-    const sz = Math.max(0.6, Math.min(1.6, k * 0.35 + 0.5)) * dpr;
-    for (const [vx, vy, al, sc] of [[9, 3, 0.9, 1], [-6, 5, 0.6, 1.7]]) {
-      const pat = L.createPattern(tile, 'repeat');
-      pat.setTransform(new DOMMatrix().translate(time * vx * dpr, time * vy * dpr).scale(sz * sc));
-      L.globalAlpha = al * (this.night ? 0.35 : 0.55); L.fillStyle = pat; L.fillRect(0, 0, W, H);
-    }
-    // A slow glint travelling across the whole ocean.
-    L.globalAlpha = 1;
-    const gx = ((time * 22) % (W / dpr + 400)) - 200, gg = L.createLinearGradient((gx - 160) * dpr, 0, (gx + 160) * dpr, H * 0.35);
-    gg.addColorStop(0, 'rgba(120,200,255,0)'); gg.addColorStop(0.5, 'rgba(150,220,255,0.07)'); gg.addColorStop(1, 'rgba(120,200,255,0)');
-    L.fillStyle = gg; L.fillRect(0, 0, W, H);
-    L.globalCompositeOperation = 'destination-in'; L.drawImage(this.seaMask, 0, 0);
-    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(this.seaLayer, 0, 0); ctx.restore();
-    // Coastlines breathe.
-    withCam(() => { ctx.strokeStyle = `rgba(110,200,255,${0.06 + 0.05 * Math.sin(time * 1.3)})`; ctx.lineWidth = 2.4 / k; ctx.stroke(this.atlas.lo.coastPath); });
-  }
+  // The ocean stays still: the animated wave texture, glint and breathing coastline were removed at Dan's request.
+  drawSea() {}
 
   drawFx(now) {
     const ctx = this.fctx, s = this.state, dpr = this.dpr;

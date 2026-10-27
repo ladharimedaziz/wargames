@@ -121,6 +121,12 @@ const ALLIANCE_NAMES = {
 
 export const MISSILE_RANGE_KM = { '643': 2500, '156': 3000, '840': 1800, '364': 2000, '408': 1500, '376': 1500, '356': 2000, '586': 1500, '682': 2600, '826': 1600, '250': 1600, '792': 1000, '887': 1500, '410': 800, '392': 1000, '158': 1000, '616': 300, '804': 600 };
 
+// Countries with air-to-air tankers: their fighter and bomber wings can strike anywhere on Earth.
+export const TANKER_COUNTRIES = new Set(['840', '643', '156', '826', '250', '356', '792', '380', '724', '036', '124', '392', '410', '276', '784']);
+// Delivery range of a nuclear weapon (km) for countries without a global arsenal. The US, Russia, China, Britain and France
+// have intercontinental or submarine-launched missiles and are not limited.
+export const NUKE_RANGE_KM = { '408': 5000, '586': 2750, '356': 5500 };
+
 export const COUNTRIES = {};
 for (const line of RAW.trim().split('\n')) {
   const [id, a3, name, ar, gdp, pop, lat, lon, armies, fighters, bombers, fleets, carriers, missiles, ad, nuclear, oil, alliances, flags] = line.split('|');

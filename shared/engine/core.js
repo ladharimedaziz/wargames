@@ -1,6 +1,6 @@
 // Shared constants and small helpers for the simulation engine.
 import { SEA_ZONES } from '../data/places.js';
-import { MISSILE_RANGE_KM } from '../data/countries.js';
+import { MISSILE_RANGE_KM, TANKER_COUNTRIES } from '../data/countries.js';
 import { distanceKm } from '../geo.js';
 import { CITIES } from '../data/cities.js';
 import { ALLIANCES, sharedAlliances, BASE_RELATIONS } from '../data/alliances.js';
@@ -159,8 +159,8 @@ export function anchor(state, loc) {
 
 export function unitRange(state, unit) {
   if (unit.type === 'missile') return MISSILE_RANGE_KM[unit.owner] || 1000;
-  // With its tanker fleet the US bomber force can reach any country on Earth.
-  if (unit.type === 'bomber' && state.countries[unit.owner]?.a3 === 'USA') return 20000;
+  // With air-to-air tankers a country's fighter and bomber wings can reach any country on Earth.
+  if ((unit.type === 'bomber' || unit.type === 'fighter') && TANKER_COUNTRIES.has(unit.owner)) return 20000;
   return UNIT_TYPES[unit.type].range || 0;
 }
 
