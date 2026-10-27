@@ -17,9 +17,9 @@ import { detectEndings } from './endings.js';
 import { snapshotStats } from './state.js';
 
 const PRIORITY = ['roe', 'overflight', 'war', 'alliance', 'ceasefire', 'peace', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'lift',
-  'rebase', 'cap', 'fleet', 'blockade', 'siege', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'neo', 'drone', 'strike', 'helistrike', 'invade', 'airdrop', 'airassault', 'nuke', 'election'];
+  'rebase', 'cap', 'fleet', 'blockade', 'force', 'siege', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'neo', 'drone', 'strike', 'helistrike', 'invade', 'airdrop', 'airassault', 'nuke', 'election'];
 
-const ANIMATED = ['exchange', 'drone', 'strike', 'battle', 'naval', 'fleet', 'siege', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo', 'heli', 'civil_war', 'airdrop',
+const ANIMATED = ['exchange', 'force', 'drone', 'strike', 'battle', 'naval', 'fleet', 'siege', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo', 'heli', 'civil_war', 'airdrop',
   'ceasefire', 'peace', 'alliance', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'overflight', 'cyber', 'intel', 'spy', 'satellite', 'propaganda', 'alert', 'lift', 'roe', 'election'];
 
 const pt = c => ({ lat: c.lat, lon: c.lon });
@@ -570,6 +570,26 @@ function sailToCover(state, o, ev) {
   u.loc = { kind: 'sea', id: o.zone };
 }
 
+// Forcing a strait: the fleet sails in against whoever holds it. Holding it makes the holder an enemy, the shore
+// batteries of every hostile country on the strait wear the ships down as they pass, and whatever fleet is still
+// blockading fights them in the naval round. The strait only opens if the holders are beaten or driven off.
+function forceStrait(state, o, ev) {
+  const cp = state.global.chokepoints[o.zone], z = SEA_ZONES[o.zone];
+  if (cp?.by && !atWar(state, o.country, cp.by)) declareWar(state, o.country, cp.by, ev, 'strait', o.country);
+  const ids = o.units.filter(id => state.units[id]);
+  moveFleet(state, { ...o, type: 'fleet', units: ids }, ev);
+  for (const id of ids) {
+    const u = state.units[id]; if (!u || u.loc.id !== o.zone) continue;
+    u.forcing = true;
+    for (const cid of z.coasts) {
+      const C = state.countries[cid]; if (!C || !isActive(C) || !(atWar(state, o.country, cid) || (cp?.by && sameSide(state, cid, cp.by)))) continue;
+      damageUnit(state, u, clamp(4 + C.airDefense * 1.4, 4, 16) * between(state, 0.7, 1.3), ev, `shore batteries in ${z.name}`);
+      if (!state.units[id]) break;
+    }
+  }
+  ev.push({ kind: 'force', owner: o.country, zone: o.zone, by: cp?.by || null, at: { lat: z.lat, lon: z.lon } });
+}
+
 function moveFleet(state, o, ev) {
   for (const id of o.units) {
     const u = state.units[id]; if (!u) continue;
@@ -704,6 +724,7 @@ function runOrders(state, list, ctx, ev) {
       case 'airdrop': invasions.push(o); break;
       case 'rebase': for (const id of o.units) { const u = state.units[id]; if (u) { ev.push({ kind: 'move', owner: o.country, unitType: u.type, from: anchor(state, u.loc), to: pt(state.countries[o.target]) }); u.loc = { kind: 'country', id: o.target }; } } break;
       case 'fleet': case 'blockade': moveFleet(state, o, ev); break;
+      case 'force': forceStrait(state, o, ev); break;
       case 'siege': siegeCoast(state, o, ev); break;
       case 'lift': for (const u of unitsOf(state, o.country)) { u.blockade = false; delete u.blockadeOf; } ev.push({ kind: 'lift', a: o.country }); break;
       case 'cap': for (const u of unitsOf(state, o.country, 'fighter')) if (u.loc.id === o.country) u.cap = true; break;
@@ -814,6 +835,7 @@ export function resolveTurn(state, ctx) {
   for (const u of Object.values(state.units)) u.cap = false;
   const invasions = runOrders(state, queued, ctx, ev);
   resolveNaval(state, ev);
+  for (const u of Object.values(state.units)) delete u.forcing;
   resolveInvasions(state, invasions, ev);
   updateFronts(state, ev);
   updateChokepoints(state, ev);

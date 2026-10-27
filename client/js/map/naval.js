@@ -142,6 +142,7 @@ export const NAVAL_FX = {
       ctx.setLineDash([5 / c.k, 4 / c.k]); ctx.lineDashOffset = -time * 14 / c.k; ctx.stroke(path);
       ctx.setLineDash([]); ctx.lineDashOffset = 0;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      this.patrolShips(ctx, id, sg, time);
     }
     for (const [z, by] of zones) {
       const zz = SEA_ZONES[z], q = zz && this.p(zz.lon, zz.lat); if (!q) continue;
@@ -160,6 +161,54 @@ export const NAVAL_FX = {
       const q = this.p(zs[0].lon, zs[0].lat); if (!q) continue;
       this.tag(ctx, q[0], q[1] - 34, (ar ? 'حصار بحري: ' : '⚓ NAVAL BLOCKADE · ') + (ar ? (s.countries[id]?.ar || s.countries[id]?.name) : s.countries[id]?.name?.toUpperCase()), '#ff8a6b');
     }
+  },
+
+  // The coast of a country's main landmass as a thinned ring of [lon, lat], cached.
+  coastRing(id) {
+    this._rings ||= new Map();
+    if (this._rings.has(id)) return this._rings.get(id);
+    const c = this.atlas?.lo?.byId.get(id); let ring = null;
+    if (c) {
+      const main = c.parts.reduce((a, b) => (b.area > a.area ? b : a));
+      const g = main.f.geometry, r = g.type === 'Polygon' ? g.coordinates[0] : g.coordinates[0]?.[0];
+      if (r?.length > 8) { const step = Math.max(1, Math.floor(r.length / 140)); ring = r.filter((_, i) => i % step === 0); }
+    }
+    this._rings.set(id, ring); return ring;
+  },
+
+  // Warships on patrol off a blockaded coast: a few hulls sail back and forth along the stretch of coast nearest
+  // the blockading fleet, held just beyond the edge of the country's waters, with a dotted line marking where
+  // international waters begin.
+  patrolShips(ctx, id, sg, time) {
+    const ring = this.coastRing(id); if (!ring) return;
+    const T = this.state.countries[id], zone = SEA_ZONES[[...sg.zones][0]]; if (!T || !zone) return;
+    const pts = ring.map(([lo, la]) => this.p(lo, la)).filter(Boolean); if (pts.length < 8) return;
+    const cen = this.p(T.lon, T.lat) || pts[0];
+    const zq = this.p(zone.lon, zone.lat) || pts[0];
+    const off = 7 + 5 * Math.min(2.2, Math.sqrt(this.cam.k));
+    // Pushed out from the land, away from the country's centre.
+    const out = pts.map(q => { const dx = q[0] - cen[0], dy = q[1] - cen[1], d = Math.hypot(dx, dy) || 1; return [q[0] + dx / d * off, q[1] + dy / d * off]; });
+    let near = 0, best = Infinity; out.forEach((q, i) => { const d = Math.hypot(q[0] - zq[0], q[1] - zq[1]); if (d < best) { best = d; near = i; } });
+    const span = Math.max(6, Math.floor(out.length * 0.28)), arc = [];
+    for (let i = 0; i < span; i++) arc.push(out[(near - Math.floor(span / 2) + i + out.length * 2) % out.length]);
+    const cum = [0]; for (let i = 1; i < arc.length; i++) cum.push(cum[i - 1] + Math.hypot(arc[i][0] - arc[i - 1][0], arc[i][1] - arc[i - 1][1]));
+    const total = cum[cum.length - 1]; if (total < 20) return;
+    const owner = this.state.countries[sg.by], col = owner && owner.bloc !== 'N' ? this.state.blocs[owner.bloc].color : '#ff8a6b';
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,170,150,0.45)'; ctx.lineWidth = 1; ctx.setLineDash([1.5, 5]);
+    ctx.beginPath(); arc.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); ctx.setLineDash([]);
+    const at = d => { let i = 1; while (i < cum.length - 1 && cum[i] < d) i++; const f = (d - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1); return [arc[i - 1][0] + (arc[i][0] - arc[i - 1][0]) * f, arc[i - 1][1] + (arc[i][1] - arc[i - 1][1]) * f, Math.atan2(arc[i][1] - arc[i - 1][1], arc[i][0] - arc[i - 1][0])]; };
+    const sc = clamp(Math.sqrt(this.cam.k), 1, 2);
+    for (let n = 0; n < 3; n++) {
+      // Ping-pong along the arc at a steady pace, ships spaced out so they cover it between them.
+      const speed = 9 + n * 1.5, ph = ((time * speed + n * total / 3) % (total * 2)), d = ph < total ? ph : total * 2 - ph, fwd = ph < total;
+      const [x, y, a] = at(d);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(fwd ? a : a + Math.PI); ctx.scale(sc, sc);
+      wake(ctx, 0, 0, 8, 1, time, n);
+      hull(ctx, 0, 0, 7, 2.2); ctx.fillStyle = 'rgba(4,6,11,0.92)'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.stroke();
+      ctx.restore();
+    }
+    ctx.restore();
   },
 
   // The moment a blockade starts: the cordon is drawn along the coast and the country flashes red.
