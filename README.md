@@ -1,6 +1,6 @@
 # The World Engine
 
-A live crisis-simulation website for MUN. Four committees run at once. Each committee has two Zeus accounts: the **Stage Zeus** projects the stage display, and the **Back Room Zeus** works the panel. **Kronos** oversees everything and can step into any committee at any time.
+A live crisis-simulation website for MUN. Four committees run at once. Each committee has one Zeus account, the **Back Room Zeus**, who works the panel and opens the stage display in a window to move onto the screen or HDMI feed. **Kronos** oversees everything and can step into any committee at any time.
 
 Every change shows up instantly on every screen of that committee. The server holds the real state, so no data lives in the browsers.
 
@@ -27,10 +27,10 @@ Kronos can also see every password at any time: sign in as Kronos and open **Acc
 | Account | Who | Can do |
 |---|---|---|
 | `kronos` | Director of Simulations | Everything, in every committee, plus the sandbox |
-| `ww3-stage`, `ww3-backroom` | WW3 Crisis Zeus pair | Run WW3 |
-| `bravo-stage`, `bravo-backroom` | Committee Bravo Zeus pair | Run Bravo |
-| `charlie-stage`, `charlie-backroom` | Court of Justice Zeus pair | Run the court |
-| `delta-stage`, `delta-backroom` | Committee Delta Zeus pair | Run Delta |
+| `ww3-backroom` | WW3 Crisis Zeus | Run WW3 |
+| `bravo-backroom` | Committee Bravo Zeus | Run Bravo |
+| `charlie-backroom` | Court of Justice Zeus | Run the court |
+| `delta-backroom` | Committee Delta Zeus | Run Delta |
 
 Passwords are made from `SESSION_SECRET`, so they stay the same across restarts while that secret is unchanged. If Kronos gives an account a new password, that change is stored on disk, and on Render free it reverts to the original after a restart.
 
