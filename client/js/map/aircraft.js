@@ -23,9 +23,51 @@ const SHAPES = {
   single: [[1, 0], [0.3, 0.1], [0.0, 0.66], [-0.36, 0.66], [-0.3, 0.12], [-0.72, 0.1], [-0.86, 0.36], [-1, 0.36], [-0.95, 0]],
   twin: [[1.08, 0], [0.4, 0.12], [0.1, 0.7], [-0.28, 0.72], [-0.3, 0.2], [-0.74, 0.22], [-0.84, 0.5], [-1, 0.5], [-1, 0.16], [-0.9, 0]],
   delta: [[1, 0], [0.5, 0.1], [0.46, 0.34], [0.38, 0.36], [0.32, 0.1], [-0.1, 0.12], [-0.7, 0.7], [-0.9, 0.7], [-0.88, 0.1], [-0.96, 0]],
+
+  // --- United States ---
+  // F-15E: trapezoid wing, big stabilators, twin fins and engines.
+  f15: [[1.05, 0], [0.78, 0.07], [0.45, 0.13], [0.2, 0.2], [0.1, 0.67], [-0.35, 0.67], [-0.3, 0.2], [-0.55, 0.19], [-0.78, 0.4], [-0.95, 0.4], [-0.93, 0.25], [-1, 0.1], [-1, 0]],
+  // F-16: cropped wing blended into long strakes, small tailplanes, single engine.
+  f16: [[1.05, 0], [0.7, 0.06], [0.4, 0.1], [0.28, 0.16], [0.12, 0.22], [-0.02, 0.63], [-0.4, 0.63], [-0.34, 0.2], [-0.6, 0.18], [-0.75, 0.36], [-0.92, 0.36], [-0.9, 0.1], [-1, 0.07], [-1, 0]],
+  // F-22: diamond wing, trapezoid tails, notched trailing edge.
+  f22: [[1.05, 0], [0.8, 0.07], [0.45, 0.13], [0.12, 0.25], [-0.18, 0.7], [-0.42, 0.7], [-0.38, 0.25], [-0.62, 0.22], [-0.82, 0.42], [-1, 0.42], [-0.98, 0.18], [-1.05, 0.12], [-1.05, 0]],
+  // F-35: short and fat, broad wing, tail surfaces set well back.
+  f35: [[1.05, 0], [0.8, 0.07], [0.4, 0.14], [0.1, 0.24], [-0.05, 0.68], [-0.48, 0.68], [-0.4, 0.22], [-0.62, 0.2], [-0.78, 0.36], [-1, 0.36], [-1, 0.14], [-0.95, 0]],
+  // F-14: heavy fuselage, swept wing in the glove, wide tail.
+  f14: [[1.1, 0], [0.75, 0.07], [0.3, 0.14], [0.1, 0.22], [-0.12, 0.55], [-0.35, 0.58], [-0.28, 0.22], [-0.55, 0.22], [-0.72, 0.42], [-0.95, 0.42], [-0.92, 0.2], [-1, 0.14], [-1, 0]],
+  // F-111: long, wings swept right back for the low-level run.
+  f111: [[1.05, 0], [0.8, 0.07], [0.35, 0.1], [0.15, 0.14], [-0.2, 0.5], [-0.38, 0.5], [-0.35, 0.2], [-0.6, 0.16], [-0.8, 0.3], [-0.97, 0.3], [-0.97, 0.1], [-1, 0]],
+  // C-17: swept high wing, big fuselage, T-tail.
+  c17: [[1, 0], [0.9, 0.1], [0.72, 0.13], [0.15, 0.16], [-0.1, 1], [-0.3, 1], [-0.28, 0.15], [-0.78, 0.13], [-0.84, 0.42], [-1, 0.42], [-1, 0]],
+  // C-130: straight wing, four propellers.
+  c130: [[1, 0], [0.9, 0.1], [0.7, 0.11], [0.15, 0.13], [0.12, 1.3], [-0.12, 1.3], [-0.1, 0.13], [-0.78, 0.12], [-0.88, 0.38], [-1, 0.38], [-1, 0]],
+  // --- Russia ---
+  // Su-34: broad flat nose, canards, wide wing, twin tails.
+  su34: [[1.08, 0], [0.9, 0.06], [0.7, 0.11], [0.5, 0.2], [0.54, 0.4], [0.36, 0.4], [0.28, 0.22], [0.1, 0.7], [-0.3, 0.66], [-0.28, 0.22], [-0.55, 0.22], [-0.75, 0.42], [-0.92, 0.42], [-0.9, 0.2], [-1, 0.15], [-1.05, 0.1], [-1.05, 0]],
+  // Su-27 and Su-35: long wing-body blend, widely spaced engines with nozzles, tail booms.
+  su27: [[1.08, 0], [0.8, 0.07], [0.4, 0.13], [0.18, 0.26], [0.05, 0.68], [-0.3, 0.68], [-0.28, 0.26], [-0.55, 0.26], [-0.78, 0.44], [-0.95, 0.44], [-0.93, 0.2], [-1.1, 0.14], [-1.1, 0]],
+  su35: [[1.08, 0], [0.8, 0.07], [0.4, 0.13], [0.18, 0.26], [0.05, 0.72], [-0.3, 0.72], [-0.28, 0.26], [-0.55, 0.26], [-0.78, 0.44], [-0.95, 0.44], [-0.93, 0.2], [-1.1, 0.16], [-1.1, 0]],
+  // Su-57: leading-edge extensions, diamond wing, all-moving tails.
+  su57: [[1.1, 0], [0.85, 0.06], [0.5, 0.12], [0.25, 0.3], [0.12, 0.34], [-0.1, 0.7], [-0.35, 0.72], [-0.3, 0.3], [-0.52, 0.26], [-0.7, 0.45], [-0.92, 0.45], [-0.9, 0.22], [-1.1, 0.17], [-1.1, 0]],
+  // MiG-29: short, thick, wide-set engines.
+  mig29: [[1.05, 0], [0.75, 0.07], [0.4, 0.11], [0.22, 0.22], [0.08, 0.66], [-0.3, 0.66], [-0.28, 0.22], [-0.55, 0.2], [-0.75, 0.4], [-0.95, 0.4], [-0.93, 0.16], [-1, 0.1], [-1, 0]],
+  // MiG-25: huge flat trapezoid wing, square intakes, twin fins.
+  mig25: [[1.1, 0], [0.8, 0.06], [0.45, 0.1], [0.22, 0.17], [0.05, 0.6], [-0.35, 0.6], [-0.32, 0.2], [-0.6, 0.2], [-0.8, 0.4], [-0.98, 0.4], [-0.96, 0.18], [-1, 0.12], [-1, 0]],
+  // Su-24: swing wing set at mid sweep, side-by-side seats.
+  su24: [[1.1, 0], [0.85, 0.06], [0.45, 0.1], [0.2, 0.14], [-0.1, 0.5], [-0.32, 0.5], [-0.3, 0.2], [-0.55, 0.2], [-0.75, 0.4], [-0.95, 0.4], [-0.93, 0.16], [-1, 0.1], [-1, 0]],
+  // Tu-95: slim fuselage, swept wing carrying four contra-rotating propellers.
+  tu95: [[1, 0], [0.9, 0.05], [0.55, 0.07], [0.1, 0.1], [-0.2, 1.1], [-0.34, 1.1], [-0.3, 0.1], [-0.75, 0.1], [-0.93, 0.38], [-1, 0.38], [-1, 0]],
+  // Tu-160: the largest swing-wing bomber, wings swept hard back, blended body.
+  tu160: [[1.15, 0], [0.9, 0.06], [0.5, 0.12], [0.3, 0.2], [0.1, 0.3], [-0.5, 0.66], [-0.62, 0.66], [-0.4, 0.28], [-0.7, 0.27], [-0.86, 0.46], [-1.05, 0.46], [-1.02, 0.1], [-1, 0]],
+  // Tu-22M: swing wing, engines in the rear fuselage, long nose.
+  tu22m: [[1.1, 0], [0.85, 0.07], [0.4, 0.12], [0.1, 0.2], [-0.25, 0.55], [-0.45, 0.55], [-0.4, 0.25], [-0.62, 0.22], [-0.8, 0.4], [-0.98, 0.4], [-0.96, 0.14], [-1, 0]],
+  // Il-76: swept high wing, four engines, T-tail.
+  il76: [[1, 0], [0.86, 0.1], [0.65, 0.11], [0.25, 0.14], [-0.05, 1.05], [-0.28, 1.05], [-0.22, 0.14], [-0.8, 0.12], [-0.88, 0.42], [-1, 0.42], [-1, 0]],
   // C-17 style transport: high straight wing, T-tail.
   transport: [[1, 0], [0.82, 0.12], [0.2, 0.14], [0.02, 1.1], [-0.16, 1.1], [-0.12, 0.14], [-0.76, 0.12], [-0.86, 0.42], [-0.98, 0.42], [-0.96, 0]],
 };
+// The transport a country drops its paratroopers from: C-17 for the US, Il-76 for Russia, a generic airlifter otherwise.
+const transportFor = (state, id) => ({ USA: 'c17', RUS: 'il76' })[state.countries[id]?.a3] || 'transport';
 const LABEL = { b2: 'B-2 SPIRIT', f117: 'F-117 NIGHTHAWK', b52: 'B-52 STRATOFORTRESS', b1b: 'B-1B LANCER' };
 
 export const AIRCRAFT_FX = {
@@ -65,12 +107,22 @@ export const AIRCRAFT_FX = {
   drawModel(ctx, model, x, y, ang, s, color) {
     const P = SHAPES[model] || SHAPES[AIRCRAFT[model]?.shape]; if (!P) return this.drawBomber(ctx, x, y, ang, s, color);
     this.silhouette(ctx, x, y, ang, s, color, P);
-    // B-52: eight engines in four pods under the wings.
-    if (model === 'b52' || AIRCRAFT[model]?.shape === 'b52') {
-      ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.fillStyle = '#9aa3ae';
-      for (const side of [-1, 1]) for (const f of [0.32, 0.68]) { const px = 0.18 - f * 0.42, py = side * (0.1 + f * 1.15); ctx.fillRect((px - 0.12) * s, (py - 0.04) * s, 0.22 * s, 0.08 * s); }
-      ctx.restore();
+    const shape = AIRCRAFT[model]?.shape;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+    // Engine pods under the wings: eight on the B-52, four turboprops on the Bear.
+    if (model === 'b52' || shape === 'b52') {
+      ctx.fillStyle = '#9aa3ae';
+      const pods = model === 'tu95' ? [0.22, 0.42] : [0.32, 0.68];
+      for (const side of [-1, 1]) for (const f of pods) { const px = 0.18 - f * 0.42, py = side * (0.1 + f * 1.15); ctx.fillRect((px - 0.12) * s, (py - 0.04) * s, 0.22 * s, 0.08 * s); }
+      if (model === 'tu95') { ctx.strokeStyle = 'rgba(235,240,255,0.5)'; ctx.lineWidth = 0.6; for (const side of [-1, 1]) for (const f of pods) { const px = 0.18 - f * 0.42 + 0.1, py = side * (0.1 + f * 1.15); ctx.beginPath(); ctx.ellipse(px * s, py * s, 0.05 * s, 0.1 * s, 0, 0, TAU); ctx.stroke(); } }
     }
+    if (model === 'c130') { ctx.strokeStyle = 'rgba(235,240,255,0.5)'; ctx.lineWidth = 0.6; for (const side of [-1, 1]) for (const py of [0.38, 0.85]) { ctx.beginPath(); ctx.ellipse(0.2 * s, side * py * s, 0.05 * s, 0.12 * s, 0, 0, TAU); ctx.stroke(); } }
+    // Fighters: a canopy near the nose and a warm glow from the nozzles.
+    if (AIRCRAFT[model]?.type === 'fighter' || model === 'tu160' || model === 'tu22m') {
+      ctx.fillStyle = 'rgba(190,225,255,0.6)'; ctx.beginPath(); ctx.ellipse(0.55 * s, 0, 0.16 * s, 0.045 * s, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = 'rgba(255,150,70,0.65)'; for (const side of [-1, 1]) { ctx.beginPath(); ctx.arc(-1.02 * s, side * 0.07 * s, 0.045 * s, 0, TAU); ctx.fill(); }
+    }
+    ctx.restore();
   },
 
   // B-2 and F-117: dark shapes that are hard to see, no contrail, a quiet glide in, and precision hits
@@ -242,7 +294,7 @@ export const AIRCRAFT_FX = {
       const x = p0[0] + (p1[0] - p0[0]) * v + nx * off, y = p0[1] + (p1[1] - p0[1]) * v + ny * off;
       ctx.strokeStyle = 'rgba(235,240,255,0.28)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x - dx * 30 * sc, y - dy * 30 * sc); ctx.lineTo(x, y); ctx.stroke();
       ctx.globalAlpha = v > 0.92 ? (1 - v) / 0.08 : 1;
-      this.drawModel(ctx, 'transport', x, y, Math.atan2(dy, dx), 7 * sc, '#cfd6df');
+      this.drawModel(ctx, transportFor(this.state, e.owner), x, y, Math.atan2(dy, dx), 7 * sc, '#cfd6df');
       ctx.globalAlpha = 1;
     }
     for (const c of fx.chutes) {
@@ -283,7 +335,7 @@ export const AIRCRAFT_FX = {
         label(`$${e.amount}BN AID`, `مساعدات ${e.amount} مليار$`, '#ffd678'); break;
       case 'arms':
         arc('rgba(200,210,225,0.4)', [2, 4]);
-        travel(1, q => this.drawModel(ctx, 'transport', q[0], q[1], q[2], 6 * sc, '#cfd6df'));
+        travel(1, q => this.drawModel(ctx, transportFor(this.state, e.owner), q[0], q[1], q[2], 6 * sc, '#cfd6df'));
         label('ARMS SHIPMENT', 'شحنة أسلحة', '#d5dbe4'); break;
       case 'trade':
         arc('rgba(127,191,154,0.5)', [4, 4], 1.3, 0.16); arc('rgba(127,191,154,0.35)', [4, 4], 1.3, -0.16);
