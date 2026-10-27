@@ -838,7 +838,7 @@ export class WorldMap {
     for (const e of evs.filter(e => e.kind === 'tension')) add({ type: 'tension', e, dur: 4.5 }, 0);
     for (const e of evs.filter(e => e.kind === 'war')) { add({ type: 'war', a: e.a, b: e.b, dur: 2.4 }, 0); }
     for (const e of evs.filter(e => e.kind === 'move')) { add({ type: 'move', e, dur: 2.6 }, t); mark(6, e.from, e.to); }
-    for (const e of evs.filter(e => e.kind === 'fleet')) { add({ type: 'fleet', e, dur: 4.2 }, t); mark(6, ...e.path); }
+    for (const e of evs.filter(e => e.kind === 'fleet')) { add({ type: 'fleet', e, dur: 6 }, t); mark(6, ...e.path); }
     for (const e of evs.filter(e => e.kind === 'siege')) { add({ type: 'siege', e, dur: 4.2 }, t + 2.4); const T = this.state?.countries?.[e.target]; mark(1, T && { lat: T.lat, lon: T.lon }); }
     t += 0.6;
     strikes.slice(0, 80).forEach((e, i) => { add({ type: e.kind, e, dur: e.kind === 'scrubbed' ? 3 : e.unitType === 'missile' ? 2.4 : e.unitType === 'bomber' ? 5.2 : 3.8 }, t + i * 0.12); mark(3, e.from, e.to); });
@@ -1803,6 +1803,11 @@ export class WorldMap {
       const sea = g.loc.kind === 'sea';
       const count = g.units.length;
       const scale = Math.min(1.5, 0.85 + this.cam.k * 0.12);
+      if (sea) {
+        // A fleet whose sailing animation is pending or under way is drawn on its route, not already at the destination.
+        const mv = this.sailingPos(g, q);
+        if (mv) { ctx.save(); ctx.translate(mv[0], mv[1]); this.drawNavalGroup(ctx, g, time, color, scale); ctx.restore(); continue; }
+      }
       if (sea) { ctx.save(); ctx.translate(q[0], q[1]); this.drawNavalGroup(ctx, g, time, color, scale); ctx.restore(); this.fleetHits.push({ x: q[0], y: q[1], r: (g.type === 'carrier' ? 22 : 17) * scale, g }); continue; }
       ctx.save(); ctx.translate(q[0], q[1]); ctx.scale(scale, scale);
       ctx.fillStyle = 'rgba(4,6,11,0.85)'; ctx.strokeStyle = color; ctx.lineWidth = 1.4;
@@ -1812,6 +1817,22 @@ export class WorldMap {
       if (count > 1) { ctx.fillStyle = color; ctx.font = '700 9px JetBrains Mono, monospace'; ctx.textAlign = 'left'; ctx.fillText(String(count), 9, -4); }
       ctx.restore();
     }
+  }
+
+  // Where a sea group currently is while its move is still animating (null when it has arrived).
+  sailingPos(g, dest) {
+    const now = performance.now(), end = g.loc.lat != null ? { lat: g.loc.lat, lon: g.loc.lon } : SEA_ZONES[g.loc.id];
+    if (!end) return null;
+    for (const fx of this.effects) {
+      if (fx.type !== 'fleet' || fx.e.owner !== g.owner || fx.e.unitType !== g.type || now >= fx.start + fx.dur * 1000) continue;
+      const last = fx.e.path[fx.e.path.length - 1];
+      if (Math.abs(last.lat - end.lat) > 0.6 || Math.abs(last.lon - end.lon) > 0.6) continue;
+      const route = (fx.route ||= this.seaWayVia(fx.e.path)), pts = this.screenRoute(route); if (pts.length < 2) return null;
+      const u = (now - fx.start) / (fx.dur * 1000);
+      const h = this.alongRoute(pts, u <= 0 ? 0 : ease(Math.min(1, u * 1.15)));
+      return [h[0] + (dest[0] - pts[pts.length - 1][0]) * Math.min(1, Math.max(0, u)), h[1] + (dest[1] - pts[pts.length - 1][1]) * Math.min(1, Math.max(0, u))];
+    }
+    return null;
   }
 
   drawEffects(ctx, now, withCam) {
@@ -2176,14 +2197,6 @@ export class WorldMap {
     const done = [];
     for (let i = 0; i <= 40; i++) done.push(this.alongRoute(pts, v * i / 40));
     ctx.strokeStyle = hexA(col, 0.55 * fade); ctx.lineWidth = 2; ctx.beginPath(); done.forEach((q, j) => (j ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke();
-    const h = this.alongRoute(pts, v), sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
-    // The ship itself, with a bow wave and a long wake behind it.
-    ctx.translate(h[0], h[1]); ctx.rotate(h[2]); ctx.globalAlpha = fade;
-    ctx.strokeStyle = 'rgba(225,238,255,0.55)'; ctx.lineWidth = 1;
-    for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(-3 * sc, side * 1.4 * sc); ctx.lineTo(-18 * sc, side * 5 * sc); ctx.stroke(); }
-    ctx.beginPath(); ctx.moveTo(4 * sc, 0); ctx.quadraticCurveTo(2 * sc, -2.4 * sc, -4 * sc, -2.4 * sc); ctx.lineTo(-6 * sc, -1.6 * sc); ctx.lineTo(-6 * sc, 1.6 * sc); ctx.lineTo(-4 * sc, 2.4 * sc); ctx.quadraticCurveTo(2 * sc, 2.4 * sc, 4 * sc, 0); ctx.closePath();
-    ctx.fillStyle = 'rgba(4,6,11,0.92)'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.stroke();
-    if (carrier) { ctx.fillStyle = hexA(col, 0.8); ctx.fillRect(-3 * sc, -1 * sc, 6 * sc, 2 * sc); }
     ctx.restore();
     if (fx.e.blockade && u > 0.6) {
       // On station: a dashed cordon closes around the fleet.
