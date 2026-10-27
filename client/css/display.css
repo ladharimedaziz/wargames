@@ -406,3 +406,73 @@ html, body { background: #000; }
 
 .sb-brand { margin-top: 1.4em; font: 500 1.05em/1 var(--font); letter-spacing: .32em; text-transform: uppercase; color: rgba(255, 255, 255, .5); }
 .sb-brand b { color: #f2d28b; font-weight: 700; }
+
+/* ---- Court, reworked: a quiet courtroom record. Flat panels, fine rules, serif type, brass used sparingly. ---- */
+.court { --ink: #f1ebdd; --ink-2: #a89f8c; --rule: rgba(241, 235, 221, .16); --brass: #b8924a; --paper: #efe6d0; font-family: 'Iowan Old Style', 'Palatino Linotype', Palatino, Georgia, serif; color: var(--ink); }
+.court-bg { background: #14110e; }
+.court-bg::after { background: linear-gradient(90deg, transparent 0 calc(50% - .5px), rgba(241, 235, 221, .05) calc(50% - .5px) calc(50% + .5px), transparent 0), repeating-linear-gradient(90deg, rgba(241, 235, 221, .035) 0 1px, transparent 1px 12em); }
+.ct-head { align-items: flex-end; padding: 1.6em 2.8em .9em; border-bottom: 1px solid var(--rule); margin: 0 0 .9em; }
+.ct-title { font: 600 2.6em/1.05 'Iowan Old Style', 'Palatino Linotype', Georgia, serif; letter-spacing: .005em; color: var(--ink); text-shadow: none; }
+.ct-sub { margin-top: .5em; font: 500 .82em/1.4 var(--font); letter-spacing: .26em; color: var(--brass); }
+.scales { width: 14em; }
+.scales svg { filter: none; }
+.sc-base, .sc-col, .sc-beam, .sc-pivot { fill: var(--brass); stroke: #6f5524; stroke-width: 1; }
+.sc-pivot { fill: #d3ad66; }
+.sc-chain { fill: none; stroke: #8b7036; stroke-width: 1; }
+.sc-pan { fill: #a07d3b; stroke: #6f5524; stroke-width: 1; }
+.sc-rim { stroke-width: 2.4; stroke-linecap: round; }
+.scales-l { margin-top: .5em; font: 600 .62em/1 var(--font); letter-spacing: .2em; }
+.ct-phases { gap: 0; padding: 0 2.8em; border-bottom: 1px solid var(--rule); }
+.ct-phase { flex: 1; border: 0; border-radius: 0; background: none; padding: .8em .4em .9em; position: relative; font: 500 .8em/1.1 var(--font); letter-spacing: .08em; text-transform: uppercase; color: #756d5e; }
+.ct-phase span { width: auto; height: auto; background: none; border-radius: 0; margin-right: .4em; font: 600 1em var(--font-mono); color: inherit; opacity: .8; }
+.ct-phase::after { content: ''; position: absolute; left: 0; right: 0; bottom: -1px; height: 3px; background: transparent; transition: background .5s; }
+.ct-phase.done { color: var(--ink-2); } .ct-phase.done span { background: none; color: var(--brass); }
+.ct-phase.done::after { background: rgba(184, 146, 74, .45); }
+.ct-phase.on { background: none; color: var(--ink); border: 0; box-shadow: none; flex: 1.5; }
+.ct-phase.on::after { background: var(--brass); }
+.ct-phase.on span { background: none; color: var(--brass); }
+.ct-main { gap: 2.6em; padding: 1.8em 2.8em; }
+.ct-h { font: 600 .72em/1 var(--font); letter-spacing: .3em; color: var(--brass); padding-bottom: .8em; border-bottom: 1px solid var(--rule); margin-bottom: .4em; }
+.ct-ex { border-radius: 0; background: none; border: 0; border-bottom: 1px solid var(--rule); padding: .7em .2em; }
+.ct-ex img, .ct-ex-doc { border-radius: 1px; background: var(--paper); color: #6d5528; }
+.ct-ex-code { border-radius: 0; font-weight: 600; letter-spacing: .08em; }
+.ct-ex-t { font-weight: 500; font-size: 1em; }
+.spot { animation-duration: .5s; }
+.spot-light { display: none; }
+.spot-ring { width: 13em; height: 13em; }
+.spot-ring svg { filter: none; }
+.sr-bg { fill: none; stroke: rgba(241, 235, 221, .12); stroke-width: 2.5; }
+.sr-fg { stroke-width: 2.5; stroke-linecap: butt; }
+.spot-init { inset: 1.1em; background: #1d1813; border: 1px solid color-mix(in srgb, var(--side) 55%, #000); box-shadow: none; font: 500 3.4em/1 'Iowan Old Style', Georgia, serif; letter-spacing: .02em; color: var(--ink); }
+.spot-ring.low { animation: none; } .spot-ring.low .sr-fg { stroke: #e0574f; }
+.spot-k { margin-top: 1.4em; font: 600 .72em/1 var(--font); letter-spacing: .36em; color: var(--brass); }
+.spot-name { font: 600 2.8em/1.1 'Iowan Old Style', 'Palatino Linotype', Georgia, serif; letter-spacing: 0; margin-top: .25em; }
+.spot-role { font: italic 1.15em/1.3 Georgia, serif; color: var(--ink-2); margin-top: .15em; }
+.spot-time { font: 500 1.9em/1 var(--font-mono); margin-top: .5em; color: var(--ink); letter-spacing: .04em; }
+.ct-q { border-radius: 0; background: none; border: 0; border-bottom: 1px solid var(--rule); border-left: 2px solid var(--side); padding: .6em .7em; }
+.ct-q-i { background: none; border: 1px solid color-mix(in srgb, var(--side) 60%, #000); font: 500 .85em Georgia, serif; }
+.ct-q-name { font-weight: 600; } .ct-q-role { font: italic .85em Georgia, serif; color: var(--ink-2); }
+.ct-bench { border-top: 1px solid var(--rule); padding: .9em 2.8em 1.1em; gap: 1.6em; }
+.ct-seat { background: none; border: 0; border-bottom: 2px solid color-mix(in srgb, var(--side) 45%, transparent); border-radius: 0; padding: .3em .1em; font: 500 .85em var(--font); color: var(--ink-2); }
+.ct-seat.on { background: none; color: var(--ink); border-bottom-color: var(--side); box-shadow: none; transform: none; }
+.ct-seat.queued { border-bottom-style: dashed; }
+/* Objection: a heavy ruled banner cutting across the room, not a comic burst. */
+.os-burst { display: none; }
+.objection-slam { background: linear-gradient(rgba(8, 6, 5, 0), rgba(8, 6, 5, .72) 30%, rgba(8, 6, 5, .72) 70%, rgba(8, 6, 5, 0)); animation: fade-in .15s; }
+.os-word { font: 800 8.5em/1 'Iowan Old Style', 'Palatino Linotype', Georgia, serif; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); -webkit-text-stroke: 0; text-shadow: none; transform: none; padding: 0 .5em; border-top: .04em solid #c8352d; border-bottom: .04em solid #c8352d; animation: obj-in .28s cubic-bezier(.16, 1, .3, 1) both; }
+@keyframes obj-in { from { opacity: 0; transform: scaleY(1.6) translateY(-.2em); letter-spacing: .5em; } }
+.os-ground { background: none; border: 0; border-radius: 0; margin-top: .8em; padding: 0; font: italic 1.9em/1.2 Georgia, serif; color: #e8b9b4; }
+/* Rulings: a rubber stamp pressed onto the record. */
+.ruling-stamp { padding: .1em .45em; border: .07em solid; border-radius: .06em; font: 800 6em/1 'Iowan Old Style', 'Palatino Linotype', Georgia, serif; letter-spacing: .14em; text-transform: uppercase; background: rgba(8, 6, 5, .35); backdrop-filter: none; mix-blend-mode: normal; opacity: .96; }
+.ruling-stamp.sustained { color: #6fbf8d; border-color: #6fbf8d; text-shadow: none; }
+.ruling-stamp.overruled { color: #d9534f; border-color: #d9534f; text-shadow: none; }
+.exhibit-show { background: rgba(10, 8, 6, .82); backdrop-filter: none; }
+.es-card { border-radius: 1px; box-shadow: 0 .5em 3em rgba(0, 0, 0, .55); font-family: Georgia, serif; }
+.es-code { border-radius: 0; letter-spacing: .1em; }
+.gavel-word { font: 700 3.6em/1 'Iowan Old Style', Georgia, serif; letter-spacing: .34em; color: var(--ink); text-shadow: none; }
+.verdict { background: #0a0807; }
+.v-k { font: 600 1em/1 var(--font); letter-spacing: .6em; color: var(--brass); }
+.v-word { font: 700 7.5em/1 'Iowan Old Style', 'Palatino Linotype', Georgia, serif; letter-spacing: .1em; text-transform: uppercase; }
+.v-guilty .v-word { color: #e0574f; text-shadow: none; } .v-innocent .v-word { color: #7cc79a; text-shadow: none; } .v-neutral .v-word { color: var(--ink); text-shadow: none; }
+.v-detail { font: italic 1.5em/1.5 Georgia, serif; color: var(--ink-2); }
+.recess { background: rgba(10, 8, 6, .94); backdrop-filter: none; font: italic 600 3em/1 Georgia, serif; color: var(--ink); }

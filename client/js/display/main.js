@@ -62,7 +62,7 @@ function Stage({ conn }) {
       ${timerShown && html`<${StageTimer} conn=${conn} timer=${state.timer} />`}
       ${(global.pause || state.display.scene === 'pause') && html`<${PauseScreen} p=${global.pause} lang=${lang} />`}
       <${KronosEye} on=${state.kronos.eye} big=${true} />
-      ${!soundOn && html`<div class="sound-pill">Click once to enable sound · double-click for full screen · click a country or scroll to zoom, Esc to zoom out</div>`}
+      ${!soundOn && html`<div class="sound-pill">Click once to hide this · double-click for full screen · click a country or scroll to zoom, Esc to zoom out</div>`}
     </div>`;
 }
 
