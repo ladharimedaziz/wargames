@@ -264,7 +264,8 @@ export function parseCommand(state, text, role = 'stage') {
   }
   order.counts = counts;
   if (verb === 'peace') {
-    order.terms = { returnTerritory: !words.includes('keep'), demilitarize: words.some(w => /^demil/.test(w || '')) };
+    order.terms = { returnTerritory: !words.includes('keep'), demilitarize: words.some(w => /^demil/.test(w || '')),
+      liftSanctions: words.includes('sanctions'), liftBlockades: words.includes('blockade'), tradeResume: words.includes('trade'), prisoners: words.some(w => /^prisoner/.test(w || '')), nonAggression: words.includes('nonaggression') };
     const rep = nums.find(n => n.money); if (rep) { order.terms.reparations = rep.num; order.terms.payer = actor; order.terms.payee = target; }
   }
   return { ok: true, actions: [{ type: 'queueOrder', order }], order, preview: null };

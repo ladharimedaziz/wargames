@@ -3,6 +3,7 @@ import { html, useState, useMemo, useEffect, run, toast, fmt, cls, download, use
 import { SEA_ZONES } from '/shared/data/places.js';
 import { UNIT_TYPES, TARGET_TYPES, ENDINGS, BLOCS, isOOB } from '/shared/engine/core.js';
 import { ORDER_TYPES, CYBER_KINDS, SPY_KINDS, validateOrder, autoUnits, describeOrder } from '/shared/engine/orders.js';
+import { PeaceOptions } from './peaceterms.js';
 import { aircraftFor } from '/shared/data/militaries.js';
 
 export function sortedCountries(state, filter = () => true) {
@@ -182,14 +183,7 @@ export function OrdersTab({ conn, state, draft, setDraft, picking, setPicking, s
 }
 
 function PeaceTerms({ state, d, set }) {
-  const t = d.terms || { returnTerritory: true };
-  const st = patch => set({ terms: { ...t, ...patch } });
-  return html`<div class="col terms">
-    <label class="row"><input type="checkbox" checked=${t.returnTerritory !== false} onChange=${e => st({ returnTerritory: e.target.checked })} /> Occupied land is returned</label>
-    <label class="row"><input type="checkbox" checked=${!!t.demilitarize} onChange=${e => st({ demilitarize: e.target.checked })} /> Troops withdraw from each other's land</label>
-    <div class="row"><label class="field grow">Reparations ($bn)<input class="input" type="number" min="0" value=${t.reparations || 0} onInput=${e => st({ reparations: +e.target.value, payer: t.payer || d.country, payee: t.payee || d.target })} /></label>
-    <label class="field grow">Paid by<select class="input" value=${t.payer || d.country || ''} onChange=${e => st({ payer: e.target.value, payee: e.target.value === d.country ? d.target : d.country })}>${[d.country, d.target].filter(Boolean).map(id => html`<option value=${id}>${state.countries[id].name}</option>`)}</select></label></div>
-  </div>`;
+  return html`<${PeaceOptions} state=${state} terms=${d.terms} parties=${[d.country, d.target]} onChange=${terms => set({ terms })} />`;
 }
 
 // ---------------- Countries ----------------

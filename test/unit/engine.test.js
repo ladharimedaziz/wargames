@@ -399,6 +399,19 @@ test('civil war: several factions, and a drawn border fills in', () => {
   assert.equal(zeus({ type: 'civilWar', country: SY, name: 'D', ring: [[0, 0], [0, 1], [1, 1]] }).ok, false);
 });
 
+test('peace terms: sanctions lifted, blockades end, trade resumes, reconstruction paid', () => {
+  const { s, kronos } = world();
+  kronos({ type: 'forceWar', a: RU, b: UA });
+  s.countries[RU].sanctions.push(UA); s.countries[UA].damage = 0.5;
+  const t0 = s.countries[RU].treasury;
+  const r = kronos({ type: 'forceOrder', order: { country: RU, type: 'peace', target: UA, terms: { liftSanctions: true, tradeResume: true, nonAggression: true, reconstruction: 20, fundBy: RU, fundTo: UA } } });
+  assert.ok(r.ok, r.error);
+  assert.ok(!atWar(s, RU, UA));
+  assert.ok(!s.countries[RU].sanctions.includes(UA));
+  assert.ok(s.treaties.some(t => t.type === 'trade') && s.treaties.some(t => t.type === 'nonaggression'));
+  assert.ok(s.countries[UA].damage < 0.5 && s.countries[RU].treasury === t0 - 20);
+});
+
 test('a war only closes airspace that is contested and within the enemy\'s reach', () => {
   const { s } = world();
   assert.deepEqual(warClosures(s, US, '004'), []); // no air force to fight over Afghanistan

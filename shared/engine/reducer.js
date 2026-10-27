@@ -382,7 +382,11 @@ const WORLD = {
     s.draftTreaty = {
       id: s.draftTreaty?.id || newId(s, 't'), title: String(a.title || 'Treaty of Riyadh').slice(0, 80), parties,
       kind: ['peace', 'ceasefire', 'alliance', 'trade'].includes(a.kind) ? a.kind : 'peace',
-      terms: { returnTerritory: a.terms?.returnTerritory !== false, reparations: clamp(Number(a.terms?.reparations) || 0, 0, 500), payer: C(s, a.terms?.payer) ? a.terms.payer : null, payee: C(s, a.terms?.payee) ? a.terms.payee : null, demilitarize: !!a.terms?.demilitarize, clauses: (a.terms?.clauses || []).map(x => String(x).slice(0, 200)).slice(0, 10) },
+      terms: {
+        returnTerritory: a.terms?.returnTerritory !== false, reparations: clamp(Number(a.terms?.reparations) || 0, 0, 500), payer: C(s, a.terms?.payer) ? a.terms.payer : null, payee: C(s, a.terms?.payee) ? a.terms.payee : null, demilitarize: !!a.terms?.demilitarize,
+        liftSanctions: !!a.terms?.liftSanctions, liftBlockades: !!a.terms?.liftBlockades, reopenAirspace: !!a.terms?.reopenAirspace, tradeResume: !!a.terms?.tradeResume, nonAggression: !!a.terms?.nonAggression, prisoners: !!a.terms?.prisoners,
+        reconstruction: clamp(Number(a.terms?.reconstruction) || 0, 0, 500), fundBy: C(s, a.terms?.fundBy) ? a.terms.fundBy : null, fundTo: C(s, a.terms?.fundTo) ? a.terms.fundTo : null,
+        clauses: (a.terms?.clauses || []).map(x => String(x).slice(0, 200)).slice(0, 10) },
       signed: [], updatedAt: ctx.now,
     };
     return ok({ treaty: s.draftTreaty });
