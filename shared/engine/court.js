@@ -92,11 +92,14 @@ export const courtActions = {
   speakTimerReset: { perm: 'zeus', run(s, a, ctx) { const t = s.court.speakTimer; t.remaining = t.duration; t.running = !!a.start; t.endsAt = a.start ? ctx.now + t.duration * 1000 : 0; return ok(); } },
   objection: { perm: 'zeus', run(s, a, ctx) {
     const c = s.court;
-    if (c.objection && !c.objection.ruling) return err('Rule on the open objection first.');
-    const by = seat(c, a.by); if (!by) return err('Who is objecting?');
+    // One click raises it: who objected is optional (the side opposite the speaker is assumed), and a new
+    // objection simply replaces one still open.
+    const by = a.by ? seat(c, a.by) : null; if (a.by && !by) return err('Unknown seat.');
+    const speakerSide = seat(c, c.speaker)?.side;
+    const side = by?.side || (speakerSide === 'prosecution' ? 'defence' : speakerSide === 'defence' ? 'prosecution' : null);
     // Pause the speaker's clock while the bench rules.
     const t = c.speakTimer; if (t.running) { t.remaining = Math.max(0, Math.round((t.endsAt - ctx.now) / 1000)); t.running = false; t.pausedBy = 'objection'; }
-    c.objection = { id: newId(s, 'obj'), by: a.by, against: c.speaker, grounds: String(a.grounds || OBJECTION_GROUNDS[0]).slice(0, 60), at: ctx.now, ruling: null, ruledAt: 0 };
+    c.objection = { id: newId(s, 'obj'), by: by?.id || null, side, against: c.speaker, grounds: String(a.grounds || OBJECTION_GROUNDS[0]).slice(0, 60), at: ctx.now, ruling: null, ruledAt: 0 };
     return ok();
   } },
   rule: { perm: 'zeus', run(s, a, ctx) {
@@ -106,7 +109,7 @@ export const courtActions = {
     o.ruling = a.ruling; o.ruledAt = ctx.now;
     c.objections.push({ ...o });
     if (c.objections.length > 100) c.objections.shift();
-    const side = seat(c, o.by)?.side;
+    const side = o.side || seat(c, o.by)?.side;
     // A sustained objection tips the scales toward the objecting side.
     if (a.ruling === 'sustained' && (side === 'prosecution' || side === 'defence')) c.scales = clamp(c.scales + (side === 'prosecution' ? 1 : -1), -10, 10);
     const t = c.speakTimer; if (t.pausedBy === 'objection') { t.pausedBy = null; if (c.speaker) { t.endsAt = ctx.now + t.remaining * 1000; t.running = true; } }

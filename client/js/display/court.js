@@ -61,7 +61,7 @@ export function CourtDisplay({ conn, state, lang }) {
       ${objFresh && html`<div class="objection-slam" key=${obj.id}>
         <div class="os-burst"></div>
         <div class="os-word">${t('objection', lang)}</div>
-        <div class="os-ground">${obj.grounds} · ${(c.seats.find(s => s.id === obj.by) || {}).person || (c.seats.find(s => s.id === obj.by) || {}).name || ''}</div>
+        <div class="os-ground">${obj.grounds}</div>
       </div>`}
       ${ruled && html`<div class=${cls('ruling-stamp', obj.ruling)} key=${obj.id + obj.ruling}>${t(obj.ruling, lang)}</div>`}
       ${shown && html`<div class="exhibit-show" key=${shown.id}><div class=${cls('es-card', `ex-${shown.side}`)}>
