@@ -85,10 +85,17 @@ export class Connection {
         const t = setTimeout(() => { off(); resolve({ ok: false, error: 'Not connected. Retrying…' }); }, 8000);
         return;
       }
-      const id = this.seq++;
+      const id = this.seq++, ws = this.ws;
       this.pending.set(id, { resolve });
       this.ws.send(JSON.stringify({ ...msg, id }));
-      setTimeout(() => { if (this.pending.has(id)) { this.pending.delete(id); resolve({ ok: false, error: 'The server did not answer in time.' }); } }, 20000);
+      setTimeout(() => {
+        if (!this.pending.has(id)) return;
+        this.pending.delete(id);
+        resolve({ ok: false, error: 'The server did not answer in time. Reconnecting…' });
+        // A socket that stops answering is usually dead without having closed (a sleeping or restarted host):
+        // drop it so the reconnect starts now and the other waiting requests stop piling up.
+        if (this.ws === ws && ws.readyState === 1) ws.close();
+      }, 15000);
     });
   }
   join(committee) { this.committee = committee; return this.request({ t: 'join', committee, view: this.view }); }
@@ -124,7 +131,8 @@ export function Toasts() {
   useEffect(() => {
     toastFn = (text, tone) => {
       const id = Math.random();
-      setItems(list => [...list.slice(-3), { id, text, tone }]);
+      // The same message again replaces the old one instead of stacking up.
+      setItems(list => [...list.filter(x => x.text !== text).slice(-3), { id, text, tone }]);
       setTimeout(() => setItems(list => list.filter(x => x.id !== id)), tone === 'error' ? 5200 : 3200);
     };
     return () => { toastFn = null; };

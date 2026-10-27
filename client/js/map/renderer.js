@@ -224,15 +224,21 @@ export class WorldMap {
     for (const k in c.map) add(+k, c.map[k]);
     if (this.ctlProgress(now) < 1) for (const [k, a] of c.anim) if (now < a.s + a.d && a.o != null) add(k, a.o);
     this.ctlGroupsSettled = this.ctlProgress(now) >= 1;
-    this.ctlGroups = [...groups.values()].filter(g => g.i1 - g.i0 < 400);
+    // Half the world wide at most (a country split across the antimeridian is already two groups); Russia's
+    // European front reaching the Pacific is about 160 degrees.
+    this.ctlGroups = [...groups.values()].filter(g => g.i1 - g.i0 < NI / 2);
     return this.ctlGroups;
   }
   // The held ground as smooth shapes: the cells become a field, blurred and contoured at the halfway mark, so
   // the line curves like a real front. It breathes slightly while the war is on.
   groupShape(g, now, time) {
     const u = this.ctlProgress(now), live = u < 1;
-    if (g.shape && !live && time - g.shape.t < 0.12 && g.shape.k === this.cam.k) return g.shape;
     const pad = 3, i0 = g.i0 - pad, j0 = Math.max(0, g.j0 - pad), W = g.i1 - g.i0 + 1 + pad * 2, H = Math.min(g.j1 + pad, 599) - j0 + 1;
+    // Small fronts breathe (redrawn every eighth of a second); a front across half of Russia is redrawn only
+    // when it moves or the zoom changes, so it never stalls the frame.
+    const big = W * H > 30000;
+    if (g.shape && !live && (big || (time - g.shape.t < 0.12 && g.shape.k === this.cam.k))) return g.shape;
+    if (g.shape && live && big && time - g.shape.t < 0.25) return g.shape;
     const v = new Float64Array(W * H);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) v[y * W + x] = this.ctlValue(cellKey(i0 + x, j0 + y), g.owner, now);
     // Separable [1 2 1] blur, twice, for soft organic curves.
@@ -242,7 +248,7 @@ export class WorldMap {
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; v[i] = (tmp[i] * 2 + tmp[y > 0 ? i - W : i] + tmp[y < H - 1 ? i + W : i]) / 4; }
     }
     const seed = (Number(String(g.owner).replace(/\D/g, '')) || 3) * 0.37;
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (v[i] > 0.15 && v[i] < 0.85) v[i] += 0.045 * Math.sin(time * 0.9 + x * 0.8 + seed) * Math.cos(time * 0.6 + y * 0.7); }
+    if (!big) for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const i = y * W + x; if (v[i] > 0.15 && v[i] < 0.85) v[i] += 0.045 * Math.sin(time * 0.9 + x * 0.8 + seed) * Math.cos(time * 0.6 + y * 0.7); }
     // Contour a field upsampled 2x (bilinear) so the line follows curves finer than a cell.
     const W2 = W * 2 - 1, H2 = H * 2 - 1, v2 = new Array(W2 * H2);
     for (let y = 0; y < H2; y++) for (let x = 0; x < W2; x++) {
