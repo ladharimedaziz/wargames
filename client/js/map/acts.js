@@ -468,6 +468,9 @@ export const ACT_FX = {
     if (w > 0.3) { const g = ctx.createLinearGradient(q[0] - w, 0, q[0] + w, 0); g.addColorStop(0, 'rgba(255,220,140,0)'); g.addColorStop(0.5, `rgba(255,250,230,${1 - v})`); g.addColorStop(1, 'rgba(255,220,140,0)'); ctx.fillStyle = g; ctx.fillRect(q[0] - w, 0, w * 2, q[1]); }
     ctx.restore();
     for (let i = 0; i < 3; i++) { const t = clamp(v * 1.5 - i * 0.15, 0, 1); if (!t || t >= 1) continue; ctx.strokeStyle = `rgba(255,226,160,${1 - t})`; ctx.lineWidth = 2 - i * 0.5; ctx.beginPath(); ctx.ellipse(q[0], q[1], ease(t) * 60 * sc, ease(t) * 60 * sc * 0.5, 0, 0, TAU); ctx.stroke(); }
+    // Cracks race out of the impact across the ground, glowing then cooling.
+    ctx.strokeStyle = `rgba(255,190,100,${0.85 * (1 - v)})`; ctx.lineWidth = 1.2;
+    for (let i = 0; i < 9; i++) { const a = i / 9 * TAU + 0.3, len = ease(Math.min(1, v * 2)) * (28 + (i % 3) * 14) * sc; ctx.beginPath(); ctx.moveTo(q[0], q[1]); let x = q[0], y = q[1]; for (let j = 1; j <= 5; j++) { x += Math.cos(a + Math.sin(i * 3 + j) * 0.35) * len / 5; y += Math.sin(a + Math.sin(i * 3 + j) * 0.35) * len / 5 * 0.55; ctx.lineTo(x, y); } ctx.stroke(); }
     this.boom(ctx, q[0], q[1], 16 * sc, Math.min(1, v * 1.4));
     if (v < 0.8) this.tag(ctx, q[0], q[1] - 26 * sc, this.opts.lang === 'ar' ? 'ضربة كرونوس' : 'STRIKE FROM ABOVE', '#ffd678');
   },

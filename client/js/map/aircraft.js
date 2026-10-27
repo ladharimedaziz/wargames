@@ -2,7 +2,7 @@
 // American strike aircraft get their own silhouettes and runs (B-2, F-117, B-52, B-1B), helicopters get AH-64
 // and CH-47 shapes for the US, paratroopers drop from transports, and every diplomatic or covert order has a
 // short animation. Nothing graphic: light, motion and labels.
-import { AIRCRAFT } from '/shared/data/militaries.js';
+import { AIRCRAFT, aircraftFor } from '/shared/data/militaries.js';
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ease = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
@@ -29,6 +29,39 @@ const SHAPES = {
 const LABEL = { b2: 'B-2 SPIRIT', f117: 'F-117 NIGHTHAWK', b52: 'B-52 STRATOFORTRESS', b1b: 'B-1B LANCER' };
 
 export const AIRCRAFT_FX = {
+
+  // Combat air patrol: while a country is on patrol (a standing op, or fighters ordered up this turn) a flight of its
+  // own fighters circles over home in a racetrack, the real type for its air force and year, with a soft cone of
+  // coverage on the ground beneath.
+  drawPatrols(ctx, time) {
+    const s = this.state;
+    const ids = new Set((s.ops || []).filter(o => o.kind === 'patrol').map(o => o.country));
+    for (const u of Object.values(s.units || {})) if (u.cap && u.type === 'fighter') ids.add(u.owner);
+    if (!ids.size) return;
+    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
+    for (const id of ids) {
+      const c = s.countries[id], box = this.screenBox(id), at = this.countryPoint(id);
+      if (!c || !box || !at || c.control === 'inactive') continue;
+      const rx = clamp((box[2] - box[0]) * 0.22, 24, 90 * sc), ry = rx * 0.5;
+      const col = this.colorOf(c, '#c8e6ff');
+      const models = aircraftFor(c.a3, s.settings?.year).filter(([, v]) => v.type === 'fighter').map(([k]) => k);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(200,230,255,0.16)'; ctx.setLineDash([3, 5]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(at[0], at[1], rx, ry, 0, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+      for (let i = 0; i < 2; i++) {
+        const th = time * 0.5 + i * Math.PI, x = at[0] + Math.cos(th) * rx, y = at[1] + Math.sin(th) * ry;
+        const ang = Math.atan2(Math.cos(th) * ry, -Math.sin(th) * rx);
+        // Contrail curling behind.
+        ctx.strokeStyle = 'rgba(235,240,255,0.3)'; ctx.lineWidth = 1; ctx.beginPath();
+        for (let j = 0; j <= 10; j++) { const t2 = th - j * 0.045; const qx = at[0] + Math.cos(t2) * rx, qy = at[1] + Math.sin(t2) * ry; j ? ctx.lineTo(qx, qy) : ctx.moveTo(qx, qy); }
+        ctx.stroke();
+        const m = models[i % Math.max(1, models.length)];
+        if (m) this.drawModel(ctx, m, x, y, ang, 6.4 * sc, col); else this.drawJet(ctx, x, y, ang, 6 * sc, col);
+      }
+      ctx.restore();
+      this.tag(ctx, at[0], at[1] - ry - 12, 'AIR PATROL', '#9fd8ff');
+    }
+  },
   drawModel(ctx, model, x, y, ang, s, color) {
     const P = SHAPES[model] || SHAPES[AIRCRAFT[model]?.shape]; if (!P) return this.drawBomber(ctx, x, y, ang, s, color);
     this.silhouette(ctx, x, y, ang, s, color, P);

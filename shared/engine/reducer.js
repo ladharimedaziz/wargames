@@ -712,6 +712,14 @@ const WORLD = {
     log(s, ctx, `Kronos ended every outbreak (${hit.map(c => c.name).join(', ')})`);
     return ok();
   } },
+  // Bring every damaged unit (one country's, or everyone's) back to full strength.
+  healUnits: { perm: 'kronos', run(s, a, ctx) {
+    const us = Object.values(s.units).filter(u => (!a.country || u.owner === a.country) && u.strength < 100);
+    if (!us.length) return err('Nothing is damaged.');
+    for (const u of us) u.strength = 100;
+    log(s, ctx, `Kronos restored ${us.length} units${a.country ? ` of ${C(s, a.country)?.name}` : ''} to full strength`);
+    return ok();
+  } },
   restoreAllPower: { perm: 'kronos', run(s, a, ctx) {
     const hit = Object.values(s.countries).filter(c => c.blackout); if (!hit.length) return err('There are no blackouts.');
     for (const c of hit) c.blackout = null;
