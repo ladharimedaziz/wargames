@@ -1,6 +1,7 @@
 // Diplomacy tools: UN votes, the peace treaty builder, humanitarian pauses, and the list of wars.
 import { html, useState, run, toast, cls } from '../lib.js';
 import { CountrySelect } from './tabs.js';
+import { unVoters, aiVote } from '/shared/engine/core.js';
 
 export function DiplomacyTab({ conn, state }) {
   const [section, setSection] = useState('un');
@@ -16,7 +17,7 @@ export function DiplomacyTab({ conn, state }) {
 
 function UNVote({ conn, state }) {
   const open = state.unVotes.find(v => v.open);
-  const [f, setF] = useState({ title: '', ar: '', body: 'assembly', kind: 'condemn', sponsor: null, target: null });
+  const [f, setF] = useState({ title: '', body: 'assembly', kind: 'condemn', sponsor: null, target: null, delegatesOnly: true, preset: {} });
   const set = p => setF({ ...f, ...p });
   if (open) {
     const ids = Object.keys(open.votes);
@@ -50,16 +51,35 @@ function UNVote({ conn, state }) {
   const lastVote = [...state.unVotes].reverse().find(v => !v.open);
   return html`<div class="col">
     <label class="field">Resolution<input class="input" placeholder="e.g. Demands an immediate ceasefire in the Gulf" value=${f.title} onInput=${e => set({ title: e.target.value })} /></label>
-    <label class="field">Arabic title (optional)<input class="input ar" dir="rtl" value=${f.ar} onInput=${e => set({ ar: e.target.value })} /></label>
     <div class="row">
       <label class="field grow">Body<select class="input" value=${f.body} onChange=${e => set({ body: e.target.value })}><option value="assembly">General Assembly</option><option value="council">Security Council (veto)</option></select></label>
       <label class="field grow">Type<select class="input" value=${f.kind} onChange=${e => set({ kind: e.target.value })}><option value="condemn">Condemn</option><option value="sanction">Sanctions</option><option value="ceasefire">Ceasefire</option><option value="humanitarian">Humanitarian</option><option value="custom">Other</option></select></label>
     </div>
     <label class="field">Sponsor<${CountrySelect} state=${state} value=${f.sponsor} onChange=${v => set({ sponsor: v })} placeholder="None" /></label>
     <label class="field">Directed at<${CountrySelect} state=${state} value=${f.target} onChange=${v => set({ target: v })} placeholder="Nobody in particular" /></label>
-    <button class="btn primary" disabled=${!f.title.trim()} onClick=${() => run(conn, { type: 'voteOpen', ...f })}>Open the vote and show it on stage</button>
+    <label class="field">Who votes<div class="seg">
+      <button class=${f.delegatesOnly ? 'on' : ''} onClick=${() => set({ delegatesOnly: true })}>Delegations only</button>
+      <button class=${!f.delegatesOnly ? 'on' : ''} onClick=${() => set({ delegatesOnly: false })}>Every major country</button></div></label>
+    <${VotePrep} state=${state} f=${f} set=${set} />
+    <button class="btn primary" disabled=${!f.title.trim()} onClick=${async () => { const r = await run(conn, { type: 'voteOpen', ...f }); if (r?.ok) set({ preset: {} }); }}>Open the vote and show it on stage</button>
     ${lastVote && html`<div class="card"><div class="card-b small"><b>${lastVote.result.passed ? 'Passed' : 'Failed'}:</b> ${lastVote.title} (${lastVote.result.yes}–${lastVote.result.no}–${lastVote.result.abstain})${lastVote.result.vetoes.length ? `, vetoed by ${lastVote.result.vetoes.map(id => state.countries[id].name).join(', ')}` : ''}</div></div>`}
   </div>`;
+}
+
+// Prepare votes before opening: set any country's vote by hand; the rest are picked automatically when it opens.
+function VotePrep({ state, f, set }) {
+  const list = unVoters(state, f.body, f.delegatesOnly).sort((a, b) => a.name.localeCompare(b.name));
+  const preview = { title: f.title, kind: f.kind, sponsor: f.sponsor, target: f.target };
+  const setVote = (id, ch) => { const p = { ...f.preset }; if (ch === 'auto') delete p[id]; else p[id] = ch; set({ preset: p }); };
+  const fill = () => { const p = { ...f.preset }; for (const c of list) if (!p[c.id]) p[c.id] = aiVote(state, c, preview); set({ preset: p }); };
+  return html`<details class="vote-prep" open=${Object.keys(f.preset).length > 0}>
+    <summary>Prepare votes <span class="dim small">· ${list.length} voting · ${Object.keys(f.preset).length} set by hand</span></summary>
+    <div class="row" style="margin:6px 0"><button class="btn xs" onClick=${fill}>Suggest the rest</button><button class="btn xs ghost" onClick=${() => set({ preset: {} })}>Clear</button><span class="dim small grow">Anything left on auto is picked when the vote opens.</span></div>
+    <div class="list compact">${list.map(c => html`<div class="row vote-row" key=${c.id}>
+      <span class="grow ellipsis">${c.control === 'player' ? html`<b>${c.name}</b>` : c.name}${c.veto && f.body === 'council' ? html` <span class="chip gold">P5</span>` : ''}</span>
+      <div class="seg sm">${['auto', 'yes', 'abstain', 'no'].map(ch => html`<button class=${cls((f.preset[c.id] || 'auto') === ch && 'on', ch)} onClick=${() => setVote(c.id, ch)}>${ch}</button>`)}</div>
+    </div>`)}</div>
+  </details>`;
 }
 
 function TreatyBuilder({ conn, state }) {

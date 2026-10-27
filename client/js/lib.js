@@ -52,6 +52,9 @@ export class Connection {
     switch (m.t) {
       case 'hello':
         this.user = m.user; this.committees = m.committees; this.global = m.global || this.global;
+        // New code on the server (an update was installed): reload to run it.
+        if (this.version && m.version && m.version !== this.version) { location.reload(); return; }
+        this.version = m.version;
         if (this.bootId && this.bootId !== m.bootId) this.emit('restarted', m.bootId);
         this.bootId = m.bootId;
         if (this.committee) this.raw({ t: 'join', committee: this.committee, view: this.view });

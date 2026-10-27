@@ -50,7 +50,9 @@ export function advance(state, X, Y, n, opts = {}) {
   const ctl = k => controller(state, k);
   // Ground X can push from: its own, or an ally's that is not in the fight.
   const fr = new Map();
-  const friendly = o => { if (o === X) return true; if (!o || o === Y || !state.countries[o]) return false; if (!fr.has(o)) fr.set(o, sameSide(state, o, X)); return fr.get(o); };
+  // Rebels only grow from ground they hold themselves, never across a friendly border.
+  const rebels = !!state.countries[X]?.rebelOf;
+  const friendly = o => { if (o === X) return true; if (rebels || !o || o === Y || !state.countries[o]) return false; if (!fr.has(o)) fr.set(o, sameSide(state, o, X)); return fr.get(o); };
   const seed = (Number(String(X).replace(/\D/g, '')) || 7) * 0.13 + (Number(String(Y).replace(/\D/g, '')) || 3) * 0.29 + (state.meta?.turn || 1) * 0.71;
   const eligible = k => ctl(k) === Y && (!liberateOnly || G.homeOf(k) === X);
   const tw = toward ? [Math.floor((toward.lon + 180) / CELL), Math.floor((90 - toward.lat) / CELL)] : null;
@@ -102,6 +104,26 @@ export function advance(state, X, Y, n, opts = {}) {
   return taken;
 }
 
+// The connected stretch of a country's cells that holds `near` (its capital, say), or its largest one: the
+// mainland, without the islands. Cached, since the grid never changes.
+const landCache = new Map();
+export function mainland(id, near) {
+  const key = id + '|' + (near ? cellAt(near.lon, near.lat) : '');
+  if (landCache.has(key)) return landCache.get(key);
+  const all = new Set(cellsOf(id)), seen = new Set(), parts = [];
+  for (const k of all) {
+    if (seen.has(k)) continue;
+    const part = [k]; seen.add(k);
+    for (let q = 0; q < part.length; q++) for (const m of neighbors(part[q], true)) if (all.has(m) && !seen.has(m)) { seen.add(m); part.push(m); }
+    parts.push(part);
+  }
+  parts.sort((a, b) => b.length - a.length);
+  const c = near && cellAt(near.lon, near.lat);
+  const out = (c != null && parts.find(p => p.length > 20 && p.includes(c))) || parts[0] || [];
+  landCache.set(key, out);
+  return out;
+}
+
 // Who holds how much of a country: { total, held: { owner: cells } }.
 export function holdings(state, countryId) {
   const total = cellsOf(countryId).length;
@@ -141,12 +163,17 @@ export function paintCells(state, owner, keys, mode) {
 
 // The middle of the ground `owner` holds in a country (for labels, strikes and helicopters).
 export function heldCenter(state, countryId, owner) {
-  let x = 0, y = 0, n = 0;
+  let x = 0, y = 0, n = 0, ref = null;
   for (const [k, o] of Object.entries(state.control || {})) {
     if (o !== owner || G.homeOf(Number(k)) !== countryId) continue;
-    const [lon, lat] = cellCenter(Number(k)); x += lon; y += lat; n++;
+    let [lon, lat] = cellCenter(Number(k));
+    // Measured from the first cell, so ground either side of the antimeridian averages to the right place.
+    if (ref == null) ref = lon; else if (lon - ref > 180) lon -= 360; else if (lon - ref < -180) lon += 360;
+    x += lon; y += lat; n++;
   }
-  return n ? { lon: x / n, lat: y / n } : null;
+  if (!n) return null;
+  const lon = x / n;
+  return { lon: lon > 180 ? lon - 360 : lon < -180 ? lon + 360 : lon, lat: y / n };
 }
 
 // Cells on the front line: held by `owner` in `countryId` and touching ground the country still holds.
@@ -170,7 +197,14 @@ export function buildCellRaster(features) {
     if (!index.has(f.id)) { index.set(f.id, ids.length); ids.push(f.id); }
     const v = index.get(f.id), g = f.geometry; if (!g) continue;
     const polys = g.type === 'Polygon' ? [g.coordinates] : g.type === 'MultiPolygon' ? g.coordinates : [];
-    for (const rings of polys) {
+    for (const raw of polys) {
+      // Rings that cross the antimeridian jump from +180 to -180; unwrap them so the scanline sees one closed
+      // shape (cellKey wraps the columns back). A ring around a pole cannot close that way and keeps the jump.
+      const rings = raw.map(r => {
+        const out = [r[0]];
+        for (let a = 1; a < r.length; a++) { let x = r[a][0]; const px = out[a - 1][0]; while (x - px > 180) x -= 360; while (x - px < -180) x += 360; out.push([x, r[a][1]]); }
+        return Math.abs(out[out.length - 1][0] - out[0][0]) < 1e-6 ? out : r;
+      });
       let y0 = 90, y1 = -90;
       for (const r of rings) for (const p of r) { if (p[1] < y0) y0 = p[1]; if (p[1] > y1) y1 = p[1]; }
       const j0 = clamp(Math.floor((90 - y1) / CELL), 0, NJ - 1), j1 = clamp(Math.floor((90 - y0) / CELL), 0, NJ - 1);

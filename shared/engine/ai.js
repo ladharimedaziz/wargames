@@ -1,26 +1,42 @@
 // Computer-run countries: rule-based behaviour for every country the Zeus has not given to a delegate.
 import { SEA_ZONES } from '../data/places.js';
 import { zonesTouching } from '../geo.js';
-import { rand, chance, newId, atWar, enemiesOf, sameSide, relation, unitsOf, unitsAt, isActive, boundAllies } from './core.js';
+import { rand, chance, newId, atWar, enemiesOf, sameSide, relation, unitsOf, unitsAt, isActive, boundAllies, aggressorOf } from './core.js';
 import { autoUnits, validateOrder } from './orders.js';
 import { norms } from './economy.js';
 
 
 // The computer never drags a country into a war on its own: it asks, and a Zeus approves or declines on the news desk.
 // A declined request is not asked again for three turns.
-function proposeJoin(state, ctx, c, friend, foe, treaty) {
+// Requests to join a war are grouped: every country that wants in on the same side of the same fight shares one
+// card, so the Zeus approves a coalition at once (or picks members out of it).
+function proposeJoin(state, ctx, c, friend, foe, treaty, defending) {
   const turn = state.meta.turn;
-  const same = r => r.kind === 'join' && r.country === c.id && r.target === foe;
-  if (state.review.some(r => same(r) && (r.status === 'pending' || (r.status === 'killed' && turn - r.turn < 3)))) return true;
-  const F = state.countries[foe];
-  state.review.push({
-    id: newId(state, 'j'), turn, kind: 'join', status: 'pending', priority: 6, at: ctx.now,
-    country: c.id, target: foe, friend: friend.id,
-    en: `${c.name} wants to join the war on ${friend.name}'s side against ${F.name}${treaty ? ' (treaty obligation)' : ''}`,
-    ar: `${c.ar} تريد الانضمام إلى الحرب إلى جانب ${friend.ar} ضد ${F.ar}`,
-    detail: 'Approve to declare war, or decline to keep it out.',
-  });
+  const members = r => r.countries || [r.country];
+  const pair = (r, x, y) => r.kind === 'join' && members(r).includes(x) && r.target === y;
+  // Already asked (or recently declined), or the other side has asked to fight this country: nothing new.
+  if (state.review.some(r => pair(r, c.id, foe) && (r.status === 'pending' || (r.status === 'killed' && turn - r.turn < 3)))) return true;
+  if (state.review.some(r => r.status === 'pending' && pair(r, foe, c.id))) return true;
+  const card = state.review.find(r => r.kind === 'join' && r.status === 'pending' && r.target === foe && !!r.defending === !!defending);
+  if (card) {
+    card.countries = [...members(card), c.id]; card.country = card.countries[0];
+    card.friends = [...new Set([...(card.friends || [card.friend]), friend.id])]; card.treaty ||= treaty;
+    joinText(state, card); return true;
+  }
+  const r = { id: newId(state, 'j'), turn, kind: 'join', status: 'pending', priority: 6, at: ctx.now, country: c.id, countries: [c.id], target: foe, friend: friend.id, friends: [friend.id], treaty, defending };
+  joinText(state, r);
+  state.review.push(r);
   return true;
+}
+
+export function joinText(state, r) {
+  const N = id => state.countries[id]?.name || id, list = r.countries || [r.country];
+  const and = ids => ids.length === 1 ? N(ids[0]) : `${ids.slice(0, -1).map(N).join(', ')} and ${N(ids[ids.length - 1])}`;
+  const friends = (r.friends || [r.friend]).filter(id => !list.includes(id)).slice(0, 3);
+  const side = friends.length ? and(friends) : N(r.friend);
+  r.en = `${and(list)} ${list.length === 1 ? 'wants' : 'want'} to join the war against ${N(r.target)}${r.defending ? `, ${r.treaty ? 'bound by treaty ' : ''}to defend ${side}` : `, backing ${side}'s offensive`}`;
+  r.ar = '';
+  r.detail = list.length > 1 ? 'Approve them all, or tap a name to approve or drop just that country.' : 'Approve to declare war, or decline to keep it out.';
 }
 
 export function planAI(state, ctx) {
@@ -55,22 +71,25 @@ export function planAI(state, ctx) {
       c.violations = {};
     }
 
-    // Treaty and bloc obligations: join a friend's war (at most one new war per country per turn).
-    let joined = false;
+    // Treaty and bloc obligations: join a friend's war (at most one new war per country per turn). Each enemy is
+    // weighed once, by the strongest reason to fight it, so a country with many friends is not asked many times.
+    const reasons = new Map();
     for (const friend of Object.values(state.countries)) {
-      if (joined) break;
       if (friend.id === c.id || !isActive(friend)) continue;
       const treaty = !!boundAllies(state, c.id, friend.id);
       const bloc = c.bloc !== 'N' && c.bloc === friend.bloc;
       if (!treaty && !bloc) continue;
       for (const foe of enemiesOf(state, friend.id)) {
         if (foe === c.id || atWar(state, c.id, foe) || sameSide(state, c.id, foe)) continue;
-        const defending = state.wars.some(w => w.a === foe && w.b === friend.id);
-        let p = defending ? (treaty ? 0.5 : 0.35) : (bloc ? 0.12 : 0);
-        p *= c.roe === 'defensive' ? 0.4 : c.roe === 'forward' ? 1.3 : 1;
-        p *= state.countries[foe].major ? 1 : 0.5;
-        if (relation(state, c.id, foe) < 10 && chance(state, p)) { joined = proposeJoin(state, ctx, c, friend, foe, treaty); break; }
+        // Treaties oblige a country to defend an ally that was attacked, not to join an ally's invasion.
+        const defending = aggressorOf(state, foe, friend.id) === foe;
+        const p = defending ? (treaty ? 0.5 : 0.35) : (bloc ? 0.08 : 0);
+        if (p > (reasons.get(foe)?.p || 0)) reasons.set(foe, { friend, treaty: treaty && defending, defending, p });
       }
+    }
+    for (const [foe, r] of [...reasons].sort((x, y) => y[1].p - x[1].p)) {
+      let p = r.p * (c.roe === 'defensive' ? 0.4 : c.roe === 'forward' ? 1.3 : 1) * (state.countries[foe].major ? 1 : 0.5);
+      if (relation(state, c.id, foe) < 10 && chance(state, p)) { proposeJoin(state, ctx, c, r.friend, foe, r.treaty, r.defending); break; }
     }
 
     if (enemies.length) {

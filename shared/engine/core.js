@@ -74,6 +74,13 @@ export function boundAllies(state, a, b) {
   return sharedAlliances(A, B).find(k => ALLIANCES[k].binding) || (state.treaties.some(t => t.type === 'alliance' && t.parties.includes(a) && t.parties.includes(b)) ? 'treaty' : null);
 }
 
+// Who started the war between two countries: the one that declared it, except where an ally joined to defend a
+// friend, when the side that attacked first stays the aggressor. Treaty obligations hinge on this.
+export function aggressorOf(state, a, b) {
+  const w = state.wars.find(w => (w.a === a && w.b === b) || (w.a === b && w.b === a));
+  return w ? (w.aggressor ?? w.a) : null;
+}
+
 export function atWar(state, a, b) {
   return state.wars.some(w => (w.a === a && w.b === b) || (w.a === b && w.b === a));
 }
@@ -177,3 +184,23 @@ export const OUT_OF_BOUNDS = OOB_GROUPS.flat();
 export const isOOB = id => OUT_OF_BOUNDS.includes(id);
 export const OOB_ERROR = 'Israel, Palestine and Saudi Arabia are out of bounds in this simulation.';
 export function isActive(c) { return c && c.control !== 'inactive' && !c.capitulated && !isOOB(c.id); }
+
+// Who sits in a UN vote. With delegatesOnly, only countries a delegation plays (when the room has any).
+export function unVoters(state, body, delegatesOnly = true) {
+  let all = Object.values(state.countries).filter(c => isActive(c) && (c.major || c.control === 'player'));
+  if (delegatesOnly && all.some(c => c.control === 'player')) all = all.filter(c => c.control === 'player');
+  if (body !== 'council') return all;
+  const p5 = all.filter(c => c.veto);
+  const rest = all.filter(c => !c.veto).sort((a, b) => b.influence - a.influence).slice(0, 10);
+  return [...p5, ...rest];
+}
+
+// How a computer-run country votes on a resolution: with its friends, against its rivals, and for peace.
+export function aiVote(s, c, v) {
+  if (v.target && (c.id === v.target)) return 'no';
+  if (c.id === v.sponsor) return 'yes';
+  const rs = v.sponsor ? relation(s, c.id, v.sponsor) : 0;
+  const rt = v.target ? relation(s, c.id, v.target) : 0;
+  const score = rs * 0.6 - rt * 0.6 + (v.kind === 'ceasefire' || v.kind === 'humanitarian' ? 25 : 0);
+  return score > 12 ? 'yes' : score < -12 ? 'no' : 'abstain';
+}

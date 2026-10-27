@@ -51,7 +51,7 @@ function Stage({ conn }) {
   // Fullscreen on double-click for projectors.
   useEffect(() => { const f = () => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen?.()); window.addEventListener('dblclick', f); return () => window.removeEventListener('dblclick', f); }, []);
   if (!state) return html`<div class="d-standby"><div class="boot-ring"></div></div>`;
-  const lang = state.settings.lang;
+  const lang = 'en'; // the stage is English only
   const bannerShown = state.display.banner && !['disguise', 'ending', 'intro', 'reveal'].includes(state.display.scene);
   const timerShown = state.timer.visible !== false && (state.timer.running || state.timer.remaining > 0) && !['disguise', 'ending', 'intro', 'reveal'].includes(state.display.scene);
   return html`
@@ -446,8 +446,7 @@ function PauseScreen({ p, lang }) {
   return html`<div class="global-pause">
     <div class="crescent"></div>
     <h1>${p?.label || t('pause', 'en')}</h1>
-    <h2>${p?.ar || t('pause', 'ar')}</h2>
-    <p>${t('resumes', lang === 'ar' ? 'ar' : 'en')}${p?.until ? ` · ${fmt.time(p.until)}` : ''}</p>
+    <p>${t('resumes', 'en')}${p?.until ? ` · ${fmt.time(p.until)}` : ''}</p>
   </div>`;
 }
 

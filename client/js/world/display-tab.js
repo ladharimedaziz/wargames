@@ -70,7 +70,6 @@ export function DisplayTab({ conn, state, committee }) {
       <div class="sub-h">Banner</div>
       <div class="col">
         <input class="input" placeholder="e.g. EMERGENCY SESSION CALLED" value=${banner} onInput=${e => setBanner(e.target.value)} />
-        <input class="input ar" dir="rtl" placeholder="بالعربية (اختياري)" value=${bannerAr} onInput=${e => setBannerAr(e.target.value)} />
         <div class="row wrap">${['alert', 'info', 'good', 'dark'].map(tone => html`<button class=${cls('btn sm', tone === 'alert' ? 'danger' : tone === 'good' ? 'good' : tone === 'info' ? 'on' : '')} disabled=${!banner.trim()} onClick=${() => run(conn, { type: 'setBanner', text: banner, ar: bannerAr, tone })}>${tone}</button>`)}
           <button class="btn sm ghost" disabled=${!d.banner} onClick=${() => run(conn, { type: 'setBanner', text: '' })}>Clear</button></div>
       </div>
@@ -104,9 +103,8 @@ export function DisplayTab({ conn, state, committee }) {
           <optgroup label="Seen through the eyes of…">${Object.values(state.countries).filter(c => c.control === 'player').map(c => html`<option value=${c.id}>${c.name}</option>`)}</optgroup>
         </select></label>
 
-      <div class="sub-h">Language and sound</div>
+      <div class="sub-h">Sound</div>
       <div class="row wrap">
-        <div class="seg">${[['en', 'English'], ['ar', 'العربية'], ['both', 'Both']].map(([k, l]) => html`<button class=${st.lang === k ? 'on' : ''} onClick=${() => run(conn, { type: 'setSetting', key: 'lang', value: k })}>${l}</button>`)}</div>
         <button class=${cls('btn sm', st.sfx && 'on')} onClick=${() => run(conn, { type: 'setSetting', key: 'sfx', value: !st.sfx })}>◖ Effects</button>
       </div>
       <label class="row" style="margin-top:8px"><span class="dim small" style="width:60px">Volume</span><input type="range" min="0" max="1" step="0.05" value=${st.volume ?? 0.7} class="grow" onChange=${e => run(conn, { type: 'setSetting', key: 'volume', value: +e.target.value })} /></label>

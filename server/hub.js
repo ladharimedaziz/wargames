@@ -3,8 +3,23 @@
 import { WebSocketServer } from 'ws';
 import { applyAction } from '../shared/engine/reducer.js';
 import { tensionLevel } from '../shared/engine/core.js';
-import { verifyToken, parseCookies, accounts, passwordFor, rotatePassword, COMMITTEE_IDS } from './auth.js';
+import { verifyToken, parseCookies, accounts, passwordFor, rotatePassword, setPassword, signOut, COMMITTEE_IDS } from './auth.js';
 import { readJSON, writeJSON } from './files.js';
+import { readFileSync } from 'node:fs';
+
+// The code version the browsers are told about: the git commit when there is one. When it changes after an
+// update, every open panel and stage display reloads itself to pick up the new code.
+const VERSION = (() => {
+  try {
+    const root = new URL('../.git/', import.meta.url);
+    const head = readFileSync(new URL('HEAD', root), 'utf8').trim();
+    if (!head.startsWith('ref: ')) return head.slice(0, 12);
+    const ref = head.slice(5);
+    try { return readFileSync(new URL(ref, root), 'utf8').trim().slice(0, 12); } catch { /* packed */ }
+    const line = readFileSync(new URL('packed-refs', root), 'utf8').split('\n').find(l => l.endsWith(' ' + ref));
+    return line ? line.slice(0, 12) : 'dev';
+  } catch { return process.env.RENDER_GIT_COMMIT?.slice(0, 12) || 'dev'; }
+})();
 
 export function createHub(server, store, geo) {
   const wss = new WebSocketServer({ server, path: '/ws', perMessageDeflate: { threshold: 1024 }, maxPayload: 8 * 1024 * 1024 });
@@ -74,7 +89,7 @@ export function createHub(server, store, geo) {
     clients.add(c);
     ws.on('pong', () => { c.alive = true; });
     const committees = COMMITTEE_IDS.filter(id => canAccess(user, id)).map(id => ({ id, name: store.get(id).name, mode: store.get(id).mode }));
-    send(c, { t: 'hello', user: { username: user.username, role: user.role, committee: user.committee }, committees, bootId: store.bootId, serverNow: Date.now(), global: globalState });
+    send(c, { t: 'hello', user: { username: user.username, role: user.role, committee: user.committee }, committees, bootId: store.bootId, version: VERSION, serverNow: Date.now(), global: globalState });
     if (user.role === 'kronos') scheduleOverview();
 
     ws.on('message', raw => {
@@ -228,8 +243,24 @@ export function createHub(server, store, geo) {
         handle(c, { t: 'accounts' });
         return ack(true, { result: { password: pw } });
       }
+      case 'setPassword': {
+        const e = setPassword(m.username, m.password);
+        if (e) return ack(false, { error: e });
+        for (const x of clients) if (x.user.username === m.username) x.ws.close(4001, 'Password changed');
+        handle(c, { t: 'accounts' });
+        return ack(true);
+      }
       case 'kick': {
-        for (const x of clients) if (x.user.username === m.username && x.user.role !== 'kronos') x.ws.close(4002, 'Disconnected by Kronos');
+        // Logs the account out for good: its session cookies stop working, so a reload lands on the login page.
+        if (!signOut(m.username)) return ack(false, { error: 'Cannot log out that account.' });
+        for (const x of clients) if (x.user.username === m.username) x.ws.close(4001, 'Logged out by Kronos');
+        handle(c, { t: 'accounts' });
+        return ack(true);
+      }
+      case 'kickAll': {
+        for (const a of accounts()) if (a.role !== 'kronos') signOut(a.username);
+        for (const x of clients) if (x.user.role !== 'kronos') x.ws.close(4001, 'Logged out by Kronos');
+        handle(c, { t: 'accounts' });
         return ack(true);
       }
       default: return ack(false, { error: `Unknown message "${m.t}".` });

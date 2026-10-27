@@ -28,13 +28,13 @@ export function CourtPanel({ conn, user, state, committee, logout, onBack }) {
       const k = e.key.toLowerCase();
       if (objPick) {
         const i = Number(e.key) - 1;
-        if (i >= 0 && i < OBJECTION_GROUNDS.length) { act({ type: 'objection', by: objPick, grounds: OBJECTION_GROUNDS[i] }); setObjPick(null); }
+        if (i >= 0 && i < OBJECTION_GROUNDS.length) { act({ type: 'objection', grounds: OBJECTION_GROUNDS[i] }); setObjPick(null); }
         if (k === 'escape') setObjPick(null);
         return;
       }
       if (k === ' ') { e.preventDefault(); act({ type: 'speakTimerToggle' }); }
       else if (k === 'n') act({ type: 'queueNext' });
-      else if (k === 'o') { const side = c.seats.find(s => s.id === c.speaker)?.side; const opp = c.seats.find(s => s.side === (side === 'prosecution' ? 'defence' : 'prosecution')); if (opp) setObjPick(opp.id); }
+      else if (k === 'o') setObjPick(true);
       else if (k === 's' && c.objection && !c.objection.ruling) act({ type: 'rule', ruling: 'sustained' });
       else if (k === 'r' && c.objection && !c.objection.ruling) act({ type: 'rule', ruling: 'overruled' });
       else if (k === 'g') act({ type: 'gavel' });
@@ -122,7 +122,7 @@ export function CourtPanel({ conn, user, state, committee, logout, onBack }) {
             <div class="row wrap">${[['court', 'Courtroom'], ['blank', 'Standby']].map(([k, l]) => html`<button class=${cls('btn sm', state.display.scene === k && 'on')} onClick=${() => act({ type: 'setScene', scene: k })}>${l}</button>`)}
               <button class="btn sm gold" onClick=${() => act({ type: 'gavel', text: 'ORDER' })}>⚒ Gavel <span class="kbd">G</span></button>
               <button class=${cls('btn sm', c.recess && 'on')} onClick=${() => act({ type: 'recess', value: !c.recess })}>${c.recess ? 'End recess' : 'Recess'}</button></div>
-            <div class="row wrap"><div class="seg">${[['en', 'EN'], ['ar', 'ع'], ['both', 'Both']].map(([k, l]) => html`<button class=${state.settings.lang === k ? 'on' : ''} onClick=${() => act({ type: 'setSetting', key: 'lang', value: k })}>${l}</button>`)}</div>
+            <div class="row wrap">
               <button class=${cls('btn sm', state.settings.sfx && 'on')} onClick=${() => act({ type: 'setSetting', key: 'sfx', value: !state.settings.sfx })}>◖</button>
               <div class="grow"></div>
               <a class="btn sm ghost" href=${`/api/export/${state.id}`} download title="Download a save of this courtroom">⤓ Save</a></div>
@@ -192,19 +192,18 @@ function AddSeat({ conn }) {
 function ObjectionCard({ conn, c, objPick, setObjPick }) {
   const o = c.objection;
   const by = o && c.seats.find(s => s.id === o.by);
-  const sides = c.seats.filter(s => s.side === 'prosecution' || s.side === 'defence');
+  const raise = g => { run(conn, { type: 'objection', grounds: g }); setObjPick(null); };
   return html`<div class=${cls('card objection-card', o && !o.ruling && 'live')}>
     <div class="card-h"><h3>Objections</h3><div class="grow"></div><span class="kbd">O</span><span class="kbd">S</span><span class="kbd">R</span></div>
     <div class="card-b">
-      ${objPick ? html`<div class="col">
-        <div><b>${c.seats.find(s => s.id === objPick)?.person || c.seats.find(s => s.id === objPick)?.name}</b> objects on the grounds of…</div>
-        <div class="grounds">${OBJECTION_GROUNDS.map((g, i) => html`<button class="btn sm" onClick=${() => { run(conn, { type: 'objection', by: objPick, grounds: g }); setObjPick(null); }}><span class="kbd">${i + 1}</span> ${g}</button>`)}</div>
-        <button class="btn xs ghost" onClick=${() => setObjPick(null)}>Cancel</button>
-      </div>` : o && !o.ruling ? html`<div class="col">
-        <div class="obj-live">OBJECTION! <span>${by?.person || by?.name} · ${o.grounds}</span></div>
+      ${o && !o.ruling && html`<div class="col" style="margin-bottom:8px">
+        <div class="obj-live">OBJECTION! <span>${o.grounds}${by ? ` · ${by.person || by.name}` : ''}</span></div>
         <div class="row"><button class="btn lg good grow" onClick=${() => run(conn, { type: 'rule', ruling: 'sustained' })}>Sustained <span class="kbd">S</span></button><button class="btn lg danger grow" onClick=${() => run(conn, { type: 'rule', ruling: 'overruled' })}>Overruled <span class="kbd">R</span></button></div>
-      </div>` : html`<div class="row wrap">${sides.map(s => html`<button class="btn sm danger" onClick=${() => setObjPick(s.id)}>! ${s.person || s.name}</button>`)}</div>
-        ${o?.ruling && html`<div class="small" style="margin-top:8px">Last: <b>${o.grounds}</b> — <span class=${o.ruling === 'sustained' ? 'pos' : 'neg'}>${o.ruling}</span> <button class="btn xs ghost" onClick=${() => run(conn, { type: 'clearObjection' })}>Clear from stage</button></div>`}`}
+      </div>`}
+      <div class="dim small" style="margin-bottom:4px">${objPick ? 'Press a number for the grounds' : 'Click the grounds to object at once'}</div>
+      <div class="grounds">${OBJECTION_GROUNDS.map((g, i) => html`<button class="btn sm danger" onClick=${() => raise(g)}><span class="kbd">${i + 1}</span> ${g}</button>`)}</div>
+      ${objPick && html`<button class="btn xs ghost" onClick=${() => setObjPick(null)}>Cancel</button>`}
+      ${o?.ruling && html`<div class="small" style="margin-top:8px">Last: <b>${o.grounds}</b> · <span class=${o.ruling === 'sustained' ? 'pos' : 'neg'}>${o.ruling}</span> <button class="btn xs ghost" onClick=${() => run(conn, { type: 'clearObjection' })}>Clear from stage</button></div>`}
       <div class="dim small" style="margin-top:8px">${c.objections.filter(x => x.ruling === 'sustained').length} sustained · ${c.objections.filter(x => x.ruling === 'overruled').length} overruled</div>
     </div>
   </div>`;

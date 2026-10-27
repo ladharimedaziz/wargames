@@ -4,12 +4,13 @@ import { SEA_ZONES } from '../data/places.js';
 import { carrierName } from '../data/militaries.js';
 import { zonesTouching } from '../geo.js';
 import {
-  UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures, isOOB, OOB_ERROR,
+  UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures, isOOB, OOB_ERROR, aggressorOf, enemiesOf, unVoters, aiVote,
 } from './core.js';
 import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.js';
 import { resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
-import { bindGeo, hasGeo, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter } from './control.js';
+import { bindGeo, hasGeo, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter, mainland } from './control.js';
 import { courtActions } from './court.js';
+import { joinText } from './ai.js';
 
 const SCENES = ['map', 'disguise', 'intro', 'reveal', 'ending', 'report', 'blank', 'pause', 'vote', 'treaty', 'polls', 'web', 'court'];
 const STAT_FIELDS = { gdp: [0.5, 1e6], treasury: [-1e5, 1e5], support: [0, 100], stability: [0, 100], industry: [0.05, 1.2], energy: [0.05, 1.2], damage: [0, 1], inflation: [-2, 80], airDefense: [0, 12], influence: [0, 100] };
@@ -65,15 +66,6 @@ function trimReview(s) {
 }
 
 // Votes the computer casts for AI countries on a UN resolution, from their relations with the sponsor and the target.
-function aiVote(s, c, v) {
-  if (v.target && (c.id === v.target)) return 'no';
-  if (c.id === v.sponsor) return 'yes';
-  const rs = relation(s, c.id, v.sponsor);
-  const rt = v.target ? relation(s, c.id, v.target) : 0;
-  const score = rs * 0.6 - rt * 0.6 + (v.kind === 'ceasefire' || v.kind === 'humanitarian' ? 25 : 0);
-  return score > 12 ? 'yes' : score < -12 ? 'no' : 'abstain';
-}
-
 function tallyVote(s, v) {
   const t = { yes: 0, no: 0, abstain: 0, vetoes: [] };
   for (const [id, choice] of Object.entries(v.votes)) {
@@ -83,13 +75,6 @@ function tallyVote(s, v) {
   return t;
 }
 
-function voters(s, body) {
-  const all = Object.values(s.countries).filter(c => isActive(c) && c.major);
-  if (body !== 'council') return all;
-  const p5 = all.filter(c => c.veto);
-  const rest = all.filter(c => !c.veto).sort((a, b) => b.influence - a.influence).slice(0, 10);
-  return [...p5, ...rest];
-}
 
 const WORLD = {
   // Countries
@@ -200,20 +185,46 @@ const WORLD = {
     const r = s.review.find(x => x.id === a.id && x.status === 'pending'); if (!r) return err('Already handled.');
     if (r.kind === 'ending') { r.status = 'aired'; return WORLD.playEnding.run(s, { ending: r.ending }, ctx); }
     if (r.kind === 'join') {
-      // Approved: the country enters the war and the headline airs.
-      r.status = 'approved';
-      const A = C(s, r.country), B = C(s, r.target); if (!A || !B) return err('Those countries are gone.');
-      if (atWar(s, A.id, B.id)) return ok();
-      const ev = []; declareWar(s, A.id, B.id, ev, 'alliance');
-      for (const id of warClosures(s, A.id, B.id)) s.global.closedAirspace[id] ||= { turn: s.meta.turn, at: ctx.now, war: true };
+      // Approved: the countries enter the war (all of them, or just `only`) and the headline airs.
+      const B = C(s, r.target); if (!B) return err('That country is gone.');
+      const all = r.countries || [r.country], go = a.only ? all.filter(id => id === a.only) : all;
+      const rest = all.filter(id => !go.includes(id));
+      if (rest.length) { r.countries = rest; r.country = rest[0]; joinText(s, r); } else r.status = 'approved';
+      // Joining to defend an attacked ally keeps the original attacker as the aggressor.
+      const defending = r.friend && aggressorOf(s, r.friend, r.target) === r.target;
+      const ev = [], joined = [];
+      for (const id of go) {
+        const A = C(s, id); if (!A || atWar(s, id, B.id)) continue;
+        declareWar(s, id, B.id, ev, 'alliance', defending ? B.id : id);
+        for (const x of warClosures(s, id, B.id)) s.global.closedAirspace[x] ||= { turn: s.meta.turn, at: ctx.now, war: true };
+        // Joining a side means joining the whole war: the newcomer is at war with everyone fighting its friends,
+        // quietly, so nobody on either side later asks to "join" a war they are already in.
+        for (const f of r.friends || [r.friend]) for (const z of enemiesOf(s, f)) {
+          if (z === id || atWar(s, id, z) || sameSide(s, id, z) || isOOB(z)) continue;
+          s.wars.push({ a: id, b: z, since: s.meta.turn, aggressor: aggressorOf(s, f, z) === z ? z : id, joined: true });
+        }
+        joined.push(A);
+      }
+      // Requests that this made pointless (those countries are now at war anyway) go away.
+      for (const q of s.review) if (q !== r && q.kind === 'join' && q.status === 'pending') {
+        const left = (q.countries || [q.country]).filter(id => !atWar(s, id, q.target));
+        if (!left.length) q.status = 'killed'; else if (left.length < (q.countries || [q.country]).length) { q.countries = left; q.country = left[0]; joinText(s, q); }
+      }
+      if (!joined.length) return ok();
       sandboxFx(s, ctx, ev.filter(e => e.kind === 'war'));
-      air(s, news(s, ctx, `BREAKING: ${A.name} joins the war against ${B.name}`, `عاجل: ${A.ar} تدخل الحرب ضد ${B.ar}`, 6), ctx);
-      log(s, ctx, `Approved: ${A.name} joins the war against ${B.name}`);
+      const names = joined.length === 1 ? joined[0].name : `${joined.slice(0, -1).map(x => x.name).join(', ')} and ${joined[joined.length - 1].name}`;
+      air(s, news(s, ctx, `BREAKING: ${names} ${joined.length === 1 ? 'joins' : 'join'} the war against ${B.name}`, '', 6), ctx);
+      log(s, ctx, `Approved: ${names} ${joined.length === 1 ? 'joins' : 'join'} the war against ${B.name}`);
       return ok({ broadcastAnim: true });
     }
     air(s, r, ctx); return ok();
   } },
-  killItem: { perm: 'zeus', run(s, a) { const r = s.review.find(x => x.id === a.id && x.status === 'pending'); if (!r) return err('Already handled.'); r.status = 'killed'; return ok(); } },
+  killItem: { perm: 'zeus', run(s, a) {
+    const r = s.review.find(x => x.id === a.id && x.status === 'pending'); if (!r) return err('Already handled.');
+    // Dropping one country from a grouped join request leaves the rest waiting.
+    if (r.kind === 'join' && a.only && (r.countries || []).length > 1) { r.countries = r.countries.filter(id => id !== a.only); r.country = r.countries[0]; joinText(s, r); return ok(); }
+    r.status = 'killed'; return ok();
+  } },
   editItem: { perm: 'zeus', run(s, a) {
     const r = s.review.find(x => x.id === a.id); if (!r) return err('Unknown item.');
     if (a.en !== undefined) r.en = String(a.en).slice(0, 300);
@@ -310,7 +321,14 @@ const WORLD = {
     const body = a.body === 'council' ? 'council' : 'assembly';
     const kinds = ['condemn', 'sanction', 'ceasefire', 'humanitarian', 'custom'];
     const v = { id: newId(s, 'v'), title, ar: String(a.ar || '').slice(0, 160), body, kind: kinds.includes(a.kind) ? a.kind : 'custom', sponsor: C(s, a.sponsor) ? a.sponsor : null, target: C(s, a.target) ? a.target : null, open: true, openedAt: ctx.now, votes: {}, result: null };
-    for (const c of voters(s, body)) v.votes[c.id] = c.control === 'player' ? 'abstain' : aiVote(s, c, v);
+    // Only delegations vote (unless the room has none, or the Zeus opens it to every country). A vote the Zeus
+    // prepared beforehand stands; the rest are picked automatically (delegates start on abstain).
+    v.delegatesOnly = a.delegatesOnly !== false;
+    const preset = a.preset && typeof a.preset === 'object' ? a.preset : {};
+    for (const c of unVoters(s, body, v.delegatesOnly)) {
+      const p = preset[c.id];
+      v.votes[c.id] = ['yes', 'no', 'abstain'].includes(p) ? p : c.control === 'player' && !a.autoDelegates ? 'abstain' : aiVote(s, c, v);
+    }
     s.unVotes.push(v);
     s.display.scene = 'vote'; s.display.sceneAt = ctx.now;
     return ok({ vote: v });
@@ -324,7 +342,8 @@ const WORLD = {
   voteClose: { perm: 'zeus', run(s, a, ctx) {
     const v = s.unVotes.find(x => x.open); if (!v) return err('No vote is open.');
     const t = tallyVote(s, v);
-    const passed = t.yes > t.no && (v.body !== 'council' || (t.vetoes.length === 0 && t.yes >= 9));
+    // The Council needs 9 of 15 (three fifths of whoever sits in it) and no veto.
+    const passed = t.yes > t.no && (v.body !== 'council' || (t.vetoes.length === 0 && t.yes >= Math.ceil(Object.keys(v.votes).length * 0.6)));
     v.open = false; v.closedAt = ctx.now; v.result = { ...t, passed };
     if (passed && v.target) {
       if (v.kind === 'sanction') for (const id of Object.keys(v.votes).filter(id => v.votes[id] === 'yes' && id !== v.target)) { const c = C(s, id); if (!c.sanctions.includes(v.target)) c.sanctions.push(v.target); }
@@ -507,8 +526,12 @@ const WORLD = {
       const cells = cellsOf(P.id);
       let seed = a.at && Number.isFinite(a.at.lat) ? a.at : null;
       if (!seed && cells.length) {
+        // The far end of the mainland, so the rising does not start (and stay stuck) on a distant island.
         let best = null, bd = -1;
-        for (const k of cells) { const [lon, lat] = cellCenter(k); const d = (lon - P.lon) ** 2 + (lat - P.lat) ** 2; if (d > bd) { bd = d; best = { lat, lon }; } }
+        for (const k of mainland(P.id, P)) {
+          const [lon, lat] = cellCenter(k); let dl = Math.abs(lon - P.lon); if (dl > 180) dl = 360 - dl;
+          const d = (dl * Math.cos(lat * Math.PI / 180)) ** 2 + (lat - P.lat) ** 2; if (d > bd) { bd = d; best = { lat, lon }; }
+        }
         seed = best;
       }
       const n = Math.max(1, Math.round(cells.length * share / 100));

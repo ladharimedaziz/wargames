@@ -132,21 +132,31 @@ function Inside({ conn, user, committee, onBack, logout }) {
 
 function Accounts({ conn, list, close }) {
   const [show, setShow] = useState(false);
+  const [editing, setEditing] = useState(null), [pw, setPw] = useState('');
+  const savePw = async username => {
+    const r = await conn.request({ t: 'setPassword', username, password: pw });
+    toast(r.ok ? `${username} now signs in with the new password` : r.error, r.ok ? 'good' : 'error');
+    if (r.ok) { setEditing(null); setPw(''); }
+  };
   return html`<div class="modal-back" onClick=${e => e.target === e.currentTarget && close()}>
     <div class="modal wide card">
       <div class="card-h"><h3>Accounts</h3><div class="grow"></div><button class="btn xs" onClick=${() => setShow(s => !s)}>${show ? 'Hide' : 'Show'} passwords</button><button class="btn xs ghost" onClick=${close}>✕</button></div>
       <div class="card-b">
-        <p class="muted" style="margin-top:0">Passwords are generated from the server's secret and survive restarts. Changing one signs that account out everywhere.</p>
+        <p class="muted" style="margin-top:0">Passwords are generated from the server's secret and survive restarts, or you can type your own. Changing a password, or logging an account out, signs it out on every device.</p>
         <table class="acct-table">
           <thead><tr><th>Account</th><th>Role</th><th>Committee</th><th>Password</th><th></th></tr></thead>
           <tbody>${list.map(a => html`<tr>
             <td class="mono">${a.username}</td><td>${a.role === 'kronos' ? 'Kronos' : a.role === 'stage' ? 'Stage Zeus' : 'Back Room Zeus'}</td><td>${a.committeeName || '—'}</td>
-            <td class="mono">${show ? a.password : '••••••••••••'}</td>
+            <td class="mono">${editing === a.username
+              ? html`<form class="row" onSubmit=${e => { e.preventDefault(); savePw(a.username); }}><input class="input sm mono" autofocus placeholder="New password" value=${pw} onInput=${e => setPw(e.target.value)} /><button class="btn xs good" disabled=${pw.trim().length < 6}>Save</button><button type="button" class="btn xs ghost" onClick=${() => setEditing(null)}>✕</button></form>`
+              : show ? a.password : '••••••••••••'}</td>
             <td class="row">${a.online && html`<span class="chip green">online</span>`}${a.role !== 'kronos' && html`
-              <button class="btn xs" onClick=${async () => { const r = await conn.request({ t: 'rotate', username: a.username }); toast(r.ok ? `New password: ${r.result.password}` : r.error, r.ok ? 'good' : 'error'); }}>New password</button>
-              ${a.online && html`<button class="btn xs danger" onClick=${() => conn.request({ t: 'kick', username: a.username })}>Kick</button>`}`}</td>
+              <button class="btn xs" title="Type a password of your own" onClick=${() => { setEditing(a.username); setPw(''); }}>Set</button>
+              <button class="btn xs" title="Generate a fresh random password" onClick=${async () => { const r = await conn.request({ t: 'rotate', username: a.username }); toast(r.ok ? `New password: ${r.result.password}` : r.error, r.ok ? 'good' : 'error'); }}>Random</button>
+              <button class="btn xs danger" title="Sign this account out on every device" onClick=${async () => { const r = await conn.request({ t: 'kick', username: a.username }); toast(r.ok ? `${a.username} logged out` : r.error, r.ok ? 'good' : 'error'); }}>Log out</button>`}</td>
           </tr>`)}</tbody>
         </table>
+        <button class="btn sm danger" style="margin-top:10px;margin-right:6px" onClick=${async () => { const r = await conn.request({ t: 'kickAll' }); toast(r.ok ? 'Every Zeus is logged out' : r.error, r.ok ? 'good' : 'error'); }}>Log out every Zeus</button>
         <button class="btn sm" style="margin-top:10px" onClick=${() => { const txt = list.map(a => `${a.username}\t${a.password}`).join('\n'); navigator.clipboard.writeText(txt).then(() => toast('Copied all accounts', 'good')); }}>Copy all</button>
       </div>
     </div>

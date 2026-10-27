@@ -26,14 +26,16 @@ const pt = c => ({ lat: c.lat, lon: c.lon });
 // A country's fighting quality in a domain (land, air or sea).
 const Q = (state, id, domain) => state.countries[id]?.quality?.[domain] ?? 1;
 
-export function declareWar(state, a, b, ev, why) {
+export function declareWar(state, a, b, ev, why, aggressor = a) {
   if (a === b || atWar(state, a, b) || isOOB(a) || isOOB(b)) return false;
-  state.wars.push({ a, b, since: state.meta.turn });
+  state.wars.push(aggressor === a ? { a, b, since: state.meta.turn } : { a, b, since: state.meta.turn, aggressor });
   state.treaties = state.treaties.filter(t => !(t.type === 'ceasefire' && t.parties.includes(a) && t.parties.includes(b)));
   shiftRelation(state, a, b, -100);
   for (const id of [a, b]) state.countries[id].support = clamp(state.countries[id].support + 4, 0, 100); // rally round the flag
   ev.push({ kind: 'war', a, b, why });
-  // Alliance trigger: allies of the defender are alerted, AI allies may join.
+  // Alliance trigger: allies of the country attacked are alerted, AI allies may join. An ally coming in to defend
+  // a friend is not an attack, so it calls no one else in.
+  if (aggressor !== a) return true;
   for (const ally of Object.values(state.countries)) {
     if (!isActive(ally) || ally.id === a || ally.id === b) continue;
     const bound = boundAllies(state, ally.id, b);
@@ -259,9 +261,13 @@ function resolveInvasions(state, orders, ev) {
     } else {
       for (const { u } of attackers) damageUnit(state, u, u.strength * clamp(0.5 * ratio + 0.2, 0.2, 0.8), ev, 'repelled');
       for (const u of defenders) damageUnit(state, u, u.strength * clamp(0.2 * ratio, 0.03, 0.3), ev, 'held the line');
-      // A failed offensive gives ground back.
+      // A failed offensive gives ground back. A first push that comes close still bites off a shallow strip
+      // along the border, so the front shows up before the defender throws it back.
       if (T.front && !T.occupiedBy && (T.front.by === lead || sameSide(state, T.front.by, lead))) {
         moveFront(state, T, frontDelta(T.front.mode, -clamp(8 / Math.max(ratio, 0.2), 8, 25), 8), ev);
+      } else if (!T.front && !T.occupiedBy && ratio >= 0.25 && attackers.some(({ u }) => state.units[u.id])) {
+        T.front = { by: lead, pct: 0, prev: 0, from: origin, turn: state.meta.turn, mode: 'auto' };
+        moveFront(state, T, clamp(1 + 7 * ratio, 2, 8), ev);
       }
       const cas = Math.round((A + D) * between(state, 0.4, 0.9));
       T.casualties += cas; state.global.casualties += cas;

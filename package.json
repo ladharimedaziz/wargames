@@ -10,6 +10,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
+    "host": "node scripts/host.mjs",
     "test": "node --test \"test/unit/*.test.js\"",
     "test:e2e": "node test/e2e/run.js"
   },
