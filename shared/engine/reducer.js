@@ -578,6 +578,26 @@ const WORLD = {
     sandboxFx(s, ctx, [{ kind: 'act', act: 'coup', country: c.id, at: at(c), ok: win, flag: win ? plan.flag : null }]);
     return ok({ broadcastAnim: true });
   } },
+  // Ready-made factions for the Americas committee: several armed groups rise in Mexico, at war with the state and each other.
+  seedFactions: { perm: 'zeus', run(s, a, ctx) {
+    const P = C(s, '484'); if (!P) return err('Mexico is not on this map.');
+    if (Object.values(s.countries).some(f => f.rebelOf === P.id)) return err('Mexico already has armed factions.');
+    const SET = [
+      { name: 'Sinaloa Federation', at: { lat: 25.0, lon: -107.4 }, share: 12, flag: { pat: 'hband', c: ['#1e8a4c', '#f4f4f0', '#111111'] } },
+      { name: 'Jalisco New Generation', at: { lat: 20.6, lon: -103.4 }, share: 12, flag: { pat: 'chevron', c: ['#b3202a', '#111111', '#f0c419'] } },
+      { name: 'Gulf Cartel', at: { lat: 25.8, lon: -98.3 }, share: 9, flag: { pat: 'vband', c: ['#1f4e9c', '#f4f4f0', '#e07b1a'] } },
+      { name: 'Northeast Cartel', at: { lat: 27.5, lon: -101.0 }, share: 9, flag: { pat: 'canton', c: ['#6a2c91', '#f4f4f0', '#111111'] } },
+    ];
+    const ids = [];
+    for (const f of SET) {
+      const r = WORLD.civilWar.run(s, { country: P.id, share: f.share, name: f.name, at: f.at, bloc: 'N' }, ctx);
+      if (r.error) return r;
+      const id = Object.keys(s.countries).filter(k => s.countries[k].rebelOf === P.id).pop();
+      s.countries[id].altFlag = f.flag; ids.push(id);
+    }
+    for (let i = 0; i < ids.length; i++) for (let j = i + 1; j < ids.length; j++) { s.wars.push({ a: ids[i], b: ids[j], since: s.meta.turn, civil: true }); shiftRelation(s, ids[i], ids[j], -100); }
+    return ok({ broadcastAnim: true });
+  } },
   // Factions of one civil war: set how any two of them (or a faction and the government) treat each other.
   factionStance: { perm: 'zeus', run(s, a, ctx) {
     const A = C(s, a.a), B = C(s, a.b); if (!A || !B || A.id === B.id) return err('Pick two factions.');

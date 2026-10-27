@@ -150,6 +150,47 @@ export class WorldMap {
   }
   screenToLonLat(x, y) { return this.projection.invert([(x - this.cam.x) / this.cam.k, (y - this.cam.y) / this.cam.k]); }
 
+  // A bloc's colour, or the dominant colour of the made-up flag of a faction or a coup government.
+  colorOf(c, fallback) {
+    if (!c) return fallback;
+    if (c.altFlag) return c.altFlag.c.find(x => x !== '#111111' && x !== '#f4f4f0') || c.altFlag.c[0];
+    return c.bloc !== 'N' ? this.state.blocs[c.bloc].color : fallback;
+  }
+  // --- state-border detail (Americas committee) ---
+  ensureDetail(kind) {
+    if (kind !== 'americas' || this.admin1 || this.admin1Loading) return;
+    this.admin1Loading = true;
+    fetch('/client/data/admin1-americas.json').then(r => r.json()).then(list => {
+      this.admin1 = list.map(it => {
+        const rings = it.r.map(flat => { const out = []; let x = 0, y = 0; for (let i = 0; i < flat.length; i += 2) { x += flat[i]; y += flat[i + 1]; out.push([x / 100, y / 100]); } return out; });
+        let big = rings[0]; for (const r of rings) if (r.length > big.length) big = r;
+        let sx = 0, sy = 0; for (const [x, y] of big) { sx += x; sy += y; }
+        let x0 = 1e9, x1 = -1e9; for (const [x] of big) { if (x < x0) x0 = x; if (x > x1) x1 = x; }
+        return { c: it.c, n: it.n, rings, at: [sx / big.length, sy / big.length], w: x1 - x0 };
+      });
+      this.admin1Path = null; this.dirty = true;
+    }).catch(() => { this.admin1Loading = false; });
+  }
+  admin1Draw(ctx, k) {
+    if (!this.admin1) return;
+    if (!this.admin1Path || this.admin1Proj !== this.projection) {
+      const mk = new Path2D(); geoPath(this.projection, mk)({ type: 'MultiLineString', coordinates: this.admin1.flatMap(it => it.rings) });
+      this.admin1Path = mk; this.admin1Proj = this.projection;
+    }
+    const night = this.night;
+    ctx.strokeStyle = night ? 'rgba(130,170,255,0.20)' : 'rgba(150,195,255,0.32)'; ctx.lineWidth = 0.7 / k; ctx.stroke(this.admin1Path);
+    if (k < 2.4) return;
+    ctx.font = `600 ${Math.min(11, 7.5 + k * 0.5) / k}px Rajdhani, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const fade = Math.min(1, (k - 2.4) / 1.2);
+    for (const it of this.admin1) {
+      if (!it.n) continue;
+      const q = this.projection(it.at); if (!q) continue;
+      const q2 = this.projection([it.at[0] + it.w / 2, it.at[1]]); if (!q2 || Math.abs(q2[0] - q[0]) * 2 * k < it.n.length * 6.2) continue;
+      const sx = q[0] * k + this.cam.x, sy = q[1] * k + this.cam.y; if (sx < -40 || sy < -20 || sx > this.w + 40 || sy > this.h + 20) continue;
+      ctx.fillStyle = `rgba(205,222,255,${0.62 * fade})`; if (it.n) ctx.fillText(it.n.toUpperCase(), q[0], q[1]);
+    }
+  }
+
   // --- state ---
   setState(state, extra = {}) {
     const prev = this.state;
@@ -161,6 +202,7 @@ export class WorldMap {
     const night = !!state.settings?.night;
     if (night !== this.night) { this.night = night; this.dirty = true; }
     this.dirty = true;
+    this.ensureDetail(state.settings?.detail);
     const res = state.lastResolution;
     if (res && res.at !== this.lastRes) {
       // Only animate resolutions that arrive while the map is open, including the very first one of a session.
@@ -315,7 +357,7 @@ export class WorldMap {
       if (!C || !O || !cpath) continue;
       if (C.occupiedBy === g.owner && !live) continue; // drawn whole by the base layer
       const sh = this.groupShape(g, now, time); if (!sh.rings.length) continue;
-      const col = O.bloc !== 'N' ? s.blocs[O.bloc].color : '#ff8a3d';
+      const col = this.colorOf(O, '#ff8a3d');
       const fighting = s.wars.some(w => (w.a === g.owner && w.b === g.country) || (w.b === g.owner && w.a === g.country));
       withCamOn(ctx, this.dpr, this.cam, () => {
         ctx.save(); ctx.clip(cpath);
@@ -550,6 +592,7 @@ export class WorldMap {
     if (!c) return '#0d1422';
     if (c.control === 'inactive') return '#101827';
     const bloc = s.blocs[c.bloc];
+    if (c.altFlag) return hexA(this.colorOf(c, '#888888'), 0.55);
     if (c.bloc === 'N') return c.control === 'player' ? '#3a4760' : '#232d40';
     return hexA(bloc.color, c.control === 'player' ? 0.78 : 0.42);
   }
@@ -701,6 +744,7 @@ export class WorldMap {
       }
     }
     ctx.strokeStyle = night ? 'rgba(150,180,255,0.11)' : 'rgba(160,200,255,0.16)'; ctx.lineWidth = 0.5 / k; ctx.stroke(A.borderPath);
+    this.admin1Draw(ctx, k);
     ctx.strokeStyle = night ? 'rgba(110,160,255,0.2)' : 'rgba(90,180,255,0.32)'; ctx.lineWidth = 0.7 / k; ctx.stroke(A.coastPath);
     if (night) this.drawCityLights(ctx, k);
     // Delegate-played countries get a bright outline.
@@ -970,7 +1014,7 @@ export class WorldMap {
     // Short flights still need room to read on screen.
     const span = Math.max(len, 46 * sc), start = [b0[0] - dx * span, b0[1] - dy * span], b = b0;
     const owner = this.state.countries[e.owner];
-    const col = owner && owner.bloc !== 'N' ? this.state.blocs[owner.bloc].color : '#c8d2e0';
+    const col = this.colorOf(owner, '#c8d2e0');
     const assault = e.mode === 'assault';
     const n = assault ? 3 : 3, T1 = assault ? 0.4 : 0.35, T2 = assault ? 0.68 : 0.62;
     const us = owner?.a3 === 'USA';
@@ -1051,6 +1095,7 @@ export class WorldMap {
     const id = this.state?.display?.arms !== false ? this.focusedCountry() : null;
     if (id !== this.coatId) { this.coatId = id; this.coatAt = performance.now(); }
     if (!id || isOOB(id)) return;
+    if (Object.values(this.state.countries).some(f => f.rebelOf === id)) return; // the land is split between factions
     this.coatImgs ||= new Map();
     let img = this.coatImgs.get(id);
     if (!img) { img = new Image(); img.onload = () => { this.coatAt = performance.now(); this.dirty = true; }; img.src = `/client/img/coats/${id}.webp`; this.coatImgs.set(id, img); }
@@ -1511,7 +1556,7 @@ export class WorldMap {
         const fb = this.frontBorder(id, f.by, A);
         if (fb) {
           const by = s.countries[f.by];
-          const col = by && by.bloc !== 'N' ? s.blocs[by.bloc].color : '#ff8a3d';
+          const col = this.colorOf(by, '#ff8a3d');
           const fighting = s.wars.some(w => (w.a === f.by && w.b === id) || (w.b === f.by && w.a === id));
           this.drawBorderFront(ctx, { id, f, c, pct, time, k, fb, A, col, by, fighting });
           continue;
@@ -1519,7 +1564,7 @@ export class WorldMap {
       }
       const g = this.frontGeom(id, f.from, pct); if (!g) continue;
       const by = s.countries[f.by];
-      const col = by && by.bloc !== 'N' ? s.blocs[by.bloc].color : '#ff8a3d';
+      const col = this.colorOf(by, '#ff8a3d');
       const { fp, dx, dy, R, thr } = g, nx = -dy, ny = dx;
       // An organic line: salients and pockets that shift slowly, like a real front.
       const span = g.tmax - g.tmin, amp = Math.max(1.2, span * 0.06), seed = Number(id) || 1;
@@ -1728,7 +1773,7 @@ export class WorldMap {
       const ang = i * 2.1 + 0.6, rr = i ? (g.loc.kind === 'sea' ? (30 + i * 6) * Math.min(1.5, 0.85 + this.cam.k * 0.12) : 11 + i * 2) : 0;
       const q = [base[0] + Math.cos(ang) * rr, base[1] + Math.sin(ang) * rr + (g.loc.kind === 'country' ? 12 : 0)];
       const owner = s.countries[g.owner];
-      const color = owner && owner.bloc !== 'N' ? s.blocs[owner.bloc].color : '#c8d2e0';
+      const color = this.colorOf(owner, '#c8d2e0');
       const sea = g.loc.kind === 'sea';
       const count = g.units.length;
       const scale = Math.min(1.5, 0.85 + this.cam.k * 0.12);
@@ -1953,7 +1998,7 @@ export class WorldMap {
       ctx.stroke();
     }
     const owner = this.state.countries[e.owner];
-    const col = owner && owner.bloc !== 'N' ? this.state.blocs[owner.bloc].color : '#ffd27a';
+    const col = this.colorOf(owner, '#ffd27a');
     if (downed) {
       const hitPt = this.pathPoint(route, easeInOut(meet / T1));
       if (u < meet) { this.drawModel(ctx, e.model || 'bomber', pos[0], pos[1], ang, 8 * sc, '#e8eef8'); this.escorts(ctx, e, pos, ang, sc, col); }
@@ -2057,7 +2102,7 @@ export class WorldMap {
   fx_move(ctx, fx, u) {
     const e = fx.e, a = this.pt(e.from), b = this.pt(e.to); if (!a || !b) return;
     const owner = this.state.countries[e.owner];
-    const col = owner && owner.bloc !== 'N' ? this.state.blocs[owner.bloc].color : '#c8d2e0';
+    const col = this.colorOf(owner, '#c8d2e0');
     const v = ease(Math.min(1, u * 1.4)), fade = u > 0.75 ? 1 - (u - 0.75) / 0.25 : 1;
     ctx.globalAlpha = fade; ctx.strokeStyle = col; ctx.lineWidth = 2.2; ctx.setLineDash([2, 4]);
     ctx.beginPath();
@@ -2071,7 +2116,7 @@ export class WorldMap {
   fx_fleet(ctx, fx, u) {
     const pts = fx.e.path.map(q => this.pt(q)).filter(Boolean); if (pts.length < 2) return;
     const owner = this.state.countries[fx.e.owner];
-    const col = owner && owner.bloc !== 'N' ? this.state.blocs[owner.bloc].color : '#c8d2e0';
+    const col = this.colorOf(owner, '#c8d2e0');
     const v = ease(Math.min(1, u * 1.2)) * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(v)), w = v - i;
     ctx.strokeStyle = hexA(col, 0.5 * (1 - Math.max(0, u - 0.8) / 0.2)); ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
     ctx.beginPath(); pts.forEach((q, j) => (j ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); ctx.setLineDash([]);
@@ -2090,7 +2135,7 @@ export class WorldMap {
   fx_advance(ctx, fx, u, now, withCam) {
     const e = fx.e, g = this.frontGeom(e.country, e.from, e.pct); if (!g) return;
     const by = this.state.countries[e.by];
-    const col = by && by.bloc !== 'N' ? this.state.blocs[by.bloc].color : '#ff8a3d';
+    const col = this.colorOf(by, '#ff8a3d');
     const k = this.cam.k, toS = (x, y) => [x * k + this.cam.x, y * k + this.cam.y];
     const a = toS(g.fp[0], g.fp[1]), b = toS(g.fp[0] + g.dx * g.thr, g.fp[1] + g.dy * g.thr);
     const v = ease(Math.min(1, u * 1.6)), fade = u > 0.7 ? 1 - (u - 0.7) / 0.3 : 1;
@@ -2182,7 +2227,7 @@ export class WorldMap {
     }
     const k = this.cam.k, S = p => [p[0] * k + this.cam.x, p[1] * k + this.cam.y];
     const A = S(fx.zp), B = S(fx.beach);
-    const own = this.state.countries[e.owner], col = own && own.bloc !== 'N' ? this.state.blocs[own.bloc].color : '#c8d2e0';
+    const own = this.state.countries[e.owner], col = this.colorOf(own, '#c8d2e0');
     const ang = Math.atan2(B[1] - A[1], B[0] - A[0]), nx = -Math.sin(ang), ny = Math.cos(ang);
     const fade = u > 0.85 ? 1 - (u - 0.85) / 0.15 : 1;
     ctx.save(); ctx.globalAlpha = fade;
@@ -2276,7 +2321,7 @@ export class WorldMap {
   fx_occupy(ctx, fx, u, now, withCam) {
     const path = this.atlas.lo.paths.get(fx.e.country); if (!path) return;
     const by = this.state.countries[fx.e.by];
-    const col = by && by.bloc !== 'N' ? this.state.blocs[by.bloc].color : '#ff4d5e';
+    const col = this.colorOf(by, '#ff4d5e');
     withCam(() => { ctx.fillStyle = hexA(col, 0.55 * Math.sin(u * Math.PI) * (0.6 + 0.4 * Math.sin(u * 18))); ctx.fill(path); ctx.strokeStyle = hexA(col, 1 - u); ctx.lineWidth = 2 / this.cam.k; ctx.stroke(path); });
   }
   fx_war(ctx, fx, u, now, withCam) {

@@ -118,8 +118,10 @@ export function SandboxTab({ conn, state, selected, selZone }) {
 const STANCES = [['war', 'War'], ['peace', 'Truce'], ['ally', 'Allied']];
 function CivilWars({ conn, state }) {
   const [backer, setBacker] = useState('');
+  const seed = state.settings.detail === 'americas' && !Object.values(state.countries).some(f => f.rebelOf === '484')
+    ? html`<div class="row"><button class="btn sm gold" onClick=${() => run(conn, { type: 'seedFactions' }, 'Four armed groups rise in Mexico')}>Raise Mexico's armed groups</button></div>` : null;
   const roots = [...new Set(Object.values(state.countries).filter(f => f.rebelOf && state.wars.some(w => w.civil && (w.a === f.id || w.b === f.id))).map(f => f.rebelOf))];
-  if (!roots.length) return html`<div class="sub-h">Civil wars</div><p class="pane-hint">None yet. Pick a country on the map and use "Start a civil war", then add more factions from the same card.</p>`;
+  if (!roots.length) return html`<div class="sub-h">Civil wars</div>${seed}<p class="pane-hint">None yet. Pick a country on the map and use "Start a civil war", then add more factions from the same card.</p>`;
   const stance = (a, b) => state.wars.some(w => (w.a === a && w.b === b) || (w.a === b && w.b === a)) ? 'war' : state.treaties.some(t => t.type === 'alliance' && t.parties.includes(a) && t.parties.includes(b)) ? 'ally' : 'peace';
   return html`<div class="sub-h">Civil wars</div>
     ${roots.map(r => {
