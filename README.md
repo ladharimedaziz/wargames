@@ -131,7 +131,11 @@ Kronos's home shows every committee live. From there Kronos can:
 - Save points, rewind, download, and restore for every committee.
 - **Reset every committee** at once. Each committee keeps its name and type, and gets a "Before reset" save point first.
 
-## Running it on a computer
+## Hosting it on your own computer
+
+Double-click `start-world-engine.bat` (Windows) or `start-world-engine.command` (Mac). It runs the server, opens a public link for Zeus elsewhere, and installs updates by itself. See [LOCAL_HOSTING.md](LOCAL_HOSTING.md).
+
+## Running it on a computer (development)
 
 ```bash
 npm install
