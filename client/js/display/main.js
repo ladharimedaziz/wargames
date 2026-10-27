@@ -337,6 +337,13 @@ function TreatyCard({ state, lang }) {
     ...(tr.kind === 'peace' && terms.returnTerritory !== false ? ['All occupied territory shall be returned.'] : []),
     ...(terms.demilitarize ? ['All forces shall withdraw from the territory of the other parties.'] : []),
     ...(terms.reparations > 0 && terms.payer ? [`${state.countries[terms.payer]?.name} shall pay reparations of $${terms.reparations} billion to ${state.countries[terms.payee]?.name}.`] : []),
+    ...(terms.liftSanctions ? ['Sanctions between the parties shall be lifted.'] : []),
+    ...(terms.liftBlockades ? ['All blockades shall end.'] : []),
+    ...(terms.reopenAirspace ? ['Airspace shall be reopened.'] : []),
+    ...(terms.tradeResume ? ['Trade shall resume.'] : []),
+    ...(terms.prisoners ? ['Prisoners shall be exchanged.'] : []),
+    ...(terms.nonAggression ? ['The parties shall not attack one another.'] : []),
+    ...(terms.reconstruction > 0 && terms.fundBy ? [`${state.countries[terms.fundBy]?.name} shall fund $${terms.reconstruction} billion of reconstruction in ${state.countries[terms.fundTo]?.name}.`] : []),
     ...(terms.clauses || []),
   ];
   return html`<div class="panel-scene treaty-scene">

@@ -1,6 +1,7 @@
 // Diplomacy tools: UN votes, the peace treaty builder, humanitarian pauses, and the list of wars.
 import { html, useState, run, toast, cls } from '../lib.js';
 import { CountrySelect } from './tabs.js';
+import { PeaceOptions } from './peaceterms.js';
 import { unVoters, aiVote } from '/shared/engine/core.js';
 
 export function DiplomacyTab({ conn, state }) {
@@ -96,15 +97,7 @@ function TreatyBuilder({ conn, state }) {
       <div class="chips">${f.parties.map(id => html`<span class="chip">${state.countries[id].name} <button class="x" onClick=${() => push({ ...f, parties: f.parties.filter(x => x !== id) })}>✕</button></span>`)}</div>
       <${CountrySelect} state=${state} value=${null} onChange=${v => v && !f.parties.includes(v) && push({ ...f, parties: [...f.parties, v] })} placeholder="Add a party…" />
     </label>
-    ${(f.kind === 'peace') && html`<div class="col terms">
-      <label class="row"><input type="checkbox" checked=${terms.returnTerritory !== false} onChange=${e => push({ ...f, terms: { ...terms, returnTerritory: e.target.checked } })} /> Occupied land is returned</label>
-      <label class="row"><input type="checkbox" checked=${!!terms.demilitarize} onChange=${e => push({ ...f, terms: { ...terms, demilitarize: e.target.checked } })} /> Troops withdraw</label>
-      ${f.parties.length >= 2 && html`<div class="row">
-        <label class="field grow">Reparations ($bn)<input class="input" type="number" min="0" value=${terms.reparations || 0} onChange=${e => push({ ...f, terms: { ...terms, reparations: +e.target.value, payer: terms.payer || f.parties[0], payee: terms.payee || f.parties[1] } })} /></label>
-        <label class="field grow">From<select class="input" value=${terms.payer || ''} onChange=${e => push({ ...f, terms: { ...terms, payer: e.target.value } })}><option value="">—</option>${f.parties.map(id => html`<option value=${id}>${state.countries[id].name}</option>`)}</select></label>
-        <label class="field grow">To<select class="input" value=${terms.payee || ''} onChange=${e => push({ ...f, terms: { ...terms, payee: e.target.value } })}><option value="">—</option>${f.parties.map(id => html`<option value=${id}>${state.countries[id].name}</option>`)}</select></label>
-      </div>`}
-    </div>`}
+    ${f.kind === 'peace' && html`<${PeaceOptions} state=${state} terms=${terms} parties=${f.parties} onChange=${t => push({ ...f, terms: t })} />`}
     <label class="field">Clauses
       ${(terms.clauses || []).map((c, i) => html`<div class="row clause"><span class="dim mono">${i + 1}.</span><span class="grow">${c}</span><button class="btn xs ghost" onClick=${() => push({ ...f, terms: { ...terms, clauses: terms.clauses.filter((_, j) => j !== i) } })}>✕</button></div>`)}
       <div class="row"><input class="input grow" placeholder="Add a clause the delegates agreed" value=${clause} onInput=${e => setClause(e.target.value)} onKeyDown=${e => { if (e.key === 'Enter' && clause.trim()) { push({ ...f, terms: { ...terms, clauses: [...(terms.clauses || []), clause.trim()] } }); setClause(''); } }} /></div>

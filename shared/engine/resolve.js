@@ -695,6 +695,22 @@ function resolveCovert(state, o, ev) {
   }
 }
 
+// The extra terms of a peace treaty, beyond land, troops and reparations (all optional, all mutual unless noted).
+export function applyPeaceExtras(state, a, b, t) {
+  const A = state.countries[a], B = state.countries[b];
+  if (t.liftSanctions) { A.sanctions = A.sanctions.filter(x => x !== b); B.sanctions = B.sanctions.filter(x => x !== a); }
+  if (t.liftBlockades) for (const u of Object.values(state.units)) if ((u.owner === a && u.blockadeOf === b) || (u.owner === b && u.blockadeOf === a)) { u.blockade = false; delete u.blockadeOf; }
+  if (t.reopenAirspace) for (const id of [a, b]) if (!state.wars.some(w => w.a === id || w.b === id)) delete state.global.closedAirspace[id];
+  if (t.tradeResume && !state.treaties.some(x => x.type === 'trade' && x.parties.includes(a) && x.parties.includes(b))) state.treaties.push({ type: 'trade', parties: [a, b], turn: state.meta.turn });
+  if (t.nonAggression) { state.treaties.push({ type: 'nonaggression', parties: [a, b], turn: state.meta.turn }); shiftRelation(state, a, b, 20); }
+  if (t.prisoners) for (const X of [A, B]) X.support = clamp(X.support + 3, 0, 100);
+  const fund = Number(t.reconstruction) || 0;
+  if (fund > 0 && t.fundBy && t.fundTo && state.countries[t.fundBy] && state.countries[t.fundTo]) {
+    const F = state.countries[t.fundBy], R = state.countries[t.fundTo];
+    F.treasury -= fund; R.damage = clamp((R.damage || 0) - fund / 100, 0, 1); R.stability = clamp(R.stability + 3, 0, 100);
+  }
+}
+
 function resolveDiplomacy(state, o, ev) {
   const a = o.country, b = o.target, A = state.countries[a], B = b && state.countries[b];
   switch (o.type) {
@@ -710,6 +726,7 @@ function resolveDiplomacy(state, o, ev) {
           const X = state.countries[x];
           if (t.returnTerritory !== false && (X.occupiedBy === y || X.front?.by === y)) { X.occupiedBy = null; clearFront(state, X, y); }
         }
+        applyPeaceExtras(state, a, b, t);
         if (t.reparations > 0 && t.payer && t.payee) { state.countries[t.payer].treasury -= t.reparations; state.countries[t.payee].treasury += t.reparations; }
         if (t.demilitarize) for (const u of Object.values(state.units)) if ((u.owner === a && u.loc.id === b) || (u.owner === b && u.loc.id === a)) u.loc = { kind: u.loc.kind, id: u.loc.kind === 'country' ? u.owner : u.loc.id };
       }
