@@ -96,9 +96,9 @@ const WORLD = {
   // War fronts: the Zeus decides whether each front advances, holds or falls back, or moves it right now.
   frontMode: { perm: 'zeus', run(s, a, ctx) {
     const c = C(s, a.country); if (!c?.front) return err('There is no front in that country.');
-    if (!['auto', 'advance', 'hold', 'retreat'].includes(a.mode)) return err('Unknown front order.');
+    if (!['auto', 'advance', 'encircle', 'hold', 'retreat'].includes(a.mode)) return err('Unknown front order.');
     c.front.mode = a.mode;
-    log(s, ctx, `${C(s, c.front.by).name}'s front in ${c.name}: ${{ auto: 'left to the battle', advance: 'ordered to advance', hold: 'ordered to hold', retreat: 'ordered to fall back' }[a.mode]}`);
+    log(s, ctx, `${C(s, c.front.by).name}'s front in ${c.name}: ${{ auto: 'left to the battle', advance: 'ordered to advance', encircle: 'ordered to encircle the capital', hold: 'ordered to hold', retreat: 'ordered to fall back' }[a.mode]}`);
     return ok();
   } },
   frontPush: { perm: 'zeus', run(s, a, ctx) {

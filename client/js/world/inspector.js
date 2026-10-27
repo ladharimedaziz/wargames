@@ -214,7 +214,7 @@ function WorldOverview({ conn, state, setSelected }) {
 }
 
 // War fronts: how much ground each attacker holds, and the Zeus's orders for each front.
-const MODES = [['auto', 'Battle decides', 'The engine moves the front from each turn\'s fighting'], ['advance', 'Advance', 'The attacker gains ground every turn'], ['hold', 'Hold', 'The line does not move'], ['retreat', 'Fall back', 'The defender retakes ground every turn']];
+const MODES = [['auto', 'Battle decides', 'The engine moves the front from each turn\'s fighting'], ['advance', 'Advance', 'The attacker gains ground every turn'], ['encircle', 'Encircle', 'The attacker drives for a ring around the capital, closes it, then squeezes'], ['hold', 'Hold', 'The line does not move'], ['retreat', 'Fall back', 'The defender retakes ground every turn']];
 
 function Fronts({ conn, state, id, enemies, setSelected, setBrush }) {
   const c = state.countries[id];

@@ -316,7 +316,7 @@ function resolveInvasions(state, orders, ev) {
       // The front moves forward a little each turn; the country falls once the attacker holds all of it.
       // The Zeus can overrule the engine for any front: advance, hold or fall back.
       const mine = T.front && (T.front.by === lead || sameSide(state, T.front.by, lead));
-      if (!mine) T.front = { by: lead, pct: 0, prev: 0, from: origin, turn: state.meta.turn, mode: T.front?.mode || 'auto' };
+      if (!mine) T.front = { by: lead, pct: 0, prev: 0, from: origin, turn: state.meta.turn, mode: T.front?.mode || (state.countries[lead]?.a3 === 'USA' && state.settings.combinedArms !== false ? 'encircle' : 'auto') };
       else if (sea && T.front.pct < 5) T.front.from = origin;
       const engine = survivors.length ? clamp(10 + 30 * (ratio - 1), 8, 30) + (remainingDef < 15 ? 12 : 0) : 0;
       const occupied = moveFront(state, T, frontDelta(T.front.mode, engine, 15), ev);
@@ -407,6 +407,7 @@ function updateChokepoints(state, ev) {
 function frontDelta(mode, engine, push) {
   if (mode === 'hold') return 0;
   if (mode === 'advance') return Math.max(engine, push);
+  if (mode === 'encircle') return Math.max(engine * 0.85, push);
   if (mode === 'retreat') return -Math.max(12, push);
   return engine;
 }
@@ -472,7 +473,7 @@ export function moveFront(state, T, delta, ev) {
   const n = Math.max(1, Math.round(Math.abs(delta) / 100 * Math.min(total, FRONT_CAP)));
   const wasOccupied = !!T.occupiedBy;
   if (delta > 0) {
-    const took = advance(state, f.by, T.id, n, { target: T.id, from: f.from, toward: pt(T) });
+    const took = advance(state, f.by, T.id, n, { target: T.id, from: f.from, toward: pt(T), encircle: f.mode === 'encircle' ? pt(T) : null });
     if (took.length) { const [lon, lat] = cellCenter(took[took.length - 1]); f.from = { lat, lon }; }
   } else {
     if (T.occupiedBy && total > 5000 && !holdings(state, T.id).held[f.by]) occupyCells(state, T.id, f.by);
@@ -539,7 +540,7 @@ function updateFronts(state, ev) {
     const press = unitsOf(state, f.by, 'army').reduce((t, u) => t + u.strength, 0);
     const mode = f.mode || 'auto';
     let delta = 0;
-    if (mode === 'advance') delta = T.occupiedBy ? 0 : clamp(12 + 8 * (press / Math.max(40, held) - 1), 10, 22);
+    if (mode === 'advance' || mode === 'encircle') delta = T.occupiedBy ? 0 : clamp(12 + 8 * (press / Math.max(40, held) - 1), 10, 22);
     else if (mode === 'retreat') delta = -15;
     else if (mode === 'auto' && !T.occupiedBy && held >= 40) delta = -6;
     if (delta) moveFront(state, T, delta, ev); else f.prev = f.pct;

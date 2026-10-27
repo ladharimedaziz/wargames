@@ -61,7 +61,18 @@ function noise(i, j, seed, scale) {
 // Returns the cells that changed hands, in the order they fell.
 export function advance(state, X, Y, n, opts = {}) {
   if (!G || n <= 0) return [];
-  const { target = null, liberateOnly = false, from = null, toward = null } = opts;
+  const { target = null, liberateOnly = false, from = null, toward = null, encircle = null } = opts;
+  // Encirclement (the American doctrine): drive along the highways to a ring around the capital, close the ring,
+  // then squeeze. `encircle` is the capital; the ring sits about a sixth of the country out.
+  let ring = null;
+  if (encircle && !liberateOnly) {
+    const ci = (encircle.lon + 180) / CELL, cj = (90 - encircle.lat) / CELL, cells = G.cellsOf(Y);
+    const R = clamp(Math.sqrt(cells.length) * 0.22, 6 * CELL_K, 70 * CELL_K);
+    const dist = k => { const [i, j] = cellIJ(k); let di = Math.abs(i + 0.5 - ci); if (di > NI / 2) di = NI - di; return Math.hypot(di, j + 0.5 - cj); };
+    let band = 0, mine = 0;
+    for (const k of cells) { if (Math.abs(dist(k) - R) <= 2.5) { band++; if (controller(state, k) === X) mine++; } }
+    ring = { dist, R, closed: band > 0 && mine / band >= 0.7 };
+  }
   const ctl = k => controller(state, k);
   // Ground X can push from: its own, or an ally's that is not in the fight.
   const fr = new Map();
@@ -79,6 +90,11 @@ export function advance(state, X, Y, n, opts = {}) {
     const home = G.homeOf(k);
     if (target && home === target) s += 2.5;
     if (home === X && (!target || target === X)) s += 3; // retaking your own land comes first
+    if (ring) {
+      const d = ring.dist(k), off = Math.abs(d - ring.R);
+      if (!ring.closed) s += off <= 2.5 ? 4.5 : d < ring.R ? -3 : -0.04 * off; // reach the ring, avoid the middle
+      else s += d < ring.R ? 3.5 - d / ring.R : -1;                              // then squeeze inward
+    }
     if (tw) { let di = tw[0] - i; if (di > NI / 2) di -= NI; if (di < -NI / 2) di += NI; const d = Math.hypot(di, tw[1] - j); s += 2.2 / (1 + d / (25 * CELL_K)); }
     return s;
   };
