@@ -5,12 +5,14 @@ import { geoEqualEarth, geoPath, geoGraticule10, geoInterpolate } from 'd3-geo';
 import { SEA_ZONES } from '/shared/data/places.js';
 import { CITIES } from '/shared/data/cities.js';
 import { AIRCRAFT } from '/shared/data/militaries.js';
-import { relation, isOOB, OUT_OF_BOUNDS } from '/shared/engine/core.js';
+import { relation, isOOB, OUT_OF_BOUNDS, sameSide } from '/shared/engine/core.js';
+import { distanceKm, seaRoute, zonesTouching } from '/shared/geo.js';
 import { loadAtlas, makeCountryAt, makeLandAt, pairBorder } from './atlas.js';
 import { contours as d3contours } from 'd3-contour';
 import { CELL, NI, cellKey, cellIJ, cellCenter, neighbors as cellNeighbors } from '/shared/engine/control.js';
 import { AirTraffic, SeaTraffic } from './traffic.js';
 import { ACT_FX } from './acts.js';
+import { SEA_NAV } from './seanav.js';
 import { AIRCRAFT_FX, DIPLO_KINDS } from './aircraft.js';
 import { ROAD_FX } from './roads.js';
 import { NAVAL_FX } from './naval.js';
@@ -547,6 +549,7 @@ export class WorldMap {
         return;
       }
       if (!this.opts.interactive) return;
+      this.mouse = [mx, my];
       const ll = this.screenToLonLat(mx, my);
       const id = ll ? this.countryAt(ll[0], ll[1]) : null;
       const zone = !id ? this.zoneAt(mx, my) : null;
@@ -562,8 +565,17 @@ export class WorldMap {
       }
       fx.style.cursor = this.brush ? 'crosshair' : 'grab';
       if (this.dragging) { this.dragging = false; this.dirty = true; }
+      if (drag && !moved && e.button === 2) { drag = null; return; } // the right button is for sending a selected fleet
       if (drag && !moved) {
         const r = fx.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
+        // A click on a ship picks its fleet; a click anywhere else lets go of it.
+        const fleet = this.opts.interactive && this.opts.onFleetMove && !e.shiftKey ? this.fleetAt(mx, my) : null;
+        if (fleet) {
+          this.selFleet = { owner: fleet.g.owner, type: fleet.g.type, zone: fleet.g.loc.id };
+          this.opts.onSelect?.({ id: fleet.g.owner, zone: null }, e);
+          this.dirty = true; drag = null; return;
+        }
+        if (this.selFleet) { this.selFleet = null; this.dirty = true; }
         const zone = this.zoneAt(mx, my);
         const ll = this.screenToLonLat(mx, my);
         if (ll && isOOB(this.rawCountryAt(ll[0], ll[1]))) { drag = null; return; }
@@ -574,6 +586,15 @@ export class WorldMap {
         else this.opts.onSelect?.(zone && !id ? { zone } : zone && this.state?.countries?.[id] == null ? { zone } : { id, zone: null }, e);
       }
       drag = null;
+    });
+    fx.addEventListener('contextmenu', e => {
+      e.preventDefault();
+      if (!this.opts.interactive || !this.selFleet || !this.opts.onFleetMove) return;
+      const r = fx.getBoundingClientRect(), dest = this.seaTarget(e.clientX - r.left, e.clientY - r.top), f = this.selFleet, ids = this.fleetUnits(f).map(u => u.id);
+      if (!dest || !ids.length) return;
+      const cp = this.state.global.chokepoints?.[dest.zone];
+      const hostile = cp && cp.status !== 'open' && cp.by && !sameSide(this.state, f.owner, cp.by);
+      this.opts.onFleetMove({ owner: f.owner, units: ids, zone: dest.zone, type: hostile ? 'force' : 'fleet' });
     });
     fx.addEventListener('pointerleave', () => { this.hover = null; this.brushPos = null; this.opts.onHover?.(null); });
     fx.addEventListener('contextmenu', e => { if (this.brush) e.preventDefault(); });
@@ -811,7 +832,7 @@ export class WorldMap {
     for (const e of evs.filter(e => e.kind === 'tension')) add({ type: 'tension', e, dur: 4.5 }, 0);
     for (const e of evs.filter(e => e.kind === 'war')) { add({ type: 'war', a: e.a, b: e.b, dur: 2.4 }, 0); }
     for (const e of evs.filter(e => e.kind === 'move')) { add({ type: 'move', e, dur: 2.6 }, t); mark(6, e.from, e.to); }
-    for (const e of evs.filter(e => e.kind === 'fleet')) { add({ type: 'fleet', e, dur: 3.2 }, t); mark(6, ...e.path); }
+    for (const e of evs.filter(e => e.kind === 'fleet')) { add({ type: 'fleet', e, dur: 4.2 }, t); mark(6, ...e.path); }
     for (const e of evs.filter(e => e.kind === 'siege')) { add({ type: 'siege', e, dur: 4.2 }, t + 2.4); const T = this.state?.countries?.[e.target]; mark(1, T && { lat: T.lat, lon: T.lon }); }
     t += 0.6;
     strikes.slice(0, 80).forEach((e, i) => { add({ type: e.kind, e, dur: e.kind === 'scrubbed' ? 3 : e.unitType === 'missile' ? 2.4 : e.unitType === 'bomber' ? 5.2 : 3.8 }, t + i * 0.12); mark(3, e.from, e.to); });
@@ -824,7 +845,7 @@ export class WorldMap {
     }
     this.frontDelay = t;
     for (const e of evs.filter(e => e.kind === 'landing')) { add({ type: 'landing', e, dur: 4.6 }, t - 1.2); mark(1, e.from, e.to); }
-    for (const e of evs.filter(e => e.kind === 'naval')) { add({ type: 'naval', e, dur: 5 }, t); mark(2, e.at); }
+    for (const e of evs.filter(e => e.kind === 'naval')) { add({ type: 'naval', e, dur: 8 }, t); mark(2, e.at); }
     for (const e of evs.filter(e => e.kind === 'drone')) { add({ type: 'drone', e, dur: 5 }, t - 1.8); mark(3, e.from, e.to); }
     for (const e of evs.filter(e => e.kind === 'heli')) { add({ type: 'heli', e, dur: e.mode === 'assault' ? 7.5 : 6 }, t); mark(2, e.from, e.to); }
     for (const e of evs.filter(e => e.kind === 'airdrop')) { add({ type: 'airdrop', e, dur: 6.5 }, t - 0.6); mark(1, e.from, e.to); }
@@ -838,10 +859,11 @@ export class WorldMap {
     for (const e of evs.filter(e => e.kind === 'neo')) { add({ type: 'neo', e, dur: 7 }, t); mark(1, e.from, e.sea || e.to); }
     for (const e of evs.filter(e => e.kind === 'unit_lost')) add({ type: 'lost', e, dur: 3.5 }, t + 0.8);
     for (const e of evs.filter(e => e.kind === 'occupation')) { add({ type: 'occupy', e, dur: 3.5 }, t + 1); }
-    for (const e of evs.filter(e => e.kind === 'chokepoint')) { add({ type: 'choke', e, dur: 3.5 }, t); const z = SEA_ZONES[e.zone]; mark(2, z && { lat: z.lat, lon: z.lon }); }
+    for (const e of evs.filter(e => e.kind === 'force')) { add({ type: 'force', e, dur: 6 }, t - 0.6); const z = SEA_ZONES[e.zone]; mark(3, z && { lat: z.lat, lon: z.lon }); }
+    for (const e of evs.filter(e => e.kind === 'chokepoint')) { add({ type: 'choke', e, dur: 4.5 }, t); const z = SEA_ZONES[e.zone]; mark(2, z && { lat: z.lat, lon: z.lon }); }
     for (const e of evs.filter(e => e.kind === 'nuke')) { add({ type: 'nuke', e, dur: e.salvo ? 9 : 11 }, t + 1.2); mark(0, e.at, e.from); t += e.salvo ? 0.3 : 4.6; }
     // Hold the shot until any front has finished sweeping across its country.
-    const tail = evs.some(e => e.kind === 'neo' || e.kind === 'act') ? 7.5 : evs.some(e => e.kind === 'naval' || e.kind === 'landing') ? 5.5 : 4;
+    const tail = evs.some(e => e.kind === 'neo' || e.kind === 'act') ? 7.5 : evs.some(e => e.kind === 'naval' || e.kind === 'landing') ? 8.5 : 4;
     const hold = evs.some(e => e.kind === 'front') ? Math.max(tail, this.frontDelay - t + 5.4) : tail;
     this.sequenceEnd = performance.now() + (t + hold) * 1000;
     // On the stage display, frame the action automatically unless the Zeus has set a focus.
@@ -1091,6 +1113,55 @@ export class WorldMap {
     ctx.globalAlpha = 1;
   }
 
+  // --- fleet selection and sailing orders ---
+  fleetAt(mx, my) {
+    let best = null, bd = 1e9;
+    for (const h of this.fleetHits || []) { const d = Math.hypot(h.x - mx, h.y - my); if (d <= h.r && d < bd) { bd = d; best = h; } }
+    return best;
+  }
+  // The ships of the selected fleet as they stand now (a fleet is every unit of one type an owner has in one sea zone).
+  fleetUnits(f) {
+    return Object.values(this.state.units).filter(u => u.strength > 0 && u.owner === f.owner && u.type === f.type && u.loc.kind === 'sea' && u.loc.id === f.zone);
+  }
+  // Where a right-click wants a fleet to go: open water picks the nearest sea zone, a coast picks the nearest zone off that country.
+  seaTarget(mx, my) {
+    const ll = this.screenToLonLat(mx, my); if (!ll) return null;
+    const cid = this.countryAt(ll[0], ll[1]);
+    const pool = cid && zonesTouching(cid).length ? zonesTouching(cid) : (cid ? [] : Object.keys(SEA_ZONES));
+    let best = null, bd = 1e9;
+    for (const z of pool) { const d = distanceKm({ lat: ll[1], lon: ll[0] }, SEA_ZONES[z]); if (d < bd) { bd = d; best = z; } }
+    return best ? { zone: best, coast: cid || null } : null;
+  }
+  // A ring round the selected fleet and, as the mouse moves, the water route it would take to the spot under the pointer.
+  drawFleetSelection(ctx, time) {
+    const f = this.selFleet; if (!f || !this.opts.interactive) return;
+    const ships = this.fleetUnits(f);
+    if (!ships.length) { this.selFleet = null; return; }
+    const hit = (this.fleetHits || []).find(h => h.g.owner === f.owner && h.g.type === f.type && h.g.loc.id === f.zone); if (!hit) return;
+    const col = this.colorOf(this.state.countries[f.owner], '#ece6d6'), pulse = 0.5 + 0.5 * Math.sin(time * 5);
+    ctx.save(); ctx.strokeStyle = `rgba(255,255,255,${0.7 + 0.3 * pulse})`; ctx.lineWidth = 1.6; ctx.setLineDash([4, 3]); ctx.lineDashOffset = -time * 14;
+    ctx.beginPath(); ctx.arc(hit.x, hit.y, hit.r + 5, 0, TAU); ctx.stroke(); ctx.setLineDash([]);
+    ctx.restore();
+    const m = this.mouse; if (!m) return;
+    const dest = this.seaTarget(m[0], m[1]); if (!dest) return;
+    const from = SEA_ZONES[f.zone], zroute = seaRoute(f.zone, dest.zone, new Set());
+    const reach = zroute && zroute.length - 1 <= 6, sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
+    const ok = zroute && reach;
+    const pts = this.screenRoute(this.seaWayVia((zroute || [f.zone, dest.zone]).map(z => SEA_ZONES[z])));
+    ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = ok ? hexA(col, 0.85) : 'rgba(255,110,100,0.8)'; ctx.lineWidth = 2; ctx.setLineDash([6, 4]); ctx.lineDashOffset = -time * 18;
+    this.strokeRoute(ctx, pts); ctx.setLineDash([]);
+    const end = pts[pts.length - 1];
+    if (end) {
+      ctx.beginPath(); ctx.arc(end[0], end[1], 5 + 2 * pulse, 0, TAU); ctx.stroke();
+      const cp = this.state.global.chokepoints?.[dest.zone], hostile = cp && cp.status !== 'open' && cp.by && !sameSide(this.state, f.owner, cp.by);
+      const n = zroute ? zroute.length - 1 : 0, label = !zroute ? 'NO SEA ROUTE' : !reach ? `${SEA_ZONES[dest.zone].name.toUpperCase()} · ${n} ZONES, MAX 6` : `${hostile ? 'FORCE ' : 'SAIL TO '}${SEA_ZONES[dest.zone].name.toUpperCase()}${n ? ` · ${n} ZONE${n > 1 ? 'S' : ''}` : ''}`;
+      this.tag(ctx, end[0], end[1] - 16, label, ok ? (hostile ? '#ff8a6b' : '#bff3ff') : '#ff8a6b');
+    }
+    ctx.restore();
+    this.dirty = true;
+  }
+
   // --- coat of arms ---
   // The focused country (and any picked with shift+click) shows its coat of arms beside it, on whichever side has
   // room, fading in with a short slide. On unless the Zeus turns it off.
@@ -1254,7 +1325,7 @@ export class WorldMap {
     if (this.layers.naval !== false) this.drawShips(ctx, time);
     if (this.layers.air !== false) { this.drawFlights(ctx, time); this.drawPatrols(ctx, time); }
     this.drawChokepoints(ctx, time);
-    if (this.layers.units !== false) this.drawUnits(ctx, time);
+    if (this.layers.units !== false) { this.drawUnits(ctx, time); this.drawFleetSelection(ctx, time); }
     this.drawEffects(ctx, now, withCam);
     this.drawBrush(ctx);
     if (this.night) {
@@ -1652,7 +1723,7 @@ export class WorldMap {
     for (const [z, cp] of Object.entries(cps)) {
       const zone = SEA_ZONES[z]; const q = this.p(zone.lon, zone.lat); if (!q) continue;
       const col = cp.status === 'closed' ? '226,87,74' : cp.status === 'contested' ? '217,164,65' : '127,191,154';
-      const pulse = cp.status === 'open' ? 0 : (time * 0.8) % 1;
+      const pulse = cp.status === 'open' ? 0 : (((time * 0.8) % 1) + 1) % 1;
       ctx.strokeStyle = `rgba(${col},0.95)`; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(q[0], q[1], 5, 0, TAU); ctx.stroke();
       if (cp.status !== 'open') {
@@ -1688,6 +1759,7 @@ export class WorldMap {
   drawUnits(ctx, time) {
     const s = this.state;
     const groups = new Map();
+    this.fleetHits = [];
     for (const u of Object.values(s.units)) {
       if (u.strength <= 0 || !this.visibleTo(u)) continue;
       // At sea, fleets and carrier groups get their own markers.
@@ -1710,7 +1782,7 @@ export class WorldMap {
       const sea = g.loc.kind === 'sea';
       const count = g.units.length;
       const scale = Math.min(1.5, 0.85 + this.cam.k * 0.12);
-      if (sea) { ctx.save(); ctx.translate(q[0], q[1]); this.drawNavalGroup(ctx, g, time, color, scale); ctx.restore(); continue; }
+      if (sea) { ctx.save(); ctx.translate(q[0], q[1]); this.drawNavalGroup(ctx, g, time, color, scale); ctx.restore(); this.fleetHits.push({ x: q[0], y: q[1], r: (g.type === 'carrier' ? 22 : 17) * scale, g }); continue; }
       ctx.save(); ctx.translate(q[0], q[1]); ctx.scale(scale, scale);
       ctx.fillStyle = 'rgba(4,6,11,0.85)'; ctx.strokeStyle = color; ctx.lineWidth = 1.4;
       const air = g.units.every(u => ['fighter', 'bomber'].includes(u.type));
@@ -1864,6 +1936,7 @@ export class WorldMap {
     ctx.strokeStyle = color; ctx.lineWidth = 1; ctx.stroke(); ctx.fillStyle = color; ctx.fillText(text, x, y + 0.5);
   }
   boom(ctx, x, y, r, iv, hot = 1) {
+    iv = clamp(iv, 0, 1);
     const R = r * (0.35 + ease(iv) * 0.9);
     // Ground flash and an expanding shockwave ring.
     if (iv < 0.35) { ctx.fillStyle = `rgba(255,255,240,${0.55 * (1 - iv / 0.35) * hot})`; ctx.beginPath(); ctx.arc(x, y, r * 0.5, 0, TAU); ctx.fill(); }
@@ -2054,16 +2127,43 @@ export class WorldMap {
     ctx.beginPath(); ctx.moveTo(7, 0); ctx.lineTo(-4, 5); ctx.lineTo(-1, 0); ctx.lineTo(-4, -5); ctx.closePath(); ctx.fill(); ctx.restore();
     ctx.globalAlpha = 1;
   }
+  // Position and heading a fraction v along a screen route, skipping the jump where it wraps round the map edge.
+  alongRoute(pts, v) {
+    const seg = []; let total = 0;
+    for (let i = 1; i < pts.length; i++) { const d = pts[i].gap ? 0 : Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); seg.push(d); total += d; }
+    let d = clamp(v, 0, 1) * total;
+    for (let i = 0; i < seg.length; i++) {
+      if (d <= seg[i] || i === seg.length - 1) {
+        const f = seg[i] ? Math.min(1, d / seg[i]) : 1, A = pts[i], B = pts[i + 1];
+        return [A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f, pts[i + 1].gap ? 0 : Math.atan2(B[1] - A[1], B[0] - A[0])];
+      }
+      d -= seg[i];
+    }
+    return [...pts[pts.length - 1], 0];
+  }
+  strokeRoute(ctx, pts) { ctx.beginPath(); pts.forEach((q, j) => (j && !q.gap ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); }
   fx_fleet(ctx, fx, u) {
-    const pts = fx.e.path.map(q => this.pt(q)).filter(Boolean); if (pts.length < 2) return;
+    const route = (fx.route ||= this.seaWayVia(fx.e.path));
+    const pts = this.screenRoute(route); if (pts.length < 2) return;
     const owner = this.state.countries[fx.e.owner];
-    const col = this.colorOf(owner, '#c8d2e0');
-    const v = ease(Math.min(1, u * 1.2)) * (pts.length - 1), i = Math.min(pts.length - 2, Math.floor(v)), w = v - i;
-    ctx.strokeStyle = hexA(col, 0.5 * (1 - Math.max(0, u - 0.8) / 0.2)); ctx.lineWidth = 1.5; ctx.setLineDash([3, 3]);
-    ctx.beginPath(); pts.forEach((q, j) => (j ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); ctx.setLineDash([]);
-    const x = pts[i][0] + (pts[i + 1][0] - pts[i][0]) * w, y = pts[i][1] + (pts[i + 1][1] - pts[i][1]) * w;
-    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(x, y, 3.5, 0, TAU); ctx.fill();
-    ctx.strokeStyle = hexA(col, 0.4); ctx.beginPath(); ctx.arc(x, y, 6 + 3 * Math.sin(u * 20), 0, TAU); ctx.stroke();
+    const col = this.colorOf(owner, '#c8d2e0'), carrier = fx.e.unitType === 'carrier';
+    const fade = 1 - Math.max(0, u - 0.8) / 0.2;
+    // The track already sailed glows; the track ahead is a faint dashed line.
+    const v = ease(Math.min(1, u * 1.15));
+    ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.strokeStyle = hexA(col, 0.28 * fade); ctx.lineWidth = 1.2; ctx.setLineDash([2, 4]); this.strokeRoute(ctx, pts); ctx.setLineDash([]);
+    const done = [];
+    for (let i = 0; i <= 40; i++) done.push(this.alongRoute(pts, v * i / 40));
+    ctx.strokeStyle = hexA(col, 0.55 * fade); ctx.lineWidth = 2; ctx.beginPath(); done.forEach((q, j) => (j ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke();
+    const h = this.alongRoute(pts, v), sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
+    // The ship itself, with a bow wave and a long wake behind it.
+    ctx.translate(h[0], h[1]); ctx.rotate(h[2]); ctx.globalAlpha = fade;
+    ctx.strokeStyle = 'rgba(225,238,255,0.55)'; ctx.lineWidth = 1;
+    for (const side of [-1, 1]) { ctx.beginPath(); ctx.moveTo(-3 * sc, side * 1.4 * sc); ctx.lineTo(-18 * sc, side * 5 * sc); ctx.stroke(); }
+    ctx.beginPath(); ctx.moveTo(4 * sc, 0); ctx.quadraticCurveTo(2 * sc, -2.4 * sc, -4 * sc, -2.4 * sc); ctx.lineTo(-6 * sc, -1.6 * sc); ctx.lineTo(-6 * sc, 1.6 * sc); ctx.lineTo(-4 * sc, 2.4 * sc); ctx.quadraticCurveTo(2 * sc, 2.4 * sc, 4 * sc, 0); ctx.closePath();
+    ctx.fillStyle = 'rgba(4,6,11,0.92)'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.stroke();
+    if (carrier) { ctx.fillStyle = hexA(col, 0.8); ctx.fillRect(-3 * sc, -1 * sc, 6 * sc, 2 * sc); }
+    ctx.restore();
     if (fx.e.blockade && u > 0.6) {
       // On station: a dashed cordon closes around the fleet.
       const t = ease((u - 0.6) / 0.25), end = pts[pts.length - 1];
@@ -2100,60 +2200,6 @@ export class WorldMap {
     }
     ctx.strokeStyle = `rgba(255,220,180,${1 - u})`; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(q[0] - 6, q[1] - 6); ctx.lineTo(q[0] + 6, q[1] + 6); ctx.moveTo(q[0] + 6, q[1] - 6); ctx.lineTo(q[0] - 6, q[1] + 6); ctx.stroke();
-  }
-  // A naval battle: two battle groups trade missile salvos; the losing side takes hits and loses ships.
-  fx_naval(ctx, fx, u) {
-    const e = fx.e, q = this.pt(e.at); if (!q) return;
-    const S = this.state, colOf = id => { const c = S.countries[id]; return c && c.bloc !== 'N' ? S.blocs[c.bloc].color : '#c8d2e0'; };
-    if (!fx.geo) {
-      const ang = Math.random() * Math.PI, gap = 22;
-      const n = x => clamp(x || 3, 1, 7);
-      const ships = (cx, cy, count, lost) => Array.from({ length: count }, (_, i) => ({ x: cx + (i % 3 - 1) * 7 + (Math.random() - 0.5) * 3, y: cy + (Math.floor(i / 3) - 0.5) * 7 + (Math.random() - 0.5) * 3, sunk: i < lost, at: 0.35 + Math.random() * 0.45 }));
-      const wc = [Math.cos(ang) * -gap, Math.sin(ang) * -gap], lc = [Math.cos(ang) * gap, Math.sin(ang) * gap];
-      const wN = n(e.ships?.winner), lN = n(e.ships?.loser);
-      fx.geo = { win: ships(wc[0], wc[1], wN, Math.min(wN - 1, e.lost?.winner || 0)), lose: ships(lc[0], lc[1], lN, Math.min(lN, e.lost?.loser ?? Math.ceil(lN / 2))),
-        shots: Array.from({ length: 16 }, (_, i) => ({ fromWin: i % 4 !== 3, t: 0.05 + (i / 16) * 0.6, bend: (Math.random() - 0.5) * 0.5, si: Math.floor(Math.random() * 7), ti: Math.floor(Math.random() * 7) })) };
-    }
-    const { win, lose, shots } = fx.geo;
-    const fade = u > 0.85 ? 1 - (u - 0.85) / 0.15 : 1;
-    ctx.save(); ctx.globalAlpha = fade;
-    const drawShip = (sh, col, flip) => {
-      if (sh.sunk && u > sh.at + 0.25) return;
-      const sinking = sh.sunk && u > sh.at ? (u - sh.at) / 0.25 : 0;
-      ctx.save(); ctx.translate(q[0] + sh.x, q[1] + sh.y + sinking * 3); ctx.scale(flip, 1); ctx.globalAlpha = fade * (1 - sinking);
-      ctx.fillStyle = 'rgba(4,6,11,0.9)'; ctx.strokeStyle = col; ctx.lineWidth = 1.2;
-      ctx.beginPath(); ctx.moveTo(-5, -1); ctx.lineTo(5, -1); ctx.lineTo(3, 2.5); ctx.lineTo(-4, 2.5); ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(-1, -1); ctx.lineTo(-1, -4); ctx.lineTo(1.5, -1); ctx.stroke();
-      ctx.restore();
-      if (sinking > 0 && sinking < 1) { ctx.fillStyle = `rgba(255,150,60,${1 - sinking})`; ctx.beginPath(); ctx.arc(q[0] + sh.x, q[1] + sh.y, 2 + sinking * 7, 0, TAU); ctx.fill(); }
-    };
-    win.forEach(sh => drawShip(sh, colOf(e.winner), 1));
-    lose.forEach(sh => drawShip(sh, colOf(e.loser), -1));
-    // Missile exchange.
-    for (const sh of shots) {
-      const v = (u - sh.t) / 0.22; if (v <= 0 || v >= 1.25) continue;
-      const src = (sh.fromWin ? win : lose)[sh.si % (sh.fromWin ? win : lose).length], dst = (sh.fromWin ? lose : win)[sh.ti % (sh.fromWin ? lose : win).length];
-      const A = [q[0] + src.x, q[1] + src.y], B = [q[0] + dst.x, q[1] + dst.y];
-      if (v < 1) {
-        const h = this.onCurve(A, B, ease(v), sh.bend);
-        ctx.strokeStyle = sh.fromWin ? 'rgba(255,220,150,0.6)' : 'rgba(255,140,140,0.5)'; ctx.lineWidth = 1;
-        ctx.beginPath(); const t0 = this.onCurve(A, B, Math.max(0, ease(v) - 0.25), sh.bend); ctx.moveTo(t0[0], t0[1]); ctx.lineTo(h[0], h[1]); ctx.stroke();
-        ctx.fillStyle = '#fff1d6'; ctx.beginPath(); ctx.arc(h[0], h[1], 1.3, 0, TAU); ctx.fill();
-      } else {
-        // Losers' missiles are mostly shot down short of the target; the winners' land.
-        const w = (v - 1) / 0.25, hitPt = sh.fromWin ? B : this.onCurve(A, B, 0.85, sh.bend);
-        ctx.fillStyle = sh.fromWin ? `rgba(255,170,80,${1 - w})` : `rgba(200,240,255,${1 - w})`;
-        ctx.beginPath(); ctx.arc(hitPt[0], hitPt[1], 2 + w * 5, 0, TAU); ctx.fill();
-      }
-    }
-    // Spray and the battle label.
-    ctx.strokeStyle = `rgba(236,230,214,${0.5 * (1 - u)})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(q[0], q[1], 34 + u * 18, 0, TAU); ctx.stroke();
-    const name = SEA_ZONES[e.zone] ? (this.opts.lang === 'ar' ? SEA_ZONES[e.zone].ar : SEA_ZONES[e.zone].name.toUpperCase()) : '';
-    ctx.font = this.opts.lang === 'ar' ? '700 11px Cairo, sans-serif' : '700 10px Rajdhani, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    const label = this.opts.lang === 'ar' ? `معركة بحرية · ${name}` : `NAVAL BATTLE · ${name}`;
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(label, q[0] + 1, q[1] - 45);
-    ctx.fillStyle = '#bff3ff'; ctx.fillText(label, q[0], q[1] - 46);
-    ctx.restore();
   }
   // Amphibious landing: landing craft run in from the fleet and come ashore on the nearest coast.
   fx_landing(ctx, fx, u) {
@@ -2273,11 +2319,6 @@ export class WorldMap {
       }
     });
   }
-  fx_choke(ctx, fx, u) {
-    const z = SEA_ZONES[fx.e.zone]; const q = z && this.p(z.lon, z.lat); if (!q) return;
-    const col = fx.e.status === 'closed' ? '226,87,74' : fx.e.status === 'contested' ? '217,164,65' : '127,191,154';
-    for (let i = 0; i < 3; i++) { const v = (u * 1.8 + i / 3) % 1; ctx.strokeStyle = `rgba(${col},${(1 - v) * (1 - u)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(q[0], q[1], 6 + v * 40, 0, TAU); ctx.stroke(); }
-  }
   // Nuclear strike, kept abstract: a ballistic missile track, an incoming warning, then a flash and shockwave. Nothing graphic.
   fx_nuke(ctx, fx, u) {
     const e = fx.e, FLIGHT = 0.42, T = fx.dur;
@@ -2368,7 +2409,7 @@ export class WorldMap {
   }
 }
 
-Object.assign(WorldMap.prototype, ACT_FX, AIRCRAFT_FX, ROAD_FX, NAVAL_FX, OOB_FX);
+Object.assign(WorldMap.prototype, SEA_NAV, ACT_FX, AIRCRAFT_FX, ROAD_FX, NAVAL_FX, OOB_FX);
 
 function geoDistanceKm(a, b) {
   const R = 6371, rad = Math.PI / 180;
