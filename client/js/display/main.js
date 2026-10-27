@@ -418,6 +418,7 @@ function Ending({ state, lang, now }) {
   const el = (now - state.display.endingAt) / 1000;
   if (e.type === 'nuclear' && e.exchange) return html`<${Unthinkable} state=${state} now=${now} />`;
   return html`<div class=${cls('ending', `end-${tone}`, `end-${e.type}`)}>
+    ${e.scene && html`<div class=${`end-scene es-${e.scene}`}><i></i><i></i><i></i><i></i><i></i><i></i></div>`}
     ${tone === 'good' && html`<div class="end-dawn"></div>`}
     ${tone === 'dark' && html`<div class="end-line"></div>`}
     <div class="end-content">
@@ -425,7 +426,8 @@ function Ending({ state, lang, now }) {
       <h1 style=${tone === 'dark' ? 'animation-delay:3s' : 'animation-delay:1.2s'}>${isAr(lang) ? e.ar || e.title : e.title}</h1>
       ${lang === 'both' && e.ar && html`<div class="end-ar">${e.ar}</div>`}
       <p style=${tone === 'dark' ? 'animation-delay:5.5s' : 'animation-delay:2.4s'}>${e.line}</p>
-      ${el > 7 && html`<div class="end-stats">
+      ${el > 7 && e.facts?.length && html`<div class="end-stats">${e.facts.map(f => html`<div><b>${f.k}</b><span>${f.v}</span></div>`)}</div>`}
+      ${el > 7 && !e.facts?.length && html`<div class="end-stats">
         <div><b>${state.meta.turn - 1}</b><span>${state.meta.turn - 1 === 1 ? 'week' : 'weeks'}</span></div>
         <div><b>${state.wars.length}</b><span>wars still open</span></div>
         <div><b>${Math.round(state.global.gdpIndex * 100)}%</b><span>world economy</span></div>

@@ -11,6 +11,7 @@ import { resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, s
 import { bindGeo, hasGeo, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter, mainland } from './control.js';
 import { courtActions } from './court.js';
 import { joinText } from './ai.js';
+import { endingDetail } from './endings.js';
 
 const SCENES = ['map', 'disguise', 'intro', 'reveal', 'ending', 'report', 'blank', 'pause', 'vote', 'treaty', 'polls', 'web', 'court'];
 const STAT_FIELDS = { gdp: [0.5, 1e6], treasury: [-1e5, 1e5], support: [0, 100], stability: [0, 100], industry: [0.05, 1.2], energy: [0.05, 1.2], damage: [0, 1], inflation: [-2, 80], airDefense: [0, 12], influence: [0, 100] };
@@ -274,7 +275,8 @@ const WORLD = {
   setCoat: { perm: 'zeus', run(s, a) { s.display.arms = !!a.on; return ok(); } },
   playEnding: { perm: 'zeus', run(s, a, ctx) {
     if (!ENDINGS[a.ending]) return err('Unknown ending.');
-    s.display.ending = { type: a.ending, title: String(a.title || ENDINGS[a.ending].title).slice(0, 80), line: String(a.line || ENDINGS[a.ending].line).slice(0, 400), ar: a.ar || ENDINGS[a.ending].ar };
+    const det = endingDetail(s, a.ending);
+    s.display.ending = { type: a.ending, title: String(a.title || det.title || ENDINGS[a.ending].title).slice(0, 80), line: String(a.line || det.line || ENDINGS[a.ending].line).slice(0, 400), ar: a.ar || ENDINGS[a.ending].ar, scene: det.scene, facts: det.facts };
     s.display.endingAt = ctx.now; s.display.scene = 'ending'; s.meta.phase = 'ended';
     log(s, ctx, `Ending played: ${s.display.ending.title}`);
     return ok();
