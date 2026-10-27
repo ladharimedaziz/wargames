@@ -94,7 +94,12 @@ export class WorldMap {
     }
     this.t0 = performance.now();
     this.last = this.t0;
-    const loop = now => { if (this.destroyed) return; this.frame(now); this.raf = requestAnimationFrame(loop); };
+    const loop = now => {
+      if (this.destroyed) return;
+      // One bad frame must never stop the map: keep the loop alive and report the error once per message.
+      try { this.frame(now); } catch (e) { if (this.lastErr !== e.message) { this.lastErr = e.message; console.error('map frame', e); } }
+      this.raf = requestAnimationFrame(loop);
+    };
     this.raf = requestAnimationFrame(loop);
     if (this.state) this.setState(this.state);
   }
@@ -444,10 +449,7 @@ export class WorldMap {
         if (q && pct != null && (g.i1 - g.i0) * k > 6) this.frontLabel(ctx, q[0], q[1] + 8, O, pct, col);
       }
     }
-    for (const e of uni.values()) {
-      this.unifiedEdge(ctx, e.items, s.blocs[e.bloc].color, time);
-      // One tag per theatre, where the two sides meet.
-    }
+    this.drawUnified(ctx, uni, time);
     const tagged = new Set();
     for (const e of uni.values()) {
       if (tagged.has(e.th)) continue; tagged.add(e.th);
@@ -459,25 +461,54 @@ export class WorldMap {
 
   // The outline of all the ground one bloc holds, as a single glowing line: the shapes are drawn together, eroded, and the
   // difference is the edge. Borders between the bloc's own conquests disappear.
-  unifiedEdge(ctx, items, col, time) {
-    const W = Math.ceil(this.w * this.dpr), H = Math.ceil(this.h * this.dpr);
+  // The outlines are cached on two screen-sized canvases and redrawn only when the camera or a shape changes, and each
+  // erosion works on the cropped box of its shapes: doing the full-screen passes every frame froze the map in a world war.
+  drawUnified(ctx, uni, time) {
+    if (!uni.size) return;
+    const W = Math.ceil(this.w * this.dpr), H = Math.ceil(this.h * this.dpr), cam = this.cam;
+    this._sid ||= new WeakMap(); this._sidN ||= 0;
+    const id = o => { let v = this._sid.get(o); if (!v) this._sid.set(o, v = ++this._sidN); return v; };
+    const key = [W, H, cam.x.toFixed(1), cam.y.toFixed(1), cam.k.toFixed(3), [...uni.entries()].map(([k, e]) => k + ':' + e.items.map(id).join(',')).join('|')].join('/');
+    if (key !== this._uek) {
+      this._uek = key;
+      this._uc ||= [document.createElement('canvas'), document.createElement('canvas')];
+      for (const c of this._uc) { if (c.width !== W || c.height !== H) { c.width = W; c.height = H; } else c.getContext('2d').clearRect(0, 0, W, H); }
+      for (const e of uni.values()) {
+        this.unifiedEdge(this._uc[0].getContext('2d'), e.items, this.state.blocs[e.bloc].color, 5, W, H);
+        this.unifiedEdge(this._uc[1].getContext('2d'), e.items, '#ffffff', 1.6, W, H);
+      }
+    }
+    ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 0.55 + 0.15 * Math.sin(time * 2.2); ctx.drawImage(this._uc[0], 0, 0);
+    ctx.globalAlpha = 0.9; ctx.drawImage(this._uc[1], 0, 0);
+    ctx.restore();
+  }
+  // One outline of all the ground a bloc holds: the shapes are drawn together, eroded, and the difference is the edge, so
+  // borders between the bloc's own conquests disappear. Drawn into `out` (a device-pixel canvas context).
+  unifiedEdge(out, items, col, r, W, H) {
+    const k = this.cam.k, dpr = this.dpr;
+    // Device-pixel box of the shapes, padded by the erosion radius.
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const sh of items) for (const ring of sh.rings) for (const q of ring) {
+      const px = (q[0] * k + this.cam.x) * dpr, py = (q[1] * k + this.cam.y) * dpr;
+      if (px < x0) x0 = px; if (px > x1) x1 = px; if (py < y0) y0 = py; if (py > y1) y1 = py;
+    }
+    const pad = Math.ceil(r * dpr) + 4;
+    x0 = Math.max(0, Math.floor(x0 - pad)); y0 = Math.max(0, Math.floor(y0 - pad)); x1 = Math.min(W, Math.ceil(x1 + pad)); y1 = Math.min(H, Math.ceil(y1 + pad));
+    const bw = x1 - x0, bh = y1 - y0; if (!(bw > 0 && bh > 0)) return;
     this._ue ||= [document.createElement('canvas'), document.createElement('canvas')];
-    const [a, b] = this._ue; for (const c of [a, b]) if (c.width !== W || c.height !== H) { c.width = W; c.height = H; }
-    const ca = a.getContext('2d'), cb = b.getContext('2d'), k = this.cam.k;
-    const band = (r, color, alpha) => {
-      ca.setTransform(1, 0, 0, 1, 0, 0); ca.globalCompositeOperation = 'source-over'; ca.clearRect(0, 0, W, H);
-      ca.setTransform(this.dpr * k, 0, 0, this.dpr * k, this.dpr * this.cam.x, this.dpr * this.cam.y); ca.fillStyle = '#000';
-      for (const sh of items) ca.fill(sh.path, 'evenodd');
-      ca.setTransform(1, 0, 0, 1, 0, 0);
-      cb.globalCompositeOperation = 'source-over'; cb.clearRect(0, 0, W, H); cb.drawImage(a, 0, 0);
-      cb.globalCompositeOperation = 'destination-in';
-      for (let i = 0; i < 8; i++) { const ang = i * Math.PI / 4; cb.drawImage(a, Math.cos(ang) * r * this.dpr, Math.sin(ang) * r * this.dpr); }
-      ca.globalCompositeOperation = 'destination-out'; ca.drawImage(b, 0, 0);
-      ca.globalCompositeOperation = 'source-in'; ca.fillStyle = color; ca.fillRect(0, 0, W, H);
-      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = alpha; ctx.drawImage(a, 0, 0); ctx.restore();
-    };
-    band(5, col, 0.55 + 0.15 * Math.sin(time * 2.2));
-    band(1.6, '#ffffff', 0.9);
+    const [a, b] = this._ue; for (const c of [a, b]) { if (c.width < bw || c.height < bh) { c.width = Math.max(c.width, bw); c.height = Math.max(c.height, bh); } }
+    const ca = a.getContext('2d'), cb = b.getContext('2d');
+    ca.setTransform(1, 0, 0, 1, 0, 0); ca.globalCompositeOperation = 'source-over'; ca.clearRect(0, 0, a.width, a.height);
+    ca.setTransform(dpr * k, 0, 0, dpr * k, dpr * this.cam.x - x0, dpr * this.cam.y - y0); ca.fillStyle = '#000';
+    for (const sh of items) ca.fill(sh.path, 'evenodd');
+    ca.setTransform(1, 0, 0, 1, 0, 0);
+    cb.globalCompositeOperation = 'source-over'; cb.clearRect(0, 0, b.width, b.height); cb.drawImage(a, 0, 0, bw, bh, 0, 0, bw, bh);
+    cb.globalCompositeOperation = 'destination-in';
+    for (let i = 0; i < 8; i++) { const ang = i * Math.PI / 4; cb.drawImage(a, 0, 0, bw, bh, Math.cos(ang) * r * dpr, Math.sin(ang) * r * dpr, bw, bh); }
+    ca.globalCompositeOperation = 'destination-out'; ca.drawImage(b, 0, 0, bw, bh, 0, 0, bw, bh);
+    ca.globalCompositeOperation = 'source-in'; ca.fillStyle = col; ca.fillRect(0, 0, bw, bh);
+    out.drawImage(a, 0, 0, bw, bh, x0, y0, bw, bh);
   }
 
   // Front lines ease from where they were to where the engine says they are now.
