@@ -6,6 +6,7 @@ import { SEA_ZONES } from '/shared/data/places.js';
 import { navalLabel, hasNamedNavy } from '/shared/data/militaries.js';
 
 const TAU = Math.PI * 2;
+const hexA = (hex, a) => `rgba(${hexRgb(hex)},${a})`;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ease = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
 const hash = s => { let h = 7; for (const ch of String(s)) h = (h * 31 + ch.charCodeAt(0)) % 9973; return h; };
@@ -150,10 +151,15 @@ export const NAVAL_FX = {
       const gr = ctx.createRadialGradient(q[0], q[1], 0, q[0], q[1], R);
       gr.addColorStop(0, `rgba(255,60,70,${0.26 + 0.1 * pulse})`); gr.addColorStop(1, 'rgba(255,60,70,0)');
       ctx.fillStyle = gr; ctx.fillRect(q[0] - R, q[1] - R, R * 2, R * 2);
-      ctx.strokeStyle = 'rgba(255,120,100,0.75)'; ctx.lineWidth = 1.3; ctx.setLineDash([5, 4]); ctx.lineDashOffset = -time * 10;
-      ctx.beginPath(); ctx.arc(q[0], q[1], R * 0.62, 0, TAU); ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0;
+      if (!zz.choke) { ctx.strokeStyle = 'rgba(255,120,100,0.75)'; ctx.lineWidth = 1.3; ctx.setLineDash([5, 4]); ctx.lineDashOffset = -time * 10; ctx.beginPath(); ctx.arc(q[0], q[1], R * 0.62, 0, TAU); ctx.stroke(); ctx.setLineDash([]); ctx.lineDashOffset = 0; }
     }
     ctx.restore();
+    // Blockaded straits get the full gate: chain of buoys, pickets, radar sweep, and crossfire when contested.
+    for (const [z] of zones) {
+      if (!SEA_ZONES[z].choke) continue;
+      const g = this.straitGate(z), st = s.global.chokepoints?.[z]?.status; if (!g) continue;
+      this.drawGate(ctx, g, time, 1, st === 'contested' ? '230,170,70' : '226,87,74', st === 'contested');
+    }
     // Tags off the blockaded coast.
     for (const [id, sg] of sieges) {
       const zs = [...sg.zones].map(z => SEA_ZONES[z]).filter(Boolean);
@@ -208,6 +214,192 @@ export const NAVAL_FX = {
       hull(ctx, 0, 0, 7, 2.2); ctx.fillStyle = 'rgba(4,6,11,0.92)'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1; ctx.stroke();
       ctx.restore();
     }
+    ctx.restore();
+  },
+
+
+  // A naval battle in three rounds, replayed from the engine's own record. Each side forms a line facing the other:
+  // carriers launch jets that dive on a target, surface ships fire missile salvos that are sometimes shot down short.
+  // Hits start fires, ships that were sunk break up and go under, and the loser's survivors turn away.
+  fx_naval(ctx, fx, u, now) {
+    const e = fx.e, q = this.pt(e.at); if (!q) return;
+    const S = this.state, sc = clamp(Math.sqrt(this.cam.k), 1, 2.2) * 1.6;
+    const colOf = id => this.colorOf(S.countries[id], '#c8d2e0');
+    if (!fx.geo) {
+      const ang = (hash(e.zone) % 628) / 100 + Math.random() * 0.4, gap = 30 * sc, sp = 10 * sc;
+      const ax = [Math.cos(ang), Math.sin(ang)], pr = [-ax[1], ax[0]];
+      const fallback = (n, lost, owner) => Array.from({ length: Math.max(1, n || 3) }, (_, i) => ({ id: owner + i, owner, type: 'fleet', hp0: 100, hp1: i < lost ? 0 : 60, sunk: i < lost }));
+      const sides = e.sides || { winner: fallback(e.ships?.winner, e.lost?.winner, e.winner), loser: fallback(e.ships?.loser, e.lost?.loser ?? 1, e.loser) };
+      const lay = (list, dir) => list.map((sh, i) => {
+        const o = (i - (list.length - 1) / 2) * sp;
+        return { ...sh, x: dir * -gap * ax[0] + pr[0] * o + (Math.random() - 0.5) * 2, y: dir * -gap * ax[1] + pr[1] * o + (Math.random() - 0.5) * 2, face: dir > 0 ? ang : ang + Math.PI, sinkAt: 0.45 + Math.random() * 0.3, seed: Math.random() * 9 };
+      });
+      const win = lay(sides.winner, 1), lose = lay(sides.loser, -1), byId = new Map([...win, ...lose].map(x => [x.id, x]));
+      const shots = (e.shots || []).filter(sh => byId.has(sh.from) && byId.has(sh.to));
+      const perRound = [0, 0, 0];
+      fx.geo = { win, lose, byId, ax, shots: shots.map(sh => ({ ...sh, bend: (Math.random() - 0.5) * 0.5, stop: sh.dmg < 14 && Math.random() < 0.6, idx: perRound[sh.round]++ })), perRound };
+    }
+    const { win, lose, shots, perRound, ax } = fx.geo;
+    const fade = u > 0.9 ? 1 - (u - 0.9) / 0.1 : u < 0.05 ? u / 0.05 : 1;
+    const prog = clamp((u - 0.1) / 0.68, 0, 1), retreat = clamp((u - 0.8) / 0.2, 0, 1);
+    ctx.save(); ctx.globalAlpha = fade;
+    // The sea over the fight is churned and darkened.
+    const rg = ctx.createRadialGradient(q[0], q[1], 0, q[0], q[1], 70 * sc); rg.addColorStop(0, `rgba(255,120,60,${0.12 * Math.sin(Math.PI * clamp(u * 1.1, 0, 1))})`); rg.addColorStop(1, 'rgba(255,120,60,0)');
+    ctx.fillStyle = rg; ctx.fillRect(q[0] - 80 * sc, q[1] - 80 * sc, 160 * sc, 160 * sc);
+    const pos = sh => { const rt = !sh.sunk && sh.isLoser ? retreat * 34 * sc : 0; return [q[0] + sh.x - ax[0] * rt, q[1] + sh.y - ax[1] * rt]; };
+    for (const sh of lose) sh.isLoser = true;
+    const drawShip = sh => {
+      const sinkU = sh.sunk ? clamp((u - sh.sinkAt) / 0.22, 0, 1) : 0;
+      if (sinkU >= 1) { const [x, y] = pos(sh); ctx.fillStyle = `rgba(20,20,26,${0.35 * (1 - clamp((u - sh.sinkAt - 0.2) / 0.3, 0, 1))})`; ctx.beginPath(); ctx.ellipse(x, y, 9 * sc, 4 * sc, sh.face, 0, TAU); ctx.fill(); return; }
+      const [x, y] = pos(sh), col = colOf(sh.owner), hp = sh.hp0 + (sh.hp1 - sh.hp0) * prog, dmg = clamp(1 - hp / Math.max(1, sh.hp0), 0, 1);
+      ctx.save(); ctx.translate(x, y + sinkU * 3 * sc); ctx.rotate(sh.face + sinkU * 0.5 * (sh.seed > 4.5 ? 1 : -1)); ctx.globalAlpha = fade * (1 - sinkU * 0.9);
+      wake(ctx, 0, 0, sh.type === 'carrier' ? 11 * sc : 7 * sc, 1, now / 1000, sh.seed);
+      const L = (sh.type === 'carrier' ? 12 : 7.5) * sc, B = (sh.type === 'carrier' ? 4.4 : 2.4) * sc;
+      hull(ctx, 0, 0, L, B); ctx.fillStyle = 'rgba(4,6,11,0.92)'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.stroke();
+      if (sh.type === 'carrier') { ctx.fillStyle = hexA(col, 0.7); ctx.fillRect(-L * 0.1, B * 0.1, L * 0.18, B * 0.32); }
+      ctx.restore();
+      // Damage: a health pip and a fire that grows with it.
+      if (dmg > 0.12 || sinkU > 0) {
+        const fl = 0.6 + 0.4 * Math.sin(now / 70 + sh.seed);
+        ctx.fillStyle = `rgba(255,${120 + 60 * fl | 0},50,${(0.25 + 0.5 * Math.max(dmg, sinkU)) * fade})`; ctx.beginPath(); ctx.arc(x, y - 1 * sc, (1.4 + 2.6 * Math.max(dmg, sinkU)) * sc * fl, 0, TAU); ctx.fill();
+        ctx.fillStyle = `rgba(95,95,105,${0.3 * fade})`; ctx.beginPath(); ctx.arc(x + 2 * sc, y - (5 + 8 * dmg) * sc, (2 + 3 * dmg) * sc, 0, TAU); ctx.fill();
+      }
+      if (u > 0.1 && u < 0.85 && !sinkU) { const w = 11 * sc; ctx.fillStyle = 'rgba(0,0,0,0.5)'; ctx.fillRect(x - w / 2, y + 6 * sc, w, 1.8); ctx.fillStyle = hp > 50 ? '#7fd9a0' : hp > 25 ? '#f0c060' : '#ff6a5a'; ctx.fillRect(x - w / 2, y + 6 * sc, w * clamp(hp / 100, 0, 1), 1.8); }
+    };
+    win.forEach(drawShip); lose.forEach(drawShip);
+    // Rounds: each shot is staggered inside its round's window.
+    for (const sh of shots) {
+      const t0 = 0.1 + sh.round * 0.22 + (sh.idx / Math.max(1, perRound[sh.round])) * 0.12, dur = sh.kind === 'air' ? 0.12 : 0.1, v = (u - t0) / dur;
+      if (v <= 0 || v >= 1.4) continue;
+      const A = pos(fx.geo.byId.get(sh.from)), B = pos(fx.geo.byId.get(sh.to)), tgt = fx.geo.byId.get(sh.to);
+      if (sh.kind === 'air') {
+        // A jet leaves the carrier, circles in and dives on the target.
+        const f = clamp(v, 0, 1), c = this.onCurve(A, B, ease(f), 0.45 * (sh.bend > 0 ? 1 : -1));
+        if (v < 1) {
+          ctx.strokeStyle = 'rgba(235,240,255,0.35)'; ctx.lineWidth = 1; ctx.beginPath(); const c0 = this.onCurve(A, B, Math.max(0, ease(f) - 0.3), 0.45 * (sh.bend > 0 ? 1 : -1)); ctx.moveTo(c0[0], c0[1]); ctx.lineTo(c[0], c[1]); ctx.stroke();
+          this.drawJet(ctx, c[0], c[1], c[2], 3.2 * sc, colOf(sh.fromWinner ? e.winner : e.loser));
+        } else if (!sh.stop) this.boom(ctx, B[0], B[1], 6 * sc, clamp((v - 1) / 0.4, 0, 1));
+      } else if (v < 1) {
+        const h = this.onCurve(A, B, ease(v), sh.bend), t1 = this.onCurve(A, B, Math.max(0, ease(v) - 0.25), sh.bend);
+        ctx.strokeStyle = sh.fromWinner ? 'rgba(255,220,150,0.65)' : 'rgba(255,150,140,0.6)'; ctx.lineWidth = 1.1; ctx.beginPath(); ctx.moveTo(t1[0], t1[1]); ctx.lineTo(h[0], h[1]); ctx.stroke();
+        ctx.fillStyle = '#fff1d6'; ctx.beginPath(); ctx.arc(h[0], h[1], 1.4, 0, TAU); ctx.fill();
+        if (sh.stop && v > 0.6) { const ip = this.onCurve(A, B, 0.62, sh.bend); ctx.strokeStyle = 'rgba(190,240,255,0.7)'; ctx.beginPath(); ctx.moveTo(B[0], B[1] - 2); ctx.lineTo(ip[0], ip[1]); ctx.stroke(); }
+      } else {
+        const w = clamp((v - 1) / 0.4, 0, 1);
+        if (sh.stop) { const ip = this.onCurve(A, B, 0.62, sh.bend); ctx.fillStyle = `rgba(200,240,255,${1 - w})`; ctx.beginPath(); ctx.arc(ip[0], ip[1], 1.5 + w * 4, 0, TAU); ctx.fill(); }
+        else this.boom(ctx, B[0], B[1], 5 * sc, w);
+      }
+      if (tgt.sunk && u > tgt.sinkAt && u < tgt.sinkAt + 0.04) this.boom(ctx, B[0], B[1], 12 * sc, (u - tgt.sinkAt) / 0.04);
+    }
+    ctx.strokeStyle = `rgba(236,230,214,${0.4 * (1 - u)})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(q[0], q[1], 46 * sc + u * 14, 0, TAU); ctx.stroke();
+    const name = SEA_ZONES[e.zone] ? SEA_ZONES[e.zone].name.toUpperCase() : '';
+    this.tag(ctx, q[0], q[1] - 58 * sc, `NAVAL BATTLE · ${name}`, '#bff3ff');
+    if (u > 0.78) { const W = S.countries[e.winner]; this.tag(ctx, q[0], q[1] + 56 * sc, `${(W?.name || '').toUpperCase()} HOLDS THE SEA${e.lost?.loser ? ` · ${e.lost.loser} SUNK` : ''}`, e.decisive ? '#ffd27a' : '#bff3ff'); }
+    ctx.restore();
+  },
+
+  // --- straits: gates, forced passages ---
+  // The line across a strait, in screen space: its centre, the way ships run through it, and the barrier at right angles.
+  straitGate(zone) {
+    const Z = SEA_ZONES[zone], q = Z && this.p(Z.lon, Z.lat); if (!q) return null;
+    const nb = Z.n.map(id => SEA_ZONES[id]).map(n => this.p(n.lon, n.lat)).filter(p => p && Math.abs(p[0] - q[0]) < this.w / 2);
+    let ax = [1, 0];
+    if (nb.length >= 2) ax = [nb[0][0] - nb[nb.length - 1][0], nb[0][1] - nb[nb.length - 1][1]]; else if (nb.length) ax = [nb[0][0] - q[0], nb[0][1] - q[1]];
+    const d = Math.hypot(ax[0], ax[1]) || 1; ax = [ax[0] / d, ax[1] / d];
+    return { q, ax, bar: [-ax[1], ax[0]], sc: clamp(Math.sqrt(this.cam.k), 1, 2.2) };
+  },
+  // The barrier itself: a chain of buoys and mines strung between two picket ships, blinking, with a radar sweep.
+  // `open` runs 0..1 for the chain closing across the strait, `tone` is the rgb of the warning colour.
+  drawGate(ctx, g, time, open, tone, contested) {
+    const { q, bar, ax, sc } = g, half = 30 * sc * open;
+    if (half < 2) return;
+    const A = [q[0] - bar[0] * half, q[1] - bar[1] * half], B = [q[0] + bar[0] * half, q[1] + bar[1] * half];
+    ctx.save();
+    // Radar sweep from the centre.
+    const sw = time * 1.6, R = 44 * sc;
+    const gr = ctx.createRadialGradient(q[0], q[1], 0, q[0], q[1], R); gr.addColorStop(0, `rgba(${tone},0.0)`); gr.addColorStop(1, `rgba(${tone},0.22)`);
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.moveTo(q[0], q[1]); ctx.arc(q[0], q[1], R, sw, sw + 0.55); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = `rgba(${tone},0.35)`; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(q[0], q[1], R, 0, TAU); ctx.stroke();
+    // Hazard line with buoys.
+    ctx.strokeStyle = `rgba(${tone},0.8)`; ctx.lineWidth = 1.6; ctx.setLineDash([5, 4]); ctx.lineDashOffset = -time * 8; ctx.beginPath(); ctx.moveTo(A[0], A[1]); ctx.lineTo(B[0], B[1]); ctx.stroke(); ctx.setLineDash([]);
+    const n = Math.max(2, Math.round(half / (5 * sc)));
+    for (let i = 0; i <= n; i++) {
+      const f = i / n - 0.5, x = q[0] + bar[0] * half * 2 * f, y = q[1] + bar[1] * half * 2 * f + Math.sin(time * 2 + i) * 0.8;
+      const on = (Math.floor(time * 2 + i) % 2) === 0;
+      ctx.fillStyle = on ? `rgba(${tone},0.95)` : 'rgba(30,20,22,0.9)'; ctx.beginPath(); ctx.arc(x, y, 1.6 * sc, 0, TAU); ctx.fill();
+      ctx.strokeStyle = `rgba(${tone},0.8)`; ctx.lineWidth = 0.7; ctx.stroke();
+    }
+    // Pickets at each end, bows pointing out along the strait.
+    for (const [p, side] of [[A, -1], [B, 1]]) {
+      ctx.save(); ctx.translate(p[0], p[1]); ctx.rotate(Math.atan2(ax[1], ax[0]) + (side > 0 ? 0 : Math.PI)); ctx.scale(sc, sc);
+      wake(ctx, 0, 0, 7, 1, time, side); hull(ctx, 0, 0, 8, 2.6); ctx.fillStyle = 'rgba(4,6,11,0.94)'; ctx.fill(); ctx.strokeStyle = `rgba(${tone},0.95)`; ctx.lineWidth = 1.1; ctx.stroke();
+      ctx.restore();
+    }
+    if (contested) {
+      // Crossfire: tracer streaks fly between the two sides in short bursts.
+      for (let i = 0; i < 4; i++) {
+        const ph = (time * 1.3 + i * 0.37) % 1.2; if (ph > 0.35) continue;
+        const f = ph / 0.35, from = i % 2 ? A : B, to = i % 2 ? B : A, off = (i - 1.5) * 2.5 * sc;
+        const x = from[0] + (to[0] - from[0]) * f + ax[0] * off, y = from[1] + (to[1] - from[1]) * f + ax[1] * off;
+        ctx.strokeStyle = 'rgba(255,230,160,0.9)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x - bar[0] * 4 * (i % 2 ? 1 : -1), y - bar[1] * 4 * (i % 2 ? 1 : -1)); ctx.stroke();
+      }
+    }
+    ctx.restore();
+  },
+  // A strait closing, contested or reopening: the chain of buoys runs across from the pickets (or is cut and drifts
+  // apart when it reopens), with expanding rings at the centre.
+  fx_choke(ctx, fx, u, now) {
+    const e = fx.e, g = this.straitGate(e.zone); if (!g) return;
+    const closing = e.status !== 'open', tone = e.status === 'closed' ? '226,87,74' : e.status === 'contested' ? '230,170,70' : '127,191,154';
+    const fade = u > 0.85 ? 1 - (u - 0.85) / 0.15 : 1;
+    ctx.save(); ctx.globalAlpha = fade;
+    this.drawGate(ctx, g, now / 1000, closing ? ease(u / 0.5) : 1 - ease((u - 0.1) / 0.5), tone, e.status === 'contested');
+    for (let i = 0; i < 3; i++) { const v = (u * 1.8 + i / 3) % 1; ctx.strokeStyle = `rgba(${tone},${(1 - v) * (1 - u)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(g.q[0], g.q[1], 6 + v * 40 * g.sc, 0, TAU); ctx.stroke(); }
+    const Z = SEA_ZONES[e.zone], by = this.state.countries[e.by];
+    const word = e.status === 'closed' ? 'CLOSED' : e.status === 'contested' ? 'CONTESTED' : 'REOPENED';
+    this.tag(ctx, g.q[0], g.q[1] - 34 * g.sc, `${Z.name.toUpperCase()} ${word}${by && e.status !== 'open' ? ` · ${by.name.toUpperCase()}` : ''}`, `rgb(${tone})`);
+    ctx.restore();
+  },
+  // Forcing a strait: a squadron steams in along the channel, shore batteries on both banks fire on it, shells throw
+  // up columns of water, mines go off at the chain, and the ships either break through (the strait reopens) or are
+  // turned back.
+  fx_force(ctx, fx, u, now) {
+    const e = fx.e, g = this.straitGate(e.zone); if (!g) return;
+    const { q, ax, bar, sc } = g, S = this.state, col = this.colorOf(S.countries[e.owner], '#c8d2e0');
+    const cp = S.global.chokepoints?.[e.zone], through = !cp || cp.status === 'open' || cp.forced;
+    const fade = u > 0.9 ? 1 - (u - 0.9) / 0.1 : 1, t = now / 1000;
+    ctx.save(); ctx.globalAlpha = fade;
+    const run = 90 * sc, from = [q[0] - ax[0] * run, q[1] - ax[1] * run], to = [q[0] + ax[0] * run, q[1] + ax[1] * run];
+    const chainBroken = clamp((u - 0.45) / 0.15, 0, 1);
+    this.drawGate(ctx, g, t, 1 - chainBroken * 0.9, '226,87,74', true);
+    // The squadron: four hulls in line ahead, going through or turning at the chain.
+    for (let i = 0; i < 4; i++) {
+      const lag = i * 0.05, v = clamp((u - 0.08 - lag) / 0.62, 0, 1);
+      let f = v; if (!through && u > 0.5) f = clamp(0.5 - (u - 0.5) * 0.9, 0.12, 0.5) * 1 + 0.0;
+      const x = from[0] + (to[0] - from[0]) * f + bar[0] * (i % 2 ? 5 : -5) * sc, y = from[1] + (to[1] - from[1]) * f + bar[1] * (i % 2 ? 5 : -5) * sc;
+      const heading = Math.atan2(ax[1], ax[0]) + (!through && u > 0.5 ? Math.PI : 0);
+      ctx.save(); ctx.translate(x, y); ctx.rotate(heading); ctx.scale(sc, sc);
+      wake(ctx, 0, 0, 10, 1, t, i); hull(ctx, 0, 0, 9, 2.8); ctx.fillStyle = 'rgba(4,6,11,0.95)'; ctx.fill(); ctx.strokeStyle = col; ctx.lineWidth = 1.2; ctx.stroke();
+      ctx.restore();
+      if (u > 0.2 && u < 0.7 && Math.sin(t * 9 + i) > 0.2) { ctx.fillStyle = `rgba(255,170,90,${0.3 + 0.3 * Math.sin(t * 20 + i)})`; ctx.beginPath(); ctx.arc(x, y - 1, 2.4 * sc, 0, TAU); ctx.fill(); }
+    }
+    // Shore batteries on both banks.
+    for (const side of [-1, 1]) {
+      const bat = [q[0] + bar[0] * side * 48 * sc, q[1] + bar[1] * side * 48 * sc];
+      ctx.fillStyle = '#d88a5a'; ctx.beginPath(); ctx.arc(bat[0], bat[1], 2.2 * sc, 0, TAU); ctx.fill();
+      for (let k = 0; k < 3; k++) {
+        const ph = ((t * 1.4 + k * 0.33 + side * 0.17) % 1), tx = from[0] + (to[0] - from[0]) * clamp((u - 0.08) / 0.62, 0, 1) + (k - 1) * 8 * sc, ty = from[1] + (to[1] - from[1]) * clamp((u - 0.08) / 0.62, 0, 1);
+        if (u < 0.18 || u > 0.7) continue;
+        const hx = bat[0] + (tx - bat[0]) * ph, hy = bat[1] + (ty - bat[1]) * ph - Math.sin(ph * Math.PI) * 10 * sc;
+        ctx.fillStyle = '#ffe0a8'; ctx.beginPath(); ctx.arc(hx, hy, 1.3, 0, TAU); ctx.fill();
+        if (ph > 0.9) { ctx.fillStyle = 'rgba(210,235,255,0.7)'; ctx.beginPath(); ctx.ellipse(tx, ty + 2, 2.5 * sc, 4 * sc * (1.1 - ph), 0, 0, TAU); ctx.fill(); }
+      }
+    }
+    // Mines at the chain.
+    if (u > 0.45 && u < 0.62) this.boom(ctx, q[0] + bar[0] * 6 * sc, q[1] + bar[1] * 6 * sc, 10 * sc, (u - 0.45) / 0.17);
+    const Z = SEA_ZONES[e.zone], by = e.by && S.countries[e.by];
+    this.tag(ctx, q[0], q[1] - 50 * sc, `FORCING ${Z.name.toUpperCase()}${by ? ` · ${by.name.toUpperCase()} HOLDS IT` : ''}`, '#ff8a6b');
+    if (u > 0.72) this.tag(ctx, q[0], q[1] + 44 * sc, through ? 'STRAIT OPEN' : 'FORCE TURNED BACK', through ? '#9fe8b6' : '#ff8a6b');
     ctx.restore();
   },
 

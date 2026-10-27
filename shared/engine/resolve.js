@@ -363,25 +363,51 @@ function resolveNaval(state, ev) {
       const side = (x, y) => ships.filter(u => u.owner === x || (sameSide(state, u.owner, x) && atWar(state, u.owner, y)));
       const sideA = side(a, b), sideB = side(b, a);
       const coast = SEA_ZONES[zone]?.coasts || [];
-      const power = (list, lead) => list.reduce((t, u) => t + u.strength * (u.type === 'carrier' ? 2 : 1) * Q(state, u.owner, 'sea'), 0) * (coast.includes(lead) ? 1.2 : 1);
-      const PA = power(sideA, a) * between(state, 0.85, 1.15), PB = power(sideB, b) * between(state, 0.85, 1.15);
-      const aWins = PA >= PB;
+      // Three rounds of exchange. Every surviving ship fires at a random enemy ship: carriers launch an air wing
+      // (heavy hits, strongest in round one), surface groups trade missile salvos, and the defender close to its own
+      // coast gets shore cover. Damage lands at the end of each round, so both sides hit each other.
+      const roster = list => list.map(u => ({ id: u.id, owner: u.owner, type: u.type, hp0: u.strength }));
+      const rosterA = roster(sideA), rosterB = roster(sideB);
+      const shotsLog = [];
+      for (let round = 0; round < 3; round++) {
+        const hits = new Map();
+        const fire = (shooters, targets, lead, round) => {
+          const alive = targets.filter(t => state.units[t.id]);
+          if (!alive.length) return;
+          for (const u of shooters) {
+            if (!state.units[u.id] || u.strength <= 0) continue;
+            const t = alive[Math.floor(rand(state) * alive.length)];
+            const air = u.type === 'carrier', wing = air ? (round === 0 ? 1.7 : 1.15) : 1;
+            const shield = t.type === 'carrier' ? 1.35 : 1; // big decks take more punishment
+            const dmg = 24 * (u.strength / 100) * wing * Q(state, u.owner, 'sea') / Q(state, t.owner, 'sea') * (coast.includes(lead) ? 1.2 : 1) * between(state, 0.6, 1.4) / shield;
+            hits.set(t.id, (hits.get(t.id) || 0) + dmg);
+            if (shotsLog.length < 40) shotsLog.push({ round, from: u.id, to: t.id, kind: air ? 'air' : 'missile', dmg: Math.round(dmg) });
+          }
+        };
+        const snapA = sideA.filter(u => state.units[u.id]), snapB = sideB.filter(u => state.units[u.id]);
+        fire(snapA, snapB, a, round); fire(snapB, snapA, b, round);
+        for (const [id, d] of hits) { const u = state.units[id]; if (u) damageUnit(state, u, d, ev, 'sunk in battle'); }
+      }
+      const live = list => list.filter(u => state.units[u.id]);
+      const strengthOf = list => live(list).reduce((t, u) => t + u.strength, 0);
+      const SA = strengthOf(sideA), SB = strengthOf(sideB), aWins = SA >= SB;
       const win = aWins ? sideA : sideB, lose = aWins ? sideB : sideA;
-      const r = Math.max(PA, PB) / Math.max(1, Math.min(PA, PB));
-      const count = list => list.filter(u => state.units[u.id]).length;
-      const before = { w: count(win), l: count(lose) };
-      for (const u of lose) damageUnit(state, u, u.strength * clamp(0.3 + 0.18 * r, 0.35, 1), ev, 'sunk in battle');
-      for (const u of win) damageUnit(state, u, u.strength * clamp(0.3 / r, 0.02, 0.3), ev, 'battle damage');
+      const r = Math.max(SA, SB) / Math.max(1, Math.min(SA, SB));
+      const count = list => live(list).length;
+      const rosterEnd = rost => rost.map(x => ({ ...x, hp1: state.units[x.id]?.strength || 0, sunk: !state.units[x.id] }));
+      const sidesOut = { winner: rosterEnd(aWins ? rosterA : rosterB), loser: rosterEnd(aWins ? rosterB : rosterA) };
+      const before = { w: sidesOut.winner.length, l: sidesOut.loser.length };
       // Losers that survive withdraw towards home waters.
       for (const u of lose) if (state.units[u.id]) {
         const home = zonesTouching(u.owner)[0];
         if (home && home !== zone) { const route = seaRoute(zone, home, new Set()); if (route && route[1]) u.loc = { kind: 'sea', id: route[1] }; }
         u.blockade = false; delete u.blockadeOf;
       }
-      const cas = Math.round((PA + PB) * 0.3);
+      const cas = Math.round((SA + SB) * 0.3);
       state.global.casualties += cas;
       ev.push({ kind: 'naval', zone, winner: win[0].owner, loser: lose[0].owner, at: { lat: SEA_ZONES[zone].lat, lon: SEA_ZONES[zone].lon },
-        ships: { winner: before.w, loser: before.l }, lost: { winner: before.w - count(win), loser: before.l - count(lose) }, decisive: r >= 2 });
+        ships: { winner: before.w, loser: before.l }, lost: { winner: before.w - count(win), loser: before.l - count(lose) }, decisive: r >= 2,
+        sides: sidesOut, shots: shotsLog.map(x => ({ ...x, fromWinner: sidesOut.winner.some(y => y.id === x.from) })) });
     }
   }
 }
