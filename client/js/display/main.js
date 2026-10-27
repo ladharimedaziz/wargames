@@ -10,6 +10,7 @@ import { t, tt } from './i18n.js';
 import { Globe } from '../views/login.js';
 import { CourtDisplay } from './court.js';
 import { Unthinkable } from './unthinkable.js';
+import { EndingFilm, hasEndingFilm } from './endings-fx.js';
 import { stateSplit } from '/shared/data/german-split.js';
 
 const committee = new URLSearchParams(location.search).get('c');
@@ -425,9 +426,9 @@ function Ending({ state, lang, now }) {
   const e = state.display.ending || { type: 'custom', title: 'The End', line: '' };
   const tone = ENDINGS[e.type]?.tone || 'neutral';
   const el = (now - state.display.endingAt) / 1000;
-  if (e.type === 'nuclear' && e.exchange) return html`<${Unthinkable} state=${state} now=${now} />`;
+  if (e.type === 'nuclear') return html`<${Unthinkable} state=${state} now=${now} />`;
   return html`<div class=${cls('ending', `end-${tone}`, `end-${e.type}`)}>
-    ${e.scene && html`<div class=${`end-scene es-${e.scene}`}><i></i><i></i><i></i><i></i><i></i><i></i></div>`}
+    ${hasEndingFilm(e.type) ? html`<${EndingFilm} state=${state} type=${e.type} />` : e.scene && html`<div class=${`end-scene es-${e.scene}`}><i></i><i></i><i></i><i></i><i></i><i></i></div>`}
     ${tone === 'good' && html`<div class="end-dawn"></div>`}
     ${tone === 'dark' && html`<div class="end-line"></div>`}
     <div class="end-content">

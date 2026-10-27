@@ -40,7 +40,7 @@ export function endingDetail(state, type) {
     const lost = ['A', 'B', 'C'].find(b => { const m = all.filter(c => c.bloc === b && c.major && c.base.gdp > 300); return m.length && m.every(c => c.capitulated || c.occupiedBy || c.stability < 5); });
     const win = ['A', 'B', 'C'].filter(b => b !== lost && state.blocs[b]).sort((a, b) => gdp(b) - gdp(a))[0];
     if (lost && win) {
-      d.title = `${state.blocs[win].name} Prevails`; d.scene = 'victory';
+      d.title = `${state.blocs[win].name} Prevails`; d.scene = 'victory'; d.bloc = win;
       d.line = `${state.blocs[lost].name} is broken${fallen.length ? `: ${list(fallen)} fell` : ''}. The map is redrawn by those left standing.`;
     }
     facts.push({ k: fallen.length, v: 'countries fallen' });
