@@ -26,6 +26,8 @@ Keep the window open. It prints three things:
 - **PUBLIC LINK**: a `https://….trycloudflare.com` address that works from anywhere. Send it to every Zeus. It is
   also saved in `data/public-url.txt`. It changes each time you start the window, so send the new one each session.
 
+If you ever lose the Kronos password, run `npm run reset-kronos -- yourNewPassword` in the wargames folder and restart. Kronos can also change it under Accounts > Set.
+
 Accounts and passwords work as before. Without `SESSION_SECRET`, the computer makes its own secret and keeps it in
 `data/`, so passwords stay the same between sessions on that computer. To pick the Kronos password, set
 `KRONOS_PASSWORD` before starting (Windows: `set KRONOS_PASSWORD=…` in the window, then `node scripts\host.mjs`).

@@ -150,7 +150,7 @@ function Accounts({ conn, list, close }) {
             <td class="mono">${editing === a.username
               ? html`<form class="row" onSubmit=${e => { e.preventDefault(); savePw(a.username); }}><input class="input sm mono" autofocus placeholder="New password" value=${pw} onInput=${e => setPw(e.target.value)} /><button class="btn xs good" disabled=${pw.trim().length < 6}>Save</button><button type="button" class="btn xs ghost" onClick=${() => setEditing(null)}>✕</button></form>`
               : show ? a.password : '••••••••••••'}</td>
-            <td class="row">${a.online && html`<span class="chip green">online</span>`}${a.role !== 'kronos' && html`
+            <td class="row">${a.online && html`<span class="chip green">online</span>`}${a.role === 'kronos' && html`<button class="btn xs" title="Change the Kronos password" onClick=${() => { setEditing(a.username); setPw(''); }}>Set</button>`}${a.role !== 'kronos' && html`
               <button class="btn xs" title="Type a password of your own" onClick=${() => { setEditing(a.username); setPw(''); }}>Set</button>
               <button class="btn xs" title="Generate a fresh random password" onClick=${async () => { const r = await conn.request({ t: 'rotate', username: a.username }); toast(r.ok ? `New password: ${r.result.password}` : r.error, r.ok ? 'good' : 'error'); }}>Random</button>
               <button class="btn xs danger" title="Sign this account out on every device" onClick=${async () => { const r = await conn.request({ t: 'kick', username: a.username }); toast(r.ok ? `${a.username} logged out` : r.error, r.ok ? 'good' : 'error'); }}>Log out</button>`}</td>

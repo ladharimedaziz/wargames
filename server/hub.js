@@ -246,7 +246,8 @@ export function createHub(server, store, geo) {
       case 'setPassword': {
         const e = setPassword(m.username, m.password);
         if (e) return ack(false, { error: e });
-        for (const x of clients) if (x.user.username === m.username) x.ws.close(4001, 'Password changed');
+        // Kronos changing their own password keeps this session; every Zeus session on the account ends.
+        if (m.username !== 'kronos') for (const x of clients) if (x.user.username === m.username) x.ws.close(4001, 'Password changed');
         handle(c, { t: 'accounts' });
         return ack(true);
       }
