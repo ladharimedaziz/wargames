@@ -7,6 +7,7 @@ import { tensionLevel } from '/shared/engine/core.js';
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ease = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
+import { altFlagUrl, flagSig } from './altflag.js';
 const fade = (u, a = 0.12, b = 0.82) => (u < a ? u / a : u > b ? (1 - u) / (1 - b) : 1);
 const rnd = seed => { let x = seed | 0 || 1; return () => ((x = (x * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff); };
 
@@ -311,6 +312,11 @@ export const ACT_FX = {
   },
 
   // Armoured columns converge on the capital, a ring closes, and a new flag goes up.
+  coupFlagImg(flag) {
+    this.coupFlags ||= new Map(); const k = flagSig(flag); let im = this.coupFlags.get(k);
+    if (!im) { im = new Image(); im.src = altFlagUrl(flag); this.coupFlags.set(k, im); }
+    return im.complete && im.naturalWidth ? im : null;
+  },
   act_coup(ctx, fx, u, now, q, sc) {
     const e = fx.e, f = fade(u, 0.04, 0.85);
     this.outline(ctx, e.country, `rgba(255,110,90,${f * (0.5 + 0.5 * Math.sin(now / 120))})`, 2);
@@ -339,11 +345,13 @@ export const ACT_FX = {
       const h = ease(v / 0.5) * 26 * sc, px = q[0], py = q[1] - 4;
       ctx.strokeStyle = `rgba(230,230,235,${f})`; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px, py - 30 * sc); ctx.stroke();
       const fy = py - h, wv = Math.sin(now / 160) * 1.5;
-      ctx.fillStyle = `rgba(200,40,40,${f})`; ctx.beginPath(); ctx.moveTo(px, fy - 8 * sc); ctx.quadraticCurveTo(px + 7 * sc, fy - 8 * sc + wv, px + 14 * sc, fy - 8 * sc); ctx.lineTo(px + 14 * sc, fy); ctx.quadraticCurveTo(px + 7 * sc, fy + wv, px, fy); ctx.closePath(); ctx.fill();
-      ctx.fillStyle = `rgba(255,230,140,${f})`; ctx.beginPath(); ctx.arc(px + 7 * sc, fy - 4 * sc, 1.8 * sc, 0, TAU); ctx.fill();
+      if (e.ok !== false && e.flag) { const im = this.coupFlagImg(e.flag); if (im) { ctx.globalAlpha = f; ctx.drawImage(im, px, fy - 9 * sc, 20 * sc, 13 * sc); ctx.globalAlpha = 1; } }
+      else if (e.ok === false) { ctx.strokeStyle = `rgba(255,90,80,${f})`; ctx.lineWidth = 2; const z = 7 * sc; ctx.beginPath(); ctx.moveTo(px - z, py - 26 * sc - z); ctx.lineTo(px + z, py - 26 * sc + z); ctx.moveTo(px + z, py - 26 * sc - z); ctx.lineTo(px - z, py - 26 * sc + z); ctx.stroke(); }
+      else { ctx.fillStyle = `rgba(200,40,40,${f})`; ctx.beginPath(); ctx.moveTo(px, fy - 8 * sc); ctx.quadraticCurveTo(px + 7 * sc, fy - 8 * sc + wv, px + 14 * sc, fy - 8 * sc); ctx.lineTo(px + 14 * sc, fy); ctx.quadraticCurveTo(px + 7 * sc, fy + wv, px, fy); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = `rgba(255,230,140,${f})`; ctx.beginPath(); ctx.arc(px + 7 * sc, fy - 4 * sc, 1.8 * sc, 0, TAU); ctx.fill(); }
     }
     ctx.fillStyle = `rgba(255,120,100,${f})`; ctx.fillRect(q[0] - 3, q[1] - 3, 6, 6);
-    ctx.globalAlpha = f; this.actTag(ctx, q[0], q[1] + 20 * sc, 'coup'); ctx.globalAlpha = 1;
+    ctx.globalAlpha = f; this.actTag(ctx, q[0], q[1] + 20 * sc, 'coup', fx.e.ok === false ? ' FAILED' : ''); ctx.globalAlpha = 1;
   },
 
   // A gusher erupts: a dark column, golden spray, rings of light and a gold shimmer across the country.

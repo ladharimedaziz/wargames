@@ -1,5 +1,6 @@
 // The live world map, drawn on two canvases: a base layer (countries, borders, airspace) redrawn only when
 // something changes, and an effects layer animated every frame (traffic, units, strikes, battles).
+import { altFlagUrl, flagSig } from './altflag.js';
 import { geoEqualEarth, geoPath, geoGraticule10, geoInterpolate } from 'd3-geo';
 import { SEA_ZONES } from '/shared/data/places.js';
 import { CITIES } from '/shared/data/cities.js';
@@ -625,11 +626,12 @@ export class WorldMap {
   // until the image has loaded (it asks for a redraw when it does).
   flagFill(id, k) {
     this.flagImgs ||= new Map();
-    let e = this.flagImgs.get(id);
+    const alt = this.state?.countries?.[id]?.altFlag, key = alt ? `${id}|${flagSig(alt)}` : id;
+    let e = this.flagImgs.get(key);
     if (!e) {
       const img = new Image(); e = { img, pat: null };
       img.onload = () => { e.pat = this.bctx.createPattern(img, 'repeat'); this.dirty = true; };
-      img.src = `/client/img/flags/${id}.webp`; this.flagImgs.set(id, e);
+      img.src = alt ? altFlagUrl(alt) : `/client/img/flags/${id}.webp`; this.flagImgs.set(key, e);
     }
     if (!e.pat) return null;
     e.pat.setTransform(new DOMMatrix().scale(240 / k / 192));
@@ -640,11 +642,13 @@ export class WorldMap {
   flagReady(id) { return !!this.flagImage(id); }
   flagImage(id) {
     this.flagImgs ||= new Map();
-    let e = this.flagImgs.get(id);
+    // A government installed by a coup flies a made-up flag in place of the real one.
+    const alt = this.state?.countries?.[id]?.altFlag, key = alt ? `${id}|${flagSig(alt)}` : id;
+    let e = this.flagImgs.get(key);
     if (!e) {
       const img = new Image(); e = { img, ok: false, pat: null };
       img.onload = () => { e.ok = true; e.pat = this.bctx.createPattern(img, 'repeat'); this.dirty = true; };
-      img.src = `/client/img/flags/${id}.webp`; this.flagImgs.set(id, e);
+      img.src = alt ? altFlagUrl(alt) : `/client/img/flags/${id}.webp`; this.flagImgs.set(key, e);
     }
     return e.ok ? e.img : null;
   }

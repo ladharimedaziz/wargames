@@ -3,8 +3,9 @@ import { html, useState, run, cls } from '../lib.js';
 import { SEA_ZONES } from '/shared/data/places.js';
 import { UNIT_TYPES, TARGET_TYPES } from '/shared/engine/core.js';
 import { CountrySelect, ZoneSelect } from './tabs.js';
+import { altFlagUrl, randomFlag } from '../map/altflag.js';
 
-const EVENTS = [['earthquake', 'Earthquake'], ['flood', 'Floods'], ['pandemic', 'Outbreak'], ['blackout', 'Blackout'], ['coup', 'Military coup'], ['discovery', 'Oil discovery']];
+const EVENTS = [['earthquake', 'Earthquake'], ['flood', 'Floods'], ['pandemic', 'Outbreak'], ['blackout', 'Blackout'], ['discovery', 'Oil discovery']];
 const STATS = [['support', 'Support %', 0, 100, 1], ['stability', 'Stability %', 0, 100, 1], ['gdp', 'GDP $bn', 1, 30000, 1], ['treasury', 'Treasury $bn', -2000, 5000, 1], ['industry', 'Industry', 0.05, 1.2, 0.05], ['energy', 'Energy', 0.05, 1.2, 0.05], ['damage', 'Damage', 0, 1, 0.05], ['airDefense', 'Air defence', 0, 12, 1], ['inflation', 'Inflation %', -2, 80, 0.5]];
 
 export function SandboxTab({ conn, state, selected, selZone }) {
@@ -76,6 +77,8 @@ export function SandboxTab({ conn, state, selected, selZone }) {
         </div>
         ${UNIT_TYPES[unitType].domain === 'sea' && html`<div style="margin-top:6px"><${ZoneSelect} sm value=${zone} onChange=${setZone} /></div>`}
 
+        <${CoupBox} conn=${conn} c=${c} />
+
         <div class="sub-h">Acts of god</div>
         <div class="row wrap">${EVENTS.map(([e, l]) => html`<button class="btn xs" onClick=${() => k({ type: 'disaster', country: cid, kind: e }, `${l} in ${c.name}`)}>${l}</button>`)}</div>
         ${c.outbreak && html`<div class="row" style="margin-top:6px"><span class="chip" style="color:#b8ff6a">Outbreak ${c.outbreak.level}%</span>
@@ -131,4 +134,21 @@ function CivilWars({ conn, state }) {
         </div>
       </div></div>`;
     })}`;
+}
+
+// A coup, planned ahead: the regime that takes over, its made-up flag, then success or failure.
+function CoupBox({ conn, c }) {
+  const plan = c.coupPlan || {};
+  const [regime, setRegime] = useState(plan.regime || '');
+  const [flag, setFlag] = useState(plan.flag || null);
+  const save = (r = regime, f = flag) => run(conn, { type: 'setCoupPlan', country: c.id, regime: r, flag: f });
+  const reroll = () => { const f = randomFlag(); setFlag(f); save(regime, f); };
+  return html`<div class="sub-h">Coup in ${c.name}</div>
+    <div class="row"><input class="input sm grow" placeholder=${`New regime, e.g. National Salvation Council`} value=${regime} onInput=${e => setRegime(e.target.value)} onChange=${() => save()} />
+      <button class="btn xs" onClick=${reroll} title="Invent a flag for the new regime">🎲 Flag</button>${flag && html`<img src=${altFlagUrl(flag)} alt="" style="height:26px;border-radius:2px;border:1px solid #fff3" />`}</div>
+    <div class="row wrap" style="margin-top:6px">
+      <button class="btn xs danger" onClick=${async () => { await save(); run(conn, { type: 'coup', country: c.id, outcome: 'success' }, `Coup succeeds in ${c.name}`); }}>Coup succeeds</button>
+      <button class="btn xs" onClick=${() => run(conn, { type: 'coup', country: c.id, outcome: 'fail' }, `Coup fails in ${c.name}`)}>Coup fails</button>
+      ${c.origName && html`<button class="btn xs good" onClick=${() => run(conn, { type: 'setCoupPlan', country: c.id, regime: c.origName, flag: null }).then(() => run(conn, { type: 'restoreRegime', country: c.id }))}>Restore old regime</button>`}
+    </div>`;
 }

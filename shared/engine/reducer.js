@@ -552,6 +552,31 @@ const WORLD = {
     log(s, ctx, `Civil war: ${name} break away from ${P.name}`);
     return ok({ broadcastAnim: true });
   } },
+  restoreRegime: { perm: 'kronos', run(s, a) { const c = C(s, a.country); if (!c || !c.origName) return err('No coup to undo.'); c.name = c.origName; delete c.origName; delete c.altFlag; return ok(); } },
+  // A coup, planned per country: the new regime's name and flag, then success or failure on Kronos's word.
+  setCoupPlan: { perm: 'kronos', run(s, a) {
+    const c = C(s, a.country); if (!c) return err('Pick a country.');
+    const f = a.flag, okFlag = f && typeof f.pat === 'string' && Array.isArray(f.c) && f.c.length === 3 && f.c.every(x => /^#[0-9a-f]{6}$/i.test(x));
+    c.coupPlan = { regime: String(a.regime || '').trim().slice(0, 48), flag: okFlag ? { pat: f.pat.slice(0, 16), c: f.c } : null, bloc: BLOCS.includes(a.bloc) ? a.bloc : null };
+    return ok();
+  } },
+  coup: { perm: 'kronos', run(s, a, ctx) {
+    const c = C(s, a.country); if (!c) return err('Pick a country.');
+    const plan = c.coupPlan || {}, win = a.outcome !== 'fail';
+    if (win) {
+      c.origName ||= c.name; if (plan.regime) c.name = plan.regime;
+      if (plan.flag) c.altFlag = plan.flag;
+      if (plan.bloc) c.bloc = plan.bloc;
+      c.roe = 'forward'; c.support = 35; c.stability = clamp(c.stability - 30, 0, 100); c.gdp = Math.max(0.5, c.gdp * 0.97);
+      news(s, ctx, `Military coup in ${c.origName || c.name}: officers declare ${c.name}`, `انقلاب عسكري في ${c.ar}`, 7);
+    } else {
+      c.stability = clamp(c.stability - 12, 0, 100); c.support = clamp(c.support + 6, 0, 100);
+      news(s, ctx, `Coup attempt crushed in ${c.name}; plotters arrested`, `إحباط محاولة انقلاب في ${c.ar}`, 6);
+    }
+    log(s, ctx, `Kronos: coup in ${c.name} ${win ? 'succeeds' : 'fails'}`);
+    sandboxFx(s, ctx, [{ kind: 'act', act: 'coup', country: c.id, at: at(c), ok: win, flag: win ? plan.flag : null }]);
+    return ok({ broadcastAnim: true });
+  } },
   // Factions of one civil war: set how any two of them (or a faction and the government) treat each other.
   factionStance: { perm: 'zeus', run(s, a, ctx) {
     const A = C(s, a.a), B = C(s, a.b); if (!A || !B || A.id === B.id) return err('Pick two factions.');
