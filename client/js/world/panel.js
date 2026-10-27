@@ -13,6 +13,7 @@ import { Inspector } from './inspector.js';
 import { SandboxTab } from './sandbox.js';
 import { DMDrawer, useUnread } from '../views/dm.js';
 import { sfx } from '../fx/audio.js';
+import { stateSplit } from '/shared/data/german-split.js';
 
 const TABS = [
   { id: 'review', label: 'News desk', icon: '◉' },
@@ -150,7 +151,7 @@ function MapView({ conn, state, selected, onSelect, layers, picking, brush, setB
   const onPaint = (keys, b) => run(conn, { type: 'paintControl', owner: b.owner, keys, mode: b.mode });
   const onPaintRef = useRef(onPaint); onPaintRef.current = onPaint;
   useEffect(() => {
-    const m = new WorldMap(ref.current, { interactive: true, onSelect: (...a) => onSelectRef.current(...a), onHover: (h, x, y) => setTip(h ? { ...h, x, y } : null), onPaint: (...a) => onPaintRef.current(...a), onBorder: ring => setBrush(b => (b && b.mode === 'border' ? { ...b, ring } : b)), onFleetMove: f => run(conn, { type: 'queueOrder', order: { country: f.owner, type: f.type, zone: f.zone, point: f.point, units: f.units }, now: true }, f.type === 'force' ? 'Forcing the strait' : 'Fleet under way') });
+    const m = new WorldMap(ref.current, { split: stateSplit(stateRef.current), interactive: true, onSelect: (...a) => onSelectRef.current(...a), onHover: (h, x, y) => setTip(h ? { ...h, x, y } : null), onPaint: (...a) => onPaintRef.current(...a), onBorder: ring => setBrush(b => (b && b.mode === 'border' ? { ...b, ring } : b)), onFleetMove: f => run(conn, { type: 'queueOrder', order: { country: f.owner, type: f.type, zone: f.zone, point: f.point, units: f.units }, now: true }, f.type === 'force' ? 'Forcing the strait' : 'Fleet under way') });
     mapRef.current = m;
     m.ready.then(() => m.setState(stateRef.current, { layers }));
     window.__map = m;

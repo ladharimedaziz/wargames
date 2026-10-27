@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import * as geo from '../../server/geo-index.js';
 import { createWorldState, createCourtState } from '../../shared/engine/state.js';
 import { CELL, NI } from '../../shared/engine/control.js';
+import { applyScenario } from '../../shared/engine/scenarios.js';
 import { applyAction } from '../../shared/engine/reducer.js';
 import { parseCommand } from '../../shared/engine/command.js';
 import { atWar, relation, warClosures } from '../../shared/engine/core.js';
@@ -410,6 +411,21 @@ test('peace terms: sanctions lifted, blockades end, trade resumes, reconstructio
   assert.ok(!s.countries[RU].sanctions.includes(UA));
   assert.ok(s.treaties.some(t => t.type === 'trade') && s.treaties.some(t => t.type === 'nonaggression'));
   assert.ok(s.countries[UA].damage < 0.5 && s.countries[RU].treasury === t0 - 20);
+});
+
+test('the Cold War map splits Germany: East Germany is its own country, the modern map is unchanged', () => {
+  const cold = geo.coldIndex();
+  assert.equal(cold.countryAt(13.4, 52.5), '278', 'Berlin is East German');
+  assert.equal(cold.countryAt(8.6, 50.1), '276', 'Frankfurt is West German');
+  assert.ok(!geo.atlasCountryIds().includes('278'));
+  assert.ok(cold.neighborsOf('278').includes('616') && !cold.neighborsOf('276').includes('616'));
+  const info = { ids: cold.atlasCountryIds(), name: cold.atlasName, anchor: cold.anchorOf, neighbors: cold.neighborsOf };
+  const s = createWorldState({ id: 'c', name: 'Cold', seed: 3 }, info);
+  applyScenario(s, 'cold85', info);
+  assert.equal(s.countries['278'].name, 'East Germany');
+  assert.equal(s.countries['278'].bloc, 'B');
+  assert.equal(s.countries['276'].bloc, 'A');
+  assert.ok(Object.values(s.units).some(u => u.owner === '278'));
 });
 
 test('a war only closes airspace that is contested and within the enemy\'s reach', () => {

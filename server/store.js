@@ -7,8 +7,12 @@ import { createWorldState, createCourtState, createCouncilState } from '../share
 import { applyScenario } from '../shared/engine/scenarios.js';
 import { COUNCIL_PRESETS } from '../shared/data/councils.js';
 import * as geo from './geo-index.js';
+import { splitMapFor, stateSplit } from '../shared/data/german-split.js';
 
-const geoInfo = { ids: geo.atlasCountryIds(), name: geo.atlasName, anchor: geo.anchorOf, neighbors: geo.neighborsOf };
+const infoOf = g => ({ ids: g.atlasCountryIds(), name: g.atlasName, anchor: g.anchorOf, neighbors: g.neighborsOf });
+const geoInfo = infoOf(geo);
+let coldInfo = null; // the 1985 map, with Germany split in two
+const infoFor = preset => (splitMapFor(preset) ? (coldInfo ||= infoOf(geo.coldIndex())) : geoInfo);
 const DEFAULTS = {
   ww3: { name: 'WW3 Crisis', mode: 'world', disguise: true },
   bravo: { name: 'Committee Bravo', mode: 'world' },
@@ -18,6 +22,9 @@ const DEFAULTS = {
 const MAX_SNAPSHOTS = 40;
 const PRESET_MODE = { modern: 'world', cold85: 'world', latam: 'world', court: 'court', ...Object.fromEntries(Object.keys(COUNCIL_PRESETS).map(k => [k, 'council'])) };
 const PRESET_LABEL = { cold85: 'Cold War 1985', latam: 'The Americas South of the Border', ...Object.fromEntries(Object.entries(COUNCIL_PRESETS).map(([k, p]) => [k, p.name])) };
+
+// The map a committee is played on (the Cold War one has East and West Germany).
+export const geoFor = state => (stateSplit(state) ? geo.coldIndex().geo : geo);
 
 export class Store {
   constructor(dir) {
@@ -44,9 +51,9 @@ export class Store {
     const seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
     const s = m === 'court' ? createCourtState({ id, name: nm, seed })
       : m === 'council' ? createCouncilState({ id, name: nm, seed }, preset || 'who')
-      : createWorldState({ id, name: nm, seed }, geoInfo);
+      : createWorldState({ id, name: nm, seed }, infoFor(preset));
     s.meta.createdAt = Date.now(); s.meta.preset = preset || (m === 'world' ? 'modern' : m); migrateGrid(s);
-    if (m === 'world') applyScenario(s, preset || 'modern', geoInfo);
+    if (m === 'world') applyScenario(s, preset || 'modern', infoFor(preset));
     if (d.disguise && m === 'world') s.display.scene = 'disguise';
     return s;
   }

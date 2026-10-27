@@ -10,6 +10,7 @@ import { t, tt } from './i18n.js';
 import { Globe } from '../views/login.js';
 import { CourtDisplay } from './court.js';
 import { Unthinkable } from './unthinkable.js';
+import { stateSplit } from '/shared/data/german-split.js';
 
 const committee = new URLSearchParams(location.search).get('c');
 
@@ -96,7 +97,7 @@ function StageMap({ state, lang, relations }) {
   const ref = useRef(), map = useRef();
   const stRef = useRef(state); stRef.current = state;
   useEffect(() => {
-    const m = new WorldMap(ref.current, { cinematic: true, stageControl: true, lang, onNukeLaunch: () => sfx.alarm(), onNukeImpact: () => sfx.boom(2) });
+    const m = new WorldMap(ref.current, { split: stateSplit(stRef.current), cinematic: true, stageControl: true, lang, onNukeLaunch: () => sfx.alarm(), onNukeImpact: () => sfx.boom(2) });
     map.current = m; window.__map = m;
     m.ready.then(() => m.setState(stRef.current, { layers: { ...stRef.current.settings.layers, wars: true } }));
     return () => m.destroy();

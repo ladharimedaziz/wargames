@@ -3,12 +3,15 @@ import { feature, mesh } from 'topojson-client';
 import { geoBounds, geoContains, geoArea, geoCentroid, geoPath, geoEquirectangular } from 'd3-geo';
 import { featureCountryId } from '/shared/data/places.js';
 import { buildCellRaster } from '/shared/engine/control.js';
+import { splitGermany, EAST_GERMANY } from '/shared/data/german-split.js';
 
-let loading = null;
+let loading = null, loadingSplit = null;
 
-async function load(url) {
+// `split` is the Cold War map: Germany cut into West and East along the inner-German border.
+async function load(url, split) {
   const topo = await (await fetch(url)).json();
-  const fc = feature(topo, topo.objects.countries);
+  const fc0 = feature(topo, topo.objects.countries);
+  const fc = split ? { ...fc0, features: splitGermany(fc0.features, /110m/.test(url) ? '110m' : '50m', split) } : fc0;
   const byId = new Map();
   for (const f of fc.features) {
     const id = featureCountryId(f);
@@ -30,10 +33,11 @@ async function load(url) {
     return { id, feature: merged, parts, centroid: geoCentroid(main.f), area: parts.reduce((s, p) => s + p.area, 0) };
   });
   const borders = mesh(topo, topo.objects.countries, (a, b) => a !== b);
+  if (split) borders.coordinates.push(split.border);
   const coast = mesh(topo, topo.objects.countries, (a, b) => a === b);
   // The coarse atlas also defines the territory grid fronts are held on (identical to the server's).
   const cells = /110m/.test(url) ? buildCellRaster(fc.features.map(f => ({ id: featureCountryId(f), geometry: f.geometry }))) : null;
-  return { countries, byId: new Map(countries.map(c => [c.id, c])), borders, coast, topo, pairs: new Map(), cells };
+  return { countries, byId: new Map(countries.map(c => [c.id, c])), borders, coast, topo, pairs: new Map(), cells, split: !!split };
 }
 
 // The land border two countries share, as a MultiLineString (empty when they do not touch). Cached per pair.
@@ -41,6 +45,13 @@ export function pairBorder(atlas, a, b) {
   const key = a < b ? `${a}|${b}` : `${b}|${a}`;
   if (!atlas.pairs.has(key)) {
     const { topo } = atlas;
+    if (atlas.split) {
+      // The atlas topology still has one Germany: East and West Germany share the inner border, and the East takes Poland's.
+      const g = x => (x === EAST_GERMANY ? '276' : x);
+      if ((a === '276' && b === '616') || (b === '276' && a === '616')) { atlas.pairs.set(key, { type: 'MultiLineString', coordinates: [] }); return atlas.pairs.get(key); }
+      if ((a === '276' && b === EAST_GERMANY) || (b === '276' && a === EAST_GERMANY)) { atlas.pairs.set(key, { type: 'MultiLineString', coordinates: [atlas.splitBorder] }); return atlas.pairs.get(key); }
+      a = g(a); b = g(b);
+    }
     atlas.pairs.set(key, mesh(topo, topo.objects.countries, (x, y) => {
       const i = featureCountryId(x), j = featureCountryId(y);
       return (i === a && j === b) || (i === b && j === a);
@@ -49,7 +60,11 @@ export function pairBorder(atlas, a, b) {
   return atlas.pairs.get(key);
 }
 
-export function loadAtlas() {
+export function loadAtlas(split = false) {
+  if (split) {
+    loadingSplit ||= fetch('/shared/data/german-split.json').then(r => r.json()).then(sp => Promise.all([load('/vendor/world-110m.json', sp), load('/vendor/world-50m.json', sp)]).then(([lo, hi]) => { lo.splitBorder = hi.splitBorder = sp.border; return { lo, hi }; }));
+    return loadingSplit;
+  }
   if (!loading) loading = Promise.all([load('/vendor/world-110m.json'), load('/vendor/world-50m.json')]).then(([lo, hi]) => ({ lo, hi }));
   return loading;
 }

@@ -6,6 +6,7 @@ import { tensionLevel } from '../shared/engine/core.js';
 import { verifyToken, parseCookies, accounts, passwordFor, rotatePassword, setPassword, signOut, COMMITTEE_IDS } from './auth.js';
 import { readJSON, writeJSON } from './files.js';
 import { readFileSync } from 'node:fs';
+import { geoFor } from './store.js';
 
 // The code version the browsers are told about: the git commit when there is one. When it changes after an
 // update, every open panel and stage display reloads itself to pick up the new code.
@@ -126,7 +127,7 @@ export function createHub(server, store, geo) {
         if (!id || !canAccess(user, id)) return ack(false, { error: 'Join a committee first.' });
         if (c.view === 'display') return ack(false, { error: 'The stage display is view-only.' });
         const state = store.get(id);
-        const ctx = { role: user.role, user: user.username, now: Date.now(), geo };
+        const ctx = { role: user.role, user: user.username, now: Date.now(), geo: geoFor(state) };
         const def = m.action?.type === 'resolveTurn';
         if (def && state.settings?.autoSnap !== false) store.snapshot(id, `Start of turn ${state.meta.turn}`, user.username);
         const r = applyAction(state, m.action, ctx);
