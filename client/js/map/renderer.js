@@ -305,8 +305,10 @@ export class WorldMap {
       withCamOn(ctx, this.dpr, this.cam, () => {
         ctx.save(); ctx.clip(cpath);
         ctx.fillStyle = 'rgba(6,8,14,0.3)'; ctx.fill(sh.path, 'evenodd');
-        ctx.fillStyle = hexA(col, 0.6); ctx.fill(sh.path, 'evenodd');
-        const pat = this.pattern('front' + col, 'rgba(255,255,255,0.22)'); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(sh.path, 'evenodd');
+        // The invader's flag covers the ground it holds, faded so cities and roads still show through.
+        const flag = this.flagFill(g.owner, k);
+        if (flag) { ctx.globalAlpha = 0.55; ctx.fillStyle = flag; ctx.fill(sh.path, 'evenodd'); ctx.globalAlpha = 1; ctx.fillStyle = hexA(col, 0.14); ctx.fill(sh.path, 'evenodd'); }
+        else { ctx.fillStyle = hexA(col, 0.6); ctx.fill(sh.path, 'evenodd'); const pat = this.pattern('front' + col, 'rgba(255,255,255,0.22)'); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(sh.path, 'evenodd'); }
         ctx.restore();
         // The line itself, only where it is a real front: a hot glow with marching dashes.
         if (sh.front.length) {
@@ -606,6 +608,21 @@ export class WorldMap {
     return this.patterns[key];
   }
 
+  // The flag of country `id` as a repeating fill, sized to about 240 screen pixels across whatever the zoom. Null
+  // until the image has loaded (it asks for a redraw when it does).
+  flagFill(id, k) {
+    this.flagImgs ||= new Map();
+    let e = this.flagImgs.get(id);
+    if (!e) {
+      const img = new Image(); e = { img, pat: null };
+      img.onload = () => { e.pat = this.bctx.createPattern(img, 'repeat'); this.dirty = true; };
+      img.src = `/client/img/flags/${id}.webp`; this.flagImgs.set(id, e);
+    }
+    if (!e.pat) return null;
+    e.pat.setTransform(new DOMMatrix().scale(240 / k / 192));
+    return e.pat;
+  }
+
   // --- base layer ---
   drawBase() {
     const ctx = this.bctx, s = this.state, { k, x, y } = this.cam, dpr = this.dpr;
@@ -636,7 +653,10 @@ export class WorldMap {
         const sweeping = this.fronts?.[id] && performance.now() < this.fronts[id].start + this.fronts[id].dur * 1000;
         if (c.occupiedBy && s.countries[c.occupiedBy] && !sweeping) {
           const oc = s.blocs[s.countries[c.occupiedBy].bloc]?.color || '#ff4d5e';
-          const pat = this.pattern('occ' + oc, hexA(oc, 0.85)); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(path);
+          // The occupier's flag over the whole country, with a bloc-coloured tint so it reads as held ground.
+          const flag = this.flagFill(c.occupiedBy, k);
+          if (flag) { ctx.fillStyle = 'rgba(6,8,14,0.35)'; ctx.fill(path); ctx.globalAlpha = 0.62; ctx.fillStyle = flag; ctx.fill(path); ctx.globalAlpha = 1; ctx.fillStyle = hexA(oc, 0.16); ctx.fill(path); }
+          else { const pat = this.pattern('occ' + oc, hexA(oc, 0.85)); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(path); }
         }
         if (c.capitulated) { ctx.fillStyle = 'rgba(30,30,30,0.55)'; ctx.fill(path); }
         if (s.global.closedAirspace?.[id] && this.layers.air !== false) {
