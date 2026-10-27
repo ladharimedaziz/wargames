@@ -121,3 +121,12 @@
 .council.with-map .cn-roll-grid i { font-size: .58vw; }
 .cn-ring-flag { position: absolute; inset: 9%; width: 82%; height: 82%; border-radius: 50%; object-fit: cover; box-shadow: 0 0 0 2px rgba(255,255,255,.15); }
 .cn-flag { height: 1.1em; width: 1.6em; object-fit: cover; border-radius: 2px; align-self: center; box-shadow: 0 0 0 1px rgba(255,255,255,.2); }
+
+/* Cold War 1985: amber phosphor, a CRT in a bunker. Panels turn amber; the stage map becomes a radar scope. */
+.era-cold { --bg: #0a0805; --bg-1: #100c07; --bg-2: #16110a; --bg-3: #1d160c; --bg-4: #271e11; --line: #3a2c14; --line-2: #55401c; --text: #f3e6c8; --text-2: #c9b48a; --text-3: #8a7650; --accent: #ffb64d; --accent-2: #e09a2c; --accent-glow: rgba(255,182,77,.35); --font: 'JetBrains Mono', ui-monospace, monospace; --font-hud: 'JetBrains Mono', ui-monospace, monospace; }
+.era-cold .btn, .era-cold .card, .era-cold .input { border-radius: 2px; }
+.stage.era-cold .stage-map canvas { filter: sepia(.38) saturate(1.25) contrast(1.06) brightness(.97); }
+.stage.era-cold::before { content: ''; position: absolute; inset: 0; z-index: 30; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(0,0,0,.22) 0 1px, transparent 1px 3px), radial-gradient(120% 120% at 50% 50%, transparent 55%, rgba(0,0,0,.65) 100%); mix-blend-mode: multiply; }
+.stage.era-cold::after { content: ''; position: absolute; inset: 0; z-index: 31; pointer-events: none; animation: era-flicker 5s steps(1) infinite; background: rgba(255,170,60,.025); }
+.stage.era-cold { font-family: 'JetBrains Mono', ui-monospace, monospace; letter-spacing: .02em; }
+@keyframes era-flicker { 0%,100% { opacity: 1; } 47% { opacity: .6; } 48% { opacity: 1; } 92% { opacity: .75; } }

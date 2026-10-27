@@ -65,7 +65,7 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
   }, []);
 
   return html`
-    <div class=${cls('shell', kronos && 'is-kronos', state.kronos.locked && !kronos && 'is-locked')}>
+    <div class=${cls('shell', state.settings.year && 'era-cold', kronos && 'is-kronos', state.kronos.locked && !kronos && 'is-locked')}>
       <${TopBar} conn=${conn} user=${user} state=${state} logout=${logout} onBack=${onBack} pending=${pending} unread=${unread} openDm=${() => setDmOpen(true)} committee=${committee} />
       <div class="body">
         <nav class="rail">

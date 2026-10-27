@@ -4,7 +4,7 @@ import { declareWar } from './resolve.js';
 
 const NATO = ['840', '124', '826', '250', '276', '380', '724', '620', '528', '056', '442', '208', '578', '352', '300', '792', '392', '410', '036', '554', '818', '586', '764', '608'];
 const PACT = ['643', '804', '112', '398', '860', '795', '762', '417', '031', '051', '268', '498', '440', '428', '233', '616', '348', '642', '100', '203', '703', '192', '704', '024', '231', '496', '408', '004', '434', '760', '558'];
-const NONALIGNED = ['156', '356', '364', '368', '710', '566', '076', '032', '484', '862'];
+const NONALIGNED = ['156', '356', '364', '368'];
 const SSR = { '804': 'Ukrainian SSR', '112': 'Byelorussian SSR', '398': 'Kazakh SSR', '860': 'Uzbek SSR', '795': 'Turkmen SSR', '762': 'Tajik SSR', '417': 'Kirghiz SSR', '031': 'Azerbaijan SSR', '051': 'Armenian SSR', '268': 'Georgian SSR', '498': 'Moldavian SSR', '440': 'Lithuanian SSR', '428': 'Latvian SSR', '233': 'Estonian SSR' };
 
 function coldWar(s) {

@@ -57,7 +57,7 @@ function Stage({ conn }) {
   const bannerShown = state.display.banner && !['disguise', 'ending', 'intro', 'reveal'].includes(state.display.scene);
   const timerShown = state.timer.visible !== false && (state.timer.running || state.timer.remaining > 0) && !['disguise', 'ending', 'intro', 'reveal'].includes(state.display.scene);
   return html`
-    <div class=${cls('stage', `lang-${lang}`, bannerShown && 'has-banner', timerShown && 'has-timer', state.kronos.eye && 'has-eye')} dir=${isAr(lang) ? 'rtl' : 'ltr'} onClick=${!soundOn ? enableSound : undefined}>
+    <div class=${cls('stage', `lang-${lang}`, state.settings.year && 'era-cold', bannerShown && 'has-banner', timerShown && 'has-timer', state.kronos.eye && 'has-eye')} dir=${isAr(lang) ? 'rtl' : 'ltr'} onClick=${!soundOn ? enableSound : undefined}>
       ${state.mode === 'court' ? html`<${CourtDisplay} conn=${conn} state=${state} lang=${lang} />` : state.mode === 'council' ? html`<${CouncilDisplay} conn=${conn} state=${state} />` : html`<${WorldStage} conn=${conn} state=${state} lang=${lang} />`}
       ${bannerShown && html`<${Banner} b=${state.display.banner} lang=${lang} />`}
       ${timerShown && html`<${StageTimer} conn=${conn} timer=${state.timer} />`}
