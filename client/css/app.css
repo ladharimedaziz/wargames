@@ -121,6 +121,9 @@
 .seg button.no.on { background: rgba(255, 77, 94, .25); color: #ff8a96; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; text-transform: none; letter-spacing: 0; }
 .chip .x { border: 0; background: none; color: var(--text-3); cursor: pointer; padding: 0 0 0 2px; font-size: 10px; }
+.join-members { gap: 4px; margin: 4px 0; }
+.join-chip { display: inline-flex; align-items: center; gap: 2px; padding-right: 2px; }
+.join-chip .btn { padding: 0 4px; min-height: 0; line-height: 16px; }
 .clause { padding: 4px 0; text-transform: none; letter-spacing: 0; font-weight: 400; font-size: 13px; color: var(--text); }
 .sig-row { padding: 4px 0; }
 .war-row { padding: 6px 8px; background: var(--bg-2); border-radius: 7px; font-size: 12.5px; }

@@ -74,6 +74,13 @@ export function boundAllies(state, a, b) {
   return sharedAlliances(A, B).find(k => ALLIANCES[k].binding) || (state.treaties.some(t => t.type === 'alliance' && t.parties.includes(a) && t.parties.includes(b)) ? 'treaty' : null);
 }
 
+// Who started the war between two countries: the one that declared it, except where an ally joined to defend a
+// friend, when the side that attacked first stays the aggressor. Treaty obligations hinge on this.
+export function aggressorOf(state, a, b) {
+  const w = state.wars.find(w => (w.a === a && w.b === b) || (w.a === b && w.b === a));
+  return w ? (w.aggressor ?? w.a) : null;
+}
+
 export function atWar(state, a, b) {
   return state.wars.some(w => (w.a === a && w.b === b) || (w.a === b && w.b === a));
 }

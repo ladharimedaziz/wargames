@@ -59,14 +59,19 @@ export function ReviewTab({ conn, state }) {
               <div class="news-en">${r.kind === 'ending' ? html`<span class="chip gold">Ending</span> ` : r.kind === 'join' ? html`<span class="chip red">Needs approval</span> ` : ''}${r.en}</div>
               ${r.ar && r.ar !== r.en && html`<div class="news-ar ar" dir="rtl">${r.ar}</div>`}
               ${r.detail && html`<div class="dim small">${r.detail}</div>`}
+              ${r.kind === 'join' && (r.countries || []).length > 1 && html`<div class="row wrap join-members">${r.countries.map(id => html`
+                <span class="chip join-chip" key=${id}>${state.countries[id]?.name || id}
+                  <button class="btn xs ghost" title="Approve just this country" onClick=${() => run(conn, { type: 'airItem', id: r.id, only: id }, 'War declared')}>✓</button>
+                  <button class="btn xs ghost" title="Drop this country from the request" onClick=${() => run(conn, { type: 'killItem', id: r.id, only: id })}>✕</button>
+                </span>`)}</div>`}
               <div class="row news-actions">
                 <span class="dim small">T${r.turn} · P${r.priority}</span><div class="grow"></div>
                 ${r.kind === 'join'
-                  ? html`<button class="btn xs danger" onClick=${() => run(conn, { type: 'airItem', id: r.id }, 'War declared')}>Approve: join the war</button>`
+                  ? html`<button class="btn xs danger" onClick=${() => run(conn, { type: 'airItem', id: r.id }, 'War declared')}>${(r.countries || []).length > 1 ? 'Approve all' : 'Approve: join the war'}</button>`
                   : r.kind === 'ending'
                   ? html`<button class="btn xs gold" onClick=${() => run(conn, { type: 'airItem', id: r.id }, 'Ending is playing on stage')}>Play ending</button>`
                   : html`<button class="btn xs ghost" onClick=${() => setEditing(r.id)}>Edit</button><button class="btn xs good" onClick=${() => run(conn, { type: 'airItem', id: r.id })}>Air</button>`}
-                <button class="btn xs danger" onClick=${() => run(conn, { type: 'killItem', id: r.id })}>${r.kind === 'join' ? 'Decline' : 'Kill'}</button>
+                <button class="btn xs danger" onClick=${() => run(conn, { type: 'killItem', id: r.id })}>${r.kind === 'join' ? ((r.countries || []).length > 1 ? 'Decline all' : 'Decline') : 'Kill'}</button>
               </div>`}
           </div>`)}
       </div>
