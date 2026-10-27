@@ -114,5 +114,6 @@ export function start(server, port) {
 const shutdown = () => { console.log('Saving all committees…'); try { store.flush(); } catch (e) { console.error(e); } process.exit(0); };
 process.on('SIGTERM', shutdown);
 process.on('SIGINT', shutdown);
+process.on('message', m => { if (m === 'shutdown') shutdown(); }); // from scripts/host.mjs
 
 export { store };
