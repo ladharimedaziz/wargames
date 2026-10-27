@@ -57,6 +57,7 @@ export function headlinesFrom(state, ev) {
       }
       case 'front': if (e.pct >= 100) break; push(4, e.pct > e.prev ? `${N(e.by)} forces advance deeper into ${N(e.country)}, now holding ${Math.round(e.pct)}% of its territory` : `${N(e.country)} pushes ${N(e.by)} back, retaking ground (${Math.round(e.pct)}% still held)`,
         e.pct > e.prev ? `قوات ${A(e.by)} تتقدم داخل ${A(e.country)} وتسيطر على ${Math.round(e.pct)}% من أراضيها` : `${A(e.country)} تصد ${A(e.by)} وتستعيد أراضي (${Math.round(e.pct)}% ما زالت محتلة)`); break;
+      case 'exchange': push(10, `NUCLEAR EXCHANGE: ${N(e.first)} strikes ${N(e.hit)}, and every arsenal answers (${e.strikes} warheads)`, ''); break;
       case 'ceasefire': push(4, `${N(e.a)} and ${N(e.b)} agree to a ceasefire`, `${A(e.a)} و${A(e.b)} تتفقان على وقف إطلاق النار`); break;
       case 'peace': push(5, `Peace treaty signed between ${N(e.a)} and ${N(e.b)}`, `توقيع معاهدة سلام بين ${A(e.a)} و${A(e.b)}`); break;
       case 'alliance': push(3, `${N(e.a)} and ${N(e.b)} announce a military alliance`, `${A(e.a)} و${A(e.b)} تعلنان تحالفاً عسكرياً`); break;
