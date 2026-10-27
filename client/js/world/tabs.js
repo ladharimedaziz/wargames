@@ -60,10 +60,11 @@ export function ReviewTab({ conn, state }) {
               <div class="news-en">${r.kind === 'ending' ? html`<span class="chip gold">Ending</span> ` : r.kind === 'join' ? html`<span class="chip red">Needs approval</span> ` : ''}${r.en}</div>
               ${r.detail && html`<div class="dim small">${r.detail}</div>`}
               ${r.kind === 'join' && (r.countries || []).length > 1 && html`<div class="row wrap join-members">${r.countries.map(id => html`
-                <span class="chip join-chip" key=${id}>${state.countries[id]?.name || id}
+                <span class="chip join-chip" key=${id}>${state.countries[id]?.name || id}${r.why?.[id] && html` <i class="dim" title=${r.why[id].treaty ? 'Bound by treaty' : 'Chooses to join'}>${r.why[id].treaty ? '⚖ treaty with' : '→ backs'} ${state.countries[r.why[id].friend]?.name}</i>`}
                   <button class="btn xs ghost" title="Approve just this country" onClick=${() => run(conn, { type: 'airItem', id: r.id, only: id }, 'War declared')}>✓</button>
                   <button class="btn xs ghost" title="Drop this country from the request" onClick=${() => run(conn, { type: 'killItem', id: r.id, only: id })}>✕</button>
                 </span>`)}</div>`}
+              ${r.kind === 'join' && r.why && Object.values(r.why).some(w => w.treaty) && (r.countries || []).some(id => !r.why[id]?.treaty) && html`<div class="row"><button class="btn xs" title="Approve only the countries bound by treaty; the rest stay out" onClick=${async () => { for (const id of r.countries.filter(i => r.why[i]?.treaty)) await run(conn, { type: 'airItem', id: r.id, only: id }, 'Treaty-bound country joins'); }}>⚖ Approve treaty-bound only</button></div>`}
               <div class="row news-actions">
                 <span class="dim small">T${r.turn} · P${r.priority}</span><div class="grow"></div>
                 ${r.kind === 'join'
