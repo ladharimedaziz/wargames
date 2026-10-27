@@ -12,7 +12,7 @@ function baseState({ id, name, mode, seed }) {
     id, name, mode, version: 1,
     meta: { turn: 1, clock: '2027-03-14', turnDays: 7, idSeq: 0, createdAt: 0, phase: 'setup' },
     rng: { seed: seed >>> 0, n: 0 },
-    settings: { lang: 'en', sfx: true, airMode: 'auto', night: false, showStrikes: true, layers: { air: true, naval: true, units: true, relations: false, labels: true }, fog: 'public' },
+    settings: { lang: 'en', sfx: true, airMode: 'auto', night: false, showStrikes: true, aesthetic: false, layers: { air: true, naval: true, units: true, relations: false, labels: true }, fog: 'public' },
     display: {
       scene: mode === 'court' ? 'court' : 'map',
       introAt: 0, revealAt: 0, endingAt: 0, ending: null, reportAt: 0,

@@ -282,7 +282,7 @@ const WORLD = {
   setSetting: { perm: 'zeus', run(s, a) {
     const st = s.settings;
     if (a.key === 'lang' && ['en', 'ar', 'both'].includes(a.value)) st.lang = a.value;
-    else if (['sfx', 'night', 'showStrikes', 'autoSnap'].includes(a.key)) st[a.key] = !!a.value;
+    else if (['sfx', 'night', 'showStrikes', 'autoSnap', 'aesthetic'].includes(a.key)) st[a.key] = !!a.value;
     else if (a.key === 'autoAir') st.airMode = a.value ? 'auto' : 'manual';
     else if (a.key === 'layer' && a.layer in st.layers) st.layers[a.layer] = !!a.value;
     else if (a.key === 'fog') st.fog = a.value === 'public' || a.value === 'all' || C(s, a.value) ? a.value : 'public';

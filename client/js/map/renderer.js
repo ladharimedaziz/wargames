@@ -886,7 +886,9 @@ export class WorldMap {
   ambientStrikes(now) {
     if (this.state?.settings?.showStrikes === false || !this.opts.cinematic && !this.opts.showStrikes) return;
     if (now < (this.nextShow || 0)) return;
-    this.nextShow = now + 4500 + Math.random() * 6000;
+    // Aesthetic mode: the same show, three times as busy. Still nothing in the simulation changes.
+    const hot = this.state.settings.aesthetic;
+    this.nextShow = now + (hot ? 1200 + Math.random() * 1800 : 4500 + Math.random() * 6000);
     const groups = (this.ctlGroups || []).filter(g => g.shape?.front?.length && this.state.wars.some(w => (w.a === g.owner && w.b === g.country) || (w.b === g.owner && w.a === g.country)));
     if (!groups.length) return;
     const g = groups[Math.floor(Math.random() * groups.length)], f = g.shape.front[Math.floor(Math.random() * g.shape.front.length)];
