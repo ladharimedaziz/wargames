@@ -2,7 +2,7 @@
 import { SEA_ZONES, FLEET_MOVES_PER_TURN } from '../data/places.js';
 import { AMPHIBIOUS_A3, NEO_A3, AIRBORNE_KM, US_AIRCRAFT } from '../data/militaries.js';
 import { distanceKm, seaRoute, zonesTouching } from '../geo.js';
-import { UNIT_TYPES, TARGET_TYPES, ROE, anchor, unitRange, unitsOf, atWar, sameSide, countryName, isActive, isOOB, OOB_ERROR } from './core.js';
+import { clamp, UNIT_TYPES, TARGET_TYPES, ROE, anchor, unitRange, unitsOf, atWar, sameSide, countryName, isActive, isOOB, OOB_ERROR } from './core.js';
 
 export const ORDER_TYPES = {
   strike:     { label: 'Air or missile strike', group: 'military', needs: ['target'] },
@@ -269,7 +269,6 @@ export function autoUnits(state, o, counts = {}) {
       o._why = near ? `Nearest ${UNIT_TYPES[near.u.type].name.toLowerCase()} is ${Math.round(near.d)} km away (range ${near.range} km).` : `${state.countries[o.country].name} has no strike units left.`;
     }
   } else if (o.type === 'invade' && T) {
-    const n = counts.n || 1;
     let armies = unitsOf(state, o.country, 'army').filter(u => u.loc.kind === 'country' && u.loc.id !== o.target);
     const borders = armies.filter(u => (state.adjacency[u.loc.id] || []).includes(o.target));
     const bySea = canLandBySea(state, o.country) || sameSide(state, o.country, o.target);
@@ -277,6 +276,8 @@ export function autoUnits(state, o, counts = {}) {
     const air = !sea && armies.filter(u => airdropReach(state, o.country, o.target, u));
     const pool = borders.length ? borders : sea ? armies : air;
     pool.sort((a, b) => b.strength - a.strength);
+    // Left on auto, half of what can reach goes in (up to six army groups); the rest holds home.
+    const n = counts.n || clamp(Math.ceil(pool.length / 2), 1, 6);
     o.units = pool.slice(0, air && !borders.length ? Math.min(n, 2) : n).map(u => u.id);
   } else if (o.type === 'airdrop' && T) {
     const armies = unitsOf(state, o.country, 'army').filter(u => u.loc.kind === 'country' && u.loc.id !== o.target && u.strength > 20 && airdropReach(state, o.country, o.target, u));

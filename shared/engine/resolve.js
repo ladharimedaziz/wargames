@@ -259,9 +259,13 @@ function resolveInvasions(state, orders, ev) {
     } else {
       for (const { u } of attackers) damageUnit(state, u, u.strength * clamp(0.5 * ratio + 0.2, 0.2, 0.8), ev, 'repelled');
       for (const u of defenders) damageUnit(state, u, u.strength * clamp(0.2 * ratio, 0.03, 0.3), ev, 'held the line');
-      // A failed offensive gives ground back.
+      // A failed offensive gives ground back. A first push that comes close still bites off a shallow strip
+      // along the border, so the front shows up before the defender throws it back.
       if (T.front && !T.occupiedBy && (T.front.by === lead || sameSide(state, T.front.by, lead))) {
         moveFront(state, T, frontDelta(T.front.mode, -clamp(8 / Math.max(ratio, 0.2), 8, 25), 8), ev);
+      } else if (!T.front && !T.occupiedBy && ratio >= 0.25 && attackers.some(({ u }) => state.units[u.id])) {
+        T.front = { by: lead, pct: 0, prev: 0, from: origin, turn: state.meta.turn, mode: 'auto' };
+        moveFront(state, T, clamp(1 + 7 * ratio, 2, 8), ev);
       }
       const cas = Math.round((A + D) * between(state, 0.4, 0.9));
       T.casualties += cas; state.global.casualties += cas;

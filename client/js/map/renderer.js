@@ -6,7 +6,7 @@ import { CITIES } from '/shared/data/cities.js';
 import { relation, isOOB, OUT_OF_BOUNDS } from '/shared/engine/core.js';
 import { loadAtlas, makeCountryAt, makeLandAt, pairBorder } from './atlas.js';
 import { contours as d3contours } from 'd3-contour';
-import { CELL, cellKey, cellIJ, cellCenter, neighbors as cellNeighbors } from '/shared/engine/control.js';
+import { CELL, NI, cellKey, cellIJ, cellCenter, neighbors as cellNeighbors } from '/shared/engine/control.js';
 import { AirTraffic, SeaTraffic } from './traffic.js';
 import { ACT_FX } from './acts.js';
 import { AIRCRAFT_FX, DIPLO_KINDS } from './aircraft.js';
@@ -200,11 +200,17 @@ export class WorldMap {
   controlGroups(now) {
     if (this.ctlGroups && (this.ctlProgress(now) >= 1) === this.ctlGroupsSettled) return this.ctlGroups;
     const c = this.ctl, cells = this.atlas.lo.cells, groups = new Map();
+    // Countries across the antimeridian (Russia, the US, Fiji) get one group per side, so no box spans the world.
+    const wraps = (this.wrapsAm ||= new Map());
+    const crosses = C => {
+      if (!wraps.has(C)) { let w = false, e = false; for (const k of cells.cellsOf(C)) { const i = k % NI; if (i < NI * 0.1) w = true; else if (i > NI * 0.9) e = true; } wraps.set(C, w && e); }
+      return wraps.get(C);
+    };
     const add = (k, owner) => {
       const C = cells.homeOf(k); if (!C || owner === C) return;
-      const key = owner + '|' + C;
-      let g = groups.get(key);
       const [i, j] = cellIJ(k);
+      const key = owner + '|' + C + (crosses(C) ? (i < NI / 2 ? '|w' : '|e') : '');
+      let g = groups.get(key);
       if (!g) groups.set(key, g = { owner, country: C, i0: i, i1: i, j0: j, j1: j, n: 0, sx: 0, sy: 0 });
       g.i0 = Math.min(g.i0, i); g.i1 = Math.max(g.i1, i); g.j0 = Math.min(g.j0, j); g.j1 = Math.max(g.j1, j);
       if (c.map[k] === owner) { const [lon, lat] = cellCenter(k); g.n++; g.sx += lon; g.sy += lat; }
@@ -238,7 +244,7 @@ export class WorldMap {
       v2[y * W2 + x] = (v[y0 * W + x0] + v[y0 * W + x1] + v[y1 * W + x0] + v[y1 * W + x1]) / 4;
     }
     const mp = d3contours().size([W2, H2]).thresholds([0.5])(v2)[0];
-    const proj = (gx, gy) => this.projection([-180 + (i0 + gx) * CELL, 90 - (j0 + gy) * CELL]);
+    const proj = (gx, gy) => this.projection([clamp(-180 + (i0 + gx) * CELL, -180, 180), 90 - (j0 + gy) * CELL]);
     const path = new Path2D(), rings = [];
     const chaikin = ring => {
       const out = [];

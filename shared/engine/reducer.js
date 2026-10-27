@@ -8,7 +8,7 @@ import {
 } from './core.js';
 import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.js';
 import { resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
-import { bindGeo, hasGeo, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter } from './control.js';
+import { bindGeo, hasGeo, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter, mainland } from './control.js';
 import { courtActions } from './court.js';
 
 const SCENES = ['map', 'disguise', 'intro', 'reveal', 'ending', 'report', 'blank', 'pause', 'vote', 'treaty', 'polls', 'web', 'court'];
@@ -507,8 +507,12 @@ const WORLD = {
       const cells = cellsOf(P.id);
       let seed = a.at && Number.isFinite(a.at.lat) ? a.at : null;
       if (!seed && cells.length) {
+        // The far end of the mainland, so the rising does not start (and stay stuck) on a distant island.
         let best = null, bd = -1;
-        for (const k of cells) { const [lon, lat] = cellCenter(k); const d = (lon - P.lon) ** 2 + (lat - P.lat) ** 2; if (d > bd) { bd = d; best = { lat, lon }; } }
+        for (const k of mainland(P.id, P)) {
+          const [lon, lat] = cellCenter(k); let dl = Math.abs(lon - P.lon); if (dl > 180) dl = 360 - dl;
+          const d = (dl * Math.cos(lat * Math.PI / 180)) ** 2 + (lat - P.lat) ** 2; if (d > bd) { bd = d; best = { lat, lon }; }
+        }
         seed = best;
       }
       const n = Math.max(1, Math.round(cells.length * share / 100));

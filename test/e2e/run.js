@@ -29,7 +29,7 @@ const check = (ok, what) => { console.log(`${ok ? '✓' : '✗'} ${what}`); if (
 
 async function waitForServer() {
   for (let i = 0; i < 50; i++) {
-    try { if ((await fetch(`${BASE}/healthz`)).ok) return; } catch { /* not up yet */ }
+    try { if ((await (await fetch(`${BASE}/healthz`)).json()).ready) return; } catch { /* not up yet */ }
     await new Promise(r => setTimeout(r, 200));
   }
   throw new Error('Server did not start:\n' + log);
