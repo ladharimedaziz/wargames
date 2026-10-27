@@ -150,7 +150,7 @@ function MapView({ conn, state, selected, onSelect, layers, picking, brush }) {
   const onPaint = (keys, b) => run(conn, { type: 'paintControl', owner: b.owner, keys, mode: b.mode });
   const onPaintRef = useRef(onPaint); onPaintRef.current = onPaint;
   useEffect(() => {
-    const m = new WorldMap(ref.current, { interactive: true, onSelect: (...a) => onSelectRef.current(...a), onHover: (h, x, y) => setTip(h ? { ...h, x, y } : null), onPaint: (...a) => onPaintRef.current(...a), onFleetMove: f => run(conn, { type: 'queueOrder', order: { country: f.owner, type: f.type, zone: f.zone, units: f.units }, now: true }, f.type === 'force' ? 'Forcing the strait' : 'Fleet under way') });
+    const m = new WorldMap(ref.current, { interactive: true, onSelect: (...a) => onSelectRef.current(...a), onHover: (h, x, y) => setTip(h ? { ...h, x, y } : null), onPaint: (...a) => onPaintRef.current(...a), onFleetMove: f => run(conn, { type: 'queueOrder', order: { country: f.owner, type: f.type, zone: f.zone, point: f.point, units: f.units }, now: true }, f.type === 'force' ? 'Forcing the strait' : 'Fleet under way') });
     mapRef.current = m;
     m.ready.then(() => m.setState(stateRef.current, { layers }));
     window.__map = m;

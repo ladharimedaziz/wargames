@@ -129,6 +129,14 @@ export const SEA_NAV = {
     return out;
   },
 
+  // The nearest open-water point to a longitude/latitude: the point itself at sea, or the closest water cell off a coast.
+  seaPoint(lon, lat) {
+    const grid = this.seaGrid(), [cx, cy] = cellOf(lon, lat);
+    if (grid[cy * NX + cx]) return { lat, lon };
+    const c = this.nearestSea(grid, lon, lat);
+    return c ? lonLatOf(c[0], c[1]) : null;
+  },
+
   // Full water route through a list of zone ids (or points): the waypoints of every leg joined up.
   seaWayVia(points) {
     const out = [];

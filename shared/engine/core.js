@@ -152,7 +152,7 @@ export function shiftRelation(state, a, b, delta) {
 
 export function anchor(state, loc) {
   if (!loc) return null;
-  if (loc.kind === 'sea') { const z = SEA_ZONES[loc.id]; return z && { lat: z.lat, lon: z.lon }; }
+  if (loc.kind === 'sea') { if (loc.lat != null && loc.lon != null) return { lat: loc.lat, lon: loc.lon }; const z = SEA_ZONES[loc.id]; return z && { lat: z.lat, lon: z.lon }; }
   const c = state.countries[loc.id];
   return c && { lat: c.lat, lon: c.lon };
 }

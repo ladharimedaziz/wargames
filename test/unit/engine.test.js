@@ -526,3 +526,14 @@ test('tanker countries strike anywhere; weaker nuclear powers have limited nuke 
   const ru = validateOrder(s, { id: 'd', country: RU, type: 'nuke', target: US });
   assert.ok(ru.ok, ru.reason);
 });
+
+test('a fleet can be sent to a free point at sea, and land is refused', () => {
+  const { s, zeus } = world();
+  const ship = Object.values(s.units).find(u => u.owner === US && u.type === 'fleet' && u.loc.kind === 'sea' && u.loc.id === 'us_east');
+  const land = zeus({ type: 'queueOrder', order: { country: US, type: 'fleet', units: [ship.id], point: { lat: 40, lon: -100 } }, now: true });
+  assert.ok(land.ok || /water/.test(land.error || ''), 'inland points are nudged or refused');
+  const r = zeus({ type: 'queueOrder', order: { country: US, type: 'fleet', units: [ship.id], point: { lat: 38, lon: -50 } }, now: true });
+  assert.ok(r.ok, r.error);
+  assert.equal(s.units[ship.id].loc.lat, 38);
+  assert.equal(s.units[ship.id].loc.lon, -50);
+});
