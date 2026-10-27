@@ -362,3 +362,21 @@ html, body { background: #000; }
 .stage.has-eye .court .ct-head { padding-top: 5.2em; }
 @keyframes drop-in-c { from { transform: translate(-50%, -160%); opacity: 0; } }
 .stage:has(.court) .sound-pill { left: 16px; bottom: 16px; transform: none; }
+
+/* Nuclear exchange ending */
+.unthinkable { position: absolute; inset: 0; z-index: 40; background: #000; color: #fff; overflow: hidden; }
+.unthinkable canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.ut-warn { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: .6em; }
+.ut-w1 { font: 700 5em/1 var(--font-hud); letter-spacing: .2em; color: #ff4d4d; text-shadow: 0 0 30px rgba(255, 60, 60, .8); animation: ut-blink .7s steps(2) infinite; }
+.ut-w2 { font: 700 3em/1 var(--font-hud); } .ut-w2 span { font-size: .4em; letter-spacing: .2em; opacity: .7; }
+.ut-w3 { font: 600 1em/1 var(--font); letter-spacing: .25em; opacity: .6; text-transform: uppercase; }
+@keyframes ut-blink { 50% { opacity: .35; } }
+.ut-end { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; padding: 2em; gap: .5em; }
+.ut-sign { font-size: 6em; line-height: 1; color: #e8c547; }
+.ut-end h1 { margin: 0; font: 600 4.6em/1 var(--font-hud); letter-spacing: .3em; text-transform: uppercase; }
+.ut-end p { font: 400 1.6em/1.5 Georgia, serif; color: rgba(255, 255, 255, .78); margin: .4em auto 0; max-width: 34em; }
+.ut-winter { display: flex; justify-content: center; gap: 3em; margin-top: 1.6em; animation: end-in 1.4s var(--ease-out) both; }
+.ut-winter b { display: block; font: 700 2em/1 var(--font-hud); }
+.ut-winter span { font-size: .75em; letter-spacing: .12em; text-transform: uppercase; opacity: .6; }
+.ut-foot { font: 400 1.1em/1.5 Georgia, serif; opacity: .6; animation: end-in 1.4s both; }
+.ut-last { font: 700 1.4em/1 var(--font-hud); letter-spacing: .4em; text-transform: uppercase; margin-top: .8em; animation: end-in 2s both; }

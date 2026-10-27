@@ -8,6 +8,7 @@ import { SEA_ZONES } from '/shared/data/places.js';
 import { t, tt } from './i18n.js';
 import { Globe } from '../views/login.js';
 import { CourtDisplay } from './court.js';
+import { Unthinkable } from './unthinkable.js';
 
 const committee = new URLSearchParams(location.search).get('c');
 
@@ -415,6 +416,7 @@ function Ending({ state, lang, now }) {
   const e = state.display.ending || { type: 'custom', title: 'The End', line: '' };
   const tone = ENDINGS[e.type]?.tone || 'neutral';
   const el = (now - state.display.endingAt) / 1000;
+  if (e.type === 'nuclear' && e.exchange) return html`<${Unthinkable} state=${state} now=${now} />`;
   return html`<div class=${cls('ending', `end-${tone}`, `end-${e.type}`)}>
     ${tone === 'good' && html`<div class="end-dawn"></div>`}
     ${tone === 'dark' && html`<div class="end-line"></div>`}

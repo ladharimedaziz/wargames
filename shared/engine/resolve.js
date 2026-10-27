@@ -19,7 +19,7 @@ import { snapshotStats } from './state.js';
 const PRIORITY = ['roe', 'overflight', 'war', 'alliance', 'ceasefire', 'peace', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'lift',
   'rebase', 'cap', 'fleet', 'blockade', 'siege', 'alert', 'cyber', 'satellite', 'intel', 'spy', 'propaganda', 'neo', 'strike', 'helistrike', 'invade', 'airdrop', 'airassault', 'nuke', 'election'];
 
-const ANIMATED = ['strike', 'battle', 'naval', 'fleet', 'siege', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo', 'heli', 'civil_war', 'airdrop',
+const ANIMATED = ['exchange', 'strike', 'battle', 'naval', 'fleet', 'siege', 'move', 'nuke', 'unit_lost', 'chokepoint', 'occupation', 'scrubbed', 'war', 'front', 'landing', 'liberation', 'neo', 'heli', 'civil_war', 'airdrop',
   'ceasefire', 'peace', 'alliance', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'overflight', 'cyber', 'intel', 'spy', 'satellite', 'propaganda', 'alert', 'lift', 'roe', 'election'];
 
 const pt = c => ({ lat: c.lat, lon: c.lon });
@@ -45,6 +45,58 @@ export function declareWar(state, a, b, ev, why, aggressor = a) {
     }
   }
   return true;
+}
+
+// One warhead starts the end of the world. The country hit, and every nuclear ally of either side, answers with
+// everything it has: each side's arsenals are fired at the other side's major countries. Kept abstract: missile
+// tracks and flashes on the map, and a dark "unthinkable" ending (radiation, nuclear winter) cuts in at once.
+function nuclearExchange(state, o, ev, ctx) {
+  if (state.global.exchange) return;
+  const first = o.country, hit = o.target;
+  const sideOf = c => Object.values(state.countries).filter(x => isActive(x) && !x.rebelOf && (x.id === c || sameSide(state, x.id, c)));
+  const A = sideOf(first), B = sideOf(hit);
+  const shared = new Set(A.map(c => c.id));
+  const sideB = B.filter(c => !shared.has(c.id)); // a country on both sides' books sits it out
+  if (!sideB.length) return;
+  const warheads = c => clamp(unitsOf(state, c.id, 'missile').length + 2, 2, 8);
+  const strikes = [], struck = new Set([hit]);
+  const salvo = (from, to) => {
+    const targets = to.filter(c => c.major).sort((a, b) => b.gdp - a.gdp);
+    for (const f of from.filter(c => c.nuclear?.has)) {
+      const n = warheads(f);
+      for (let i = 0; i < n && targets.length; i++) {
+        const T = targets[i % targets.length];
+        if (T.id === hit && f.id === first) continue; // that one already landed
+        strikes.push({ kind: 'nuke', owner: f.id, target: T.id, from: pt(f), to: pt(T), at: pt(T), salvo: true });
+        struck.add(T.id);
+      }
+    }
+  };
+  salvo(sideB, A); // the answer first
+  salvo(A, sideB);
+  strikes.splice(48);
+  let dead = 0;
+  for (const id of struck) {
+    const T = state.countries[id]; if (!T) continue;
+    if (id !== hit) { T.damage = 1; T.gdp *= 0.3; T.industry = 0.1; T.energy = 0.1; T.stability = 5; T.support = 10; state.global.closedAirspace[id] = { turn: state.meta.turn, at: ctx.now }; }
+    const cas = Math.round(T.base.pop * 15);
+    if (id !== hit) { T.casualties += cas; state.global.casualties += cas; }
+    dead += T.base.pop * 0.4;
+  }
+  state.global.nukesUsed += strikes.length;
+  for (const f of sideB) if (!atWar(state, first, f.id)) declareWar(state, first, f.id, ev, 'nuclear');
+  state.global.exchange = { turn: state.meta.turn, first, hit, strikes: strikes.length + 1 };
+  state.global.tension = 10;
+  ev.push(...strikes);
+  ev.push({ kind: 'exchange', first, hit, strikes: strikes.length + 1 });
+  // The ending cuts in straight away, before the missiles land.
+  const N = id => state.countries[id]?.name || id;
+  state.display.ending = {
+    type: 'nuclear', title: 'The Unthinkable', ar: '',
+    line: `${N(first)} used a nuclear weapon on ${N(hit)}. The answer came within minutes, from every arsenal on both sides.`,
+    exchange: { strikes: strikes.length + 1, firing: [...new Set([first, ...strikes.map(s => s.owner)])].map(N), struck: [...struck].map(N), deadMillions: Math.round(dead) },
+  };
+  state.display.endingAt = ctx.now; state.display.scene = 'ending'; state.meta.phase = 'ended';
 }
 
 function interceptPower(state, cid, attackerOwner) {
@@ -646,6 +698,7 @@ function runOrders(state, list, ctx, ev) {
         state.global.closedAirspace[o.target] = { turn, at: ctx.now };
         if (!atWar(state, o.country, o.target)) declareWar(state, o.country, o.target, ev, 'nuclear');
         ev.push({ kind: 'nuke', owner: o.country, target: o.target, from: pt(state.countries[o.country]), to: pt(T), at: pt(T) });
+        if (state.settings.nuclearExchange !== false) nuclearExchange(state, o, ev, ctx);
         break;
       }
       case 'cyber': case 'intel': case 'spy': case 'satellite': case 'propaganda': resolveCovert(state, o, ev); break;
