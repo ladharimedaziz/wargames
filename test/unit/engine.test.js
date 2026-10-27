@@ -113,6 +113,18 @@ test('Security Council vetoes block a resolution', () => {
   assert.ok(r.result.vetoes.includes(RU));
 });
 
+test('UN votes: only delegations count, and prepared votes stand', () => {
+  const { s, zeus } = world();
+  s.countries[US].control = 'player'; s.countries[RU].control = 'player'; s.countries[UA].control = 'player';
+  zeus({ type: 'voteOpen', title: 'Ceasefire now', kind: 'ceasefire', body: 'assembly', preset: { [RU]: 'no', [UA]: 'yes' } });
+  const v = s.unVotes.find(x => x.open);
+  assert.deepEqual(Object.keys(v.votes).sort(), [US, RU, UA].sort(), 'only the three delegations vote');
+  assert.equal(v.votes[RU], 'no'); assert.equal(v.votes[UA], 'yes'); assert.equal(v.votes[US], 'abstain');
+  zeus({ type: 'voteClose' });
+  zeus({ type: 'voteOpen', title: 'Everyone', kind: 'condemn', body: 'assembly', delegatesOnly: false });
+  assert.ok(Object.keys(s.unVotes.find(x => x.open).votes).length > 3, 'opened to every major country');
+});
+
 test('a signed peace treaty ends the war', () => {
   const { s, zeus } = world();
   command(s, zeus, 'russia declares war on ukraine');

@@ -4,7 +4,7 @@ import { SEA_ZONES } from '../data/places.js';
 import { carrierName } from '../data/militaries.js';
 import { zonesTouching } from '../geo.js';
 import {
-  UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures, isOOB, OOB_ERROR, aggressorOf, enemiesOf,
+  UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures, isOOB, OOB_ERROR, aggressorOf, enemiesOf, unVoters, aiVote,
 } from './core.js';
 import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.js';
 import { resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
@@ -66,15 +66,6 @@ function trimReview(s) {
 }
 
 // Votes the computer casts for AI countries on a UN resolution, from their relations with the sponsor and the target.
-function aiVote(s, c, v) {
-  if (v.target && (c.id === v.target)) return 'no';
-  if (c.id === v.sponsor) return 'yes';
-  const rs = relation(s, c.id, v.sponsor);
-  const rt = v.target ? relation(s, c.id, v.target) : 0;
-  const score = rs * 0.6 - rt * 0.6 + (v.kind === 'ceasefire' || v.kind === 'humanitarian' ? 25 : 0);
-  return score > 12 ? 'yes' : score < -12 ? 'no' : 'abstain';
-}
-
 function tallyVote(s, v) {
   const t = { yes: 0, no: 0, abstain: 0, vetoes: [] };
   for (const [id, choice] of Object.entries(v.votes)) {
@@ -84,13 +75,6 @@ function tallyVote(s, v) {
   return t;
 }
 
-function voters(s, body) {
-  const all = Object.values(s.countries).filter(c => isActive(c) && c.major);
-  if (body !== 'council') return all;
-  const p5 = all.filter(c => c.veto);
-  const rest = all.filter(c => !c.veto).sort((a, b) => b.influence - a.influence).slice(0, 10);
-  return [...p5, ...rest];
-}
 
 const WORLD = {
   // Countries
@@ -337,7 +321,14 @@ const WORLD = {
     const body = a.body === 'council' ? 'council' : 'assembly';
     const kinds = ['condemn', 'sanction', 'ceasefire', 'humanitarian', 'custom'];
     const v = { id: newId(s, 'v'), title, ar: String(a.ar || '').slice(0, 160), body, kind: kinds.includes(a.kind) ? a.kind : 'custom', sponsor: C(s, a.sponsor) ? a.sponsor : null, target: C(s, a.target) ? a.target : null, open: true, openedAt: ctx.now, votes: {}, result: null };
-    for (const c of voters(s, body)) v.votes[c.id] = c.control === 'player' ? 'abstain' : aiVote(s, c, v);
+    // Only delegations vote (unless the room has none, or the Zeus opens it to every country). A vote the Zeus
+    // prepared beforehand stands; the rest are picked automatically (delegates start on abstain).
+    v.delegatesOnly = a.delegatesOnly !== false;
+    const preset = a.preset && typeof a.preset === 'object' ? a.preset : {};
+    for (const c of unVoters(s, body, v.delegatesOnly)) {
+      const p = preset[c.id];
+      v.votes[c.id] = ['yes', 'no', 'abstain'].includes(p) ? p : c.control === 'player' && !a.autoDelegates ? 'abstain' : aiVote(s, c, v);
+    }
     s.unVotes.push(v);
     s.display.scene = 'vote'; s.display.sceneAt = ctx.now;
     return ok({ vote: v });
@@ -351,7 +342,8 @@ const WORLD = {
   voteClose: { perm: 'zeus', run(s, a, ctx) {
     const v = s.unVotes.find(x => x.open); if (!v) return err('No vote is open.');
     const t = tallyVote(s, v);
-    const passed = t.yes > t.no && (v.body !== 'council' || (t.vetoes.length === 0 && t.yes >= 9));
+    // The Council needs 9 of 15 (three fifths of whoever sits in it) and no veto.
+    const passed = t.yes > t.no && (v.body !== 'council' || (t.vetoes.length === 0 && t.yes >= Math.ceil(Object.keys(v.votes).length * 0.6)));
     v.open = false; v.closedAt = ctx.now; v.result = { ...t, passed };
     if (passed && v.target) {
       if (v.kind === 'sanction') for (const id of Object.keys(v.votes).filter(id => v.votes[id] === 'yes' && id !== v.target)) { const c = C(s, id); if (!c.sanctions.includes(v.target)) c.sanctions.push(v.target); }

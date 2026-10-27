@@ -184,3 +184,23 @@ export const OUT_OF_BOUNDS = OOB_GROUPS.flat();
 export const isOOB = id => OUT_OF_BOUNDS.includes(id);
 export const OOB_ERROR = 'Israel, Palestine and Saudi Arabia are out of bounds in this simulation.';
 export function isActive(c) { return c && c.control !== 'inactive' && !c.capitulated && !isOOB(c.id); }
+
+// Who sits in a UN vote. With delegatesOnly, only countries a delegation plays (when the room has any).
+export function unVoters(state, body, delegatesOnly = true) {
+  let all = Object.values(state.countries).filter(c => isActive(c) && (c.major || c.control === 'player'));
+  if (delegatesOnly && all.some(c => c.control === 'player')) all = all.filter(c => c.control === 'player');
+  if (body !== 'council') return all;
+  const p5 = all.filter(c => c.veto);
+  const rest = all.filter(c => !c.veto).sort((a, b) => b.influence - a.influence).slice(0, 10);
+  return [...p5, ...rest];
+}
+
+// How a computer-run country votes on a resolution: with its friends, against its rivals, and for peace.
+export function aiVote(s, c, v) {
+  if (v.target && (c.id === v.target)) return 'no';
+  if (c.id === v.sponsor) return 'yes';
+  const rs = v.sponsor ? relation(s, c.id, v.sponsor) : 0;
+  const rt = v.target ? relation(s, c.id, v.target) : 0;
+  const score = rs * 0.6 - rt * 0.6 + (v.kind === 'ceasefire' || v.kind === 'humanitarian' ? 25 : 0);
+  return score > 12 ? 'yes' : score < -12 ? 'no' : 'abstain';
+}
