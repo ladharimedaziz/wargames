@@ -570,6 +570,8 @@ const WORLD = {
   } },
   setNukeOverride: { perm: 'kronos', run(s, a, ctx) { s.global.nukeOverride = !!a.value; log(s, ctx, `Kronos ${a.value ? 'unlocked' : 'locked'} nuclear weapons below tension 10`); return ok(); } },
   setNuclearExchange: { perm: 'kronos', run(s, a) { s.settings.nuclearExchange = !!a.value; return ok(); } },
+  // War options Kronos can switch off: computer fleets sailing and hunting on their own, combined-arms bonuses.
+  setWarOption: { perm: 'kronos', run(s, a) { if (!['autoNavy', 'combinedArms'].includes(a.key)) return err('Unknown option.'); s.settings[a.key] = !!a.value; return ok(); } },
   setAiNukes: { perm: 'kronos', run(s, a) { s.settings.aiNukes = !!a.value; return ok(); } },
   disaster: { perm: 'kronos', run(s, a, ctx) {
     const c = C(s, a.country), d = DISASTERS[a.kind]; if (!c || !d) return err('Pick a country and event.');
