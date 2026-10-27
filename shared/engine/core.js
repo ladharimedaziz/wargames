@@ -81,6 +81,17 @@ export function aggressorOf(state, a, b) {
   return w ? (w.aggressor ?? w.a) : null;
 }
 
+// A world war: two big blocs (A and B) with at least three wars between their members. Their fronts are drawn as one
+// line per bloc, under the bloc's flag. Returns the two bloc keys, or null.
+export function worldWarBlocs(state) {
+  let n = 0;
+  for (const w of state.wars || []) {
+    const a = state.countries[w.a], b = state.countries[w.b]; if (!a || !b || a.rebelOf || b.rebelOf) continue;
+    if ((a.bloc === 'A' && b.bloc === 'B') || (a.bloc === 'B' && b.bloc === 'A')) n++;
+  }
+  return n >= 3 ? ['A', 'B'] : null;
+}
+
 export function atWar(state, a, b) {
   return state.wars.some(w => (w.a === a && w.b === b) || (w.a === b && w.b === a));
 }

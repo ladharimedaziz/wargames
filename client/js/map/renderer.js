@@ -5,7 +5,7 @@ import { geoEqualEarth, geoPath, geoGraticule10, geoInterpolate } from 'd3-geo';
 import { SEA_ZONES } from '/shared/data/places.js';
 import { CITIES } from '/shared/data/cities.js';
 import { AIRCRAFT } from '/shared/data/militaries.js';
-import { relation, isOOB, OUT_OF_BOUNDS, sameSide } from '/shared/engine/core.js';
+import { relation, worldWarBlocs, isOOB, OUT_OF_BOUNDS, sameSide } from '/shared/engine/core.js';
 import { distanceKm, seaRoute, zonesTouching } from '/shared/geo.js';
 import { loadAtlas, makeCountryAt, makeLandAt, pairBorder } from './atlas.js';
 import { contours as d3contours } from 'd3-contour';
@@ -360,21 +360,21 @@ export class WorldMap {
       if (!C || !O || !cpath) continue;
       if (C.occupiedBy === g.owner && !live) continue; // drawn whole by the base layer
       const sh = this.groupShape(g, now, time); if (!sh.rings.length) continue;
-      const col = this.colorOf(O, '#ff8a3d');
+      const col = this.heldColor(O, '#ff8a3d'), fl = this.heldFlag(g.owner);
       const fighting = s.wars.some(w => (w.a === g.owner && w.b === g.country) || (w.b === g.owner && w.a === g.country));
       withCamOn(ctx, this.dpr, this.cam, () => {
         ctx.save(); ctx.clip(cpath);
         ctx.fillStyle = 'rgba(6,8,14,0.3)'; ctx.fill(sh.path, 'evenodd');
         // The invader's flag covers the ground it holds, faded so cities and roads still show through.
-        if (this.flagReady(g.owner)) { ctx.save(); ctx.clip(sh.path, 'evenodd'); this.drawFlag(ctx, g.owner, sh.box ||= ringBox(sh.rings), 0.55); ctx.restore(); ctx.fillStyle = hexA(col, 0.14); ctx.fill(sh.path, 'evenodd'); }
+        if (this.flagReady(fl)) { ctx.save(); ctx.clip(sh.path, 'evenodd'); this.drawFlag(ctx, fl, sh.box ||= ringBox(sh.rings), 0.55); ctx.restore(); ctx.fillStyle = hexA(col, 0.14); ctx.fill(sh.path, 'evenodd'); }
         else { ctx.fillStyle = hexA(col, 0.6); ctx.fill(sh.path, 'evenodd'); const pat = this.pattern('front' + col, 'rgba(255,255,255,0.22)'); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(sh.path, 'evenodd'); }
         ctx.restore();
         // The line itself, only where it is a real front: a hot glow with marching dashes.
         if (sh.front.length) {
           ctx.save(); ctx.clip(cpath);
           ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-          ctx.strokeStyle = 'rgba(255,110,50,0.4)'; ctx.lineWidth = 6 / k; ctx.stroke(sh.path);
-          ctx.strokeStyle = '#ffc07a'; ctx.lineWidth = 1.5 / k; ctx.setLineDash([5 / k, 3 / k]); ctx.lineDashOffset = -time * 12 / k; ctx.stroke(sh.path); ctx.setLineDash([]);
+          const ww = !!worldWarBlocs(s)?.includes(O.bloc) && !O.rebelOf; ctx.strokeStyle = ww ? hexA(col, 0.75) : 'rgba(255,110,50,0.4)'; ctx.lineWidth = (ww ? 9 : 6) / k; ctx.stroke(sh.path);
+          ctx.strokeStyle = ww ? '#fff' : '#ffc07a'; ctx.lineWidth = 1.5 / k; ctx.setLineDash([5 / k, 3 / k]); ctx.lineDashOffset = -time * 12 / k; ctx.stroke(sh.path); ctx.setLineDash([]);
           // Chevrons pressing into the defender's ground.
           const sz = 6.5 / k, step = Math.max(1, Math.floor(sh.front.length / 10));
           for (let j = 0; j < sh.front.length; j += step) {
@@ -713,7 +713,40 @@ export class WorldMap {
 
   // One flag, stretched over a box, instead of a tiled pattern: it grows and shrinks with the ground it covers.
   flagReady(id) { return !!this.flagImage(id); }
+  // In a world war the two blocs fight under one flag each: pseudo ids 'bloc:A' and 'bloc:B'.
+  blocFlag(key) {
+    const era = this.state?.settings?.era || 'modern', ck = `bloc:${key}:${era}`;
+    this.flagImgs ||= new Map();
+    let e = this.flagImgs.get(ck); if (e) return e.img;
+    const cv = Object.assign(document.createElement('canvas'), { width: 360, height: 240 }), g = cv.getContext('2d'), cx = 180, cy = 120;
+    if (key === 'A') {
+      // NATO: dark blue field, white compass rose in a ring.
+      g.fillStyle = '#004990'; g.fillRect(0, 0, 360, 240);
+      g.strokeStyle = '#fff'; g.lineWidth = 5; g.beginPath(); g.arc(cx, cy, 52, 0, TAU); g.stroke();
+      g.fillStyle = '#fff'; g.beginPath();
+      for (let i = 0; i < 16; i++) { const a = i * Math.PI / 8 - Math.PI / 2, r = i % 4 === 0 ? 100 : i % 2 === 0 ? 44 : 22, r2 = r; g.lineTo(cx + Math.cos(a) * r2, cy + Math.sin(a) * r2); g.lineTo(cx + Math.cos(a + Math.PI / 16) * 10, cy + Math.sin(a + Math.PI / 16) * 10); }
+      g.closePath(); g.fill();
+    } else if (era === 'cold85') {
+      // Warsaw Pact: red banner, gold wreath round a star.
+      g.fillStyle = '#b01c1c'; g.fillRect(0, 0, 360, 240);
+      g.strokeStyle = '#f2c230'; g.lineWidth = 6; g.beginPath(); g.arc(cx, cy, 64, 0.5, TAU - 0.5); g.stroke();
+      g.fillStyle = '#f2c230'; g.beginPath();
+      for (let i = 0; i < 10; i++) { const a = i * Math.PI / 5 - Math.PI / 2, r = i % 2 ? 22 : 52; g.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r); }
+      g.closePath(); g.fill();
+    } else {
+      // The modern eastern pact: deep red, gold star inside a ring of smaller stars.
+      g.fillStyle = '#8f1d1d'; g.fillRect(0, 0, 360, 240);
+      g.fillStyle = '#f2c230';
+      for (let n = 0; n < 12; n++) { const a = n * TAU / 12, x = cx + Math.cos(a) * 80, y = cy + Math.sin(a) * 80; g.beginPath(); for (let i = 0; i < 10; i++) { const b = i * Math.PI / 5 - Math.PI / 2, r = i % 2 ? 5 : 11; g.lineTo(x + Math.cos(b) * r, y + Math.sin(b) * r); } g.closePath(); g.fill(); }
+      g.beginPath(); for (let i = 0; i < 10; i++) { const b = i * Math.PI / 5 - Math.PI / 2, r = i % 2 ? 22 : 52; g.lineTo(cx + Math.cos(b) * r, cy + Math.sin(b) * r); } g.closePath(); g.fill();
+    }
+    e = { img: cv, ok: true }; this.flagImgs.set(ck, e); return cv;
+  }
+  // The flag a holder's ground flies: its bloc's in a world war, otherwise its own.
+  heldFlag(id) { const c = this.state?.countries?.[id], ww = this.state && worldWarBlocs(this.state); return ww && c && ww.includes(c.bloc) && !c.rebelOf ? `bloc:${c.bloc}` : id; }
+  heldColor(c, fallback) { const ww = this.state && worldWarBlocs(this.state); return ww && c && ww.includes(c.bloc) && !c.rebelOf ? this.state.blocs[c.bloc].color : this.colorOf(c, fallback); }
   flagImage(id) {
+    if (String(id).startsWith('bloc:')) return this.blocFlag(id.slice(5));
     this.flagImgs ||= new Map();
     // A government installed by a coup flies a made-up flag in place of the real one.
     const alt = this.state?.countries?.[id]?.altFlag, key = alt ? `${id}|${flagSig(alt)}` : id;
@@ -761,9 +794,9 @@ export class WorldMap {
         // While a front is still sweeping across, the front layer draws the advance and the hatch waits for it.
         const sweeping = this.fronts?.[id] && performance.now() < this.fronts[id].start + this.fronts[id].dur * 1000;
         if (c.occupiedBy && s.countries[c.occupiedBy] && !sweeping) {
-          const oc = s.blocs[s.countries[c.occupiedBy].bloc]?.color || '#e2574a';
+          const oc = s.blocs[s.countries[c.occupiedBy].bloc]?.color || '#e2574a', ofl = this.heldFlag(c.occupiedBy);
           // The occupier's flag over the whole country, with a bloc-coloured tint so it reads as held ground.
-          if (this.flagReady(c.occupiedBy) && this.fullBounds.get(id)) { ctx.fillStyle = 'rgba(6,8,14,0.35)'; ctx.fill(path); ctx.save(); ctx.clip(path); this.drawFlag(ctx, c.occupiedBy, this.fullBounds.get(id), 0.62); ctx.restore(); ctx.fillStyle = hexA(oc, 0.16); ctx.fill(path); }
+          if (this.flagReady(ofl) && this.fullBounds.get(id)) { ctx.fillStyle = 'rgba(6,8,14,0.35)'; ctx.fill(path); ctx.save(); ctx.clip(path); this.drawFlag(ctx, ofl, this.fullBounds.get(id), 0.62); ctx.restore(); ctx.fillStyle = hexA(oc, 0.16); ctx.fill(path); }
           else { const pat = this.pattern('occ' + oc, hexA(oc, 0.85)); pat.setTransform(new DOMMatrix().scale(1 / k)); ctx.fillStyle = pat; ctx.fill(path); }
         }
         if (c.capitulated) { ctx.fillStyle = 'rgba(30,30,30,0.55)'; ctx.fill(path); }
@@ -1550,9 +1583,11 @@ export class WorldMap {
       const fb = this.frontBorder(w.b, w.a, A); if (!fb) continue;
       withCamOn(ctx, this.dpr, this.cam, () => {
         ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-        ctx.strokeStyle = `rgba(255,90,60,${0.35 + 0.2 * Math.sin(time * 3 + (w.since || 0))})`; ctx.lineWidth = 6 / k;
+        // Between the two big blocs of a world war the contact line wears both colours: one bloc's glow, the other's dashes.
+        const ww = worldWarBlocs(s), ca = s.countries[w.a], cb = s.countries[w.b], blocLine = ww && ca && cb && ww.includes(ca.bloc) && ww.includes(cb.bloc) && ca.bloc !== cb.bloc;
+        ctx.strokeStyle = blocLine ? hexA(s.blocs[ca.bloc].color, 0.8) : `rgba(255,90,60,${0.35 + 0.2 * Math.sin(time * 3 + (w.since || 0))})`; ctx.lineWidth = (blocLine ? 8 : 6) / k;
         for (const l of fb.lines) { ctx.beginPath(); l.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); }
-        ctx.strokeStyle = '#ffc07a'; ctx.lineWidth = 1.4 / k; ctx.setLineDash([4 / k, 3 / k]); ctx.lineDashOffset = -time * 10 / k;
+        ctx.strokeStyle = blocLine ? s.blocs[cb.bloc].color : '#ffc07a'; ctx.lineWidth = (blocLine ? 2.4 : 1.4) / k; ctx.setLineDash([4 / k, 3 / k]); ctx.lineDashOffset = -time * 10 / k;
         for (const l of fb.lines) { ctx.beginPath(); l.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); }
         ctx.setLineDash([]);
         this.contactFlashes(ctx, fb, 0, time, (Number(w.a) || 1) * 0.3 + (Number(w.b) || 1), k);
