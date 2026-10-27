@@ -118,6 +118,11 @@ export function planAI(state, ctx) {
           if (usable.length && atk > def * 1.35 * 1.6) { add(c.id, 'invade', { target: foe, units: usable.slice(0, 3).map(u => u.id) }); break; }
         }
       }
+      // Naval war: hunt an enemy fleet that sits at sea, otherwise close the primary enemy's coast.
+      if (state.settings.autoNavy !== false && chance(state, 0.4)) {
+        const hunted = Object.values(state.units).find(u => (u.type === 'fleet' || u.type === 'carrier') && u.loc.kind === 'sea' && enemies.includes(u.owner));
+        if (!(hunted && add(c.id, 'fleet', { zone: hunted.loc.id }, { n: 1 }))) add(c.id, 'siege', { target: primary }, { n: 1 });
+      }
       // Chokepoint pressure from countries that sit on one.
       if (state.global.tension >= 8 && chance(state, 0.25)) {
         const choke = zonesTouching(c.id).find(z => SEA_ZONES[z].choke && state.global.chokepoints[z]?.status === 'open');
