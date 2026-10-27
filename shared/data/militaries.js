@@ -168,22 +168,40 @@ export function usFleetOf(zone) {
   return '2nd';
 }
 
-// A name for a new carrier group, if its navy names them: the first American carrier not already at sea.
+// The other great navies by name: carriers in the order of the starting deployments, and which fleet commands which waters.
+export const NAVIES = {
+  USA: { prefix: 'USS', carriers: US_CARRIERS },
+  RUS: { prefix: '', carriers: [['Admiral Kuznetsov', '']],
+    fleets: { Northern: ['barents', 'norwegian_sea', 'north_atlantic'], Baltic: ['baltic', 'danish', 'north_sea'], 'Black Sea': ['black_sea', 'bosporus', 'aegean'], Pacific: ['japan_sea', 'north_pacific', 'philippine_sea', 'east_china'], 'Mediterranean Squadron': ['east_med', 'central_med', 'west_med', 'suez', 'red_sea'] } },
+  CHN: { prefix: 'PLAN', carriers: [['Liaoning', 'CV-16'], ['Shandong', 'CV-17'], ['Fujian', 'CV-18']],
+    fleets: { 'North Sea': ['japan_sea', 'philippine_sea'], 'East Sea': ['east_china', 'north_pacific'], 'South Sea': ['south_china', 'malacca', 'java_sea', 'bay_bengal', 'indian_ocean'], 'Escort Task Force': ['gulf_aden', 'arabian_sea', 'bab', 'red_sea'] } },
+  GBR: { prefix: 'HMS', carriers: [['Queen Elizabeth', 'R08'], ['Prince of Wales', 'R09']], fleets: { Home: ['north_sea', 'atlantic_east', 'north_atlantic', 'norwegian_sea'], 'Mediterranean Task Group': ['east_med', 'central_med', 'west_med'] } },
+  FRA: { prefix: 'FS', carriers: [['Charles de Gaulle', 'R91']], fleets: { Atlantic: ['atlantic_east', 'north_atlantic'], Mediterranean: ['west_med', 'central_med', 'east_med'] } },
+  IND: { prefix: 'INS', carriers: [['Vikramaditya', 'R33'], ['Vikrant', 'R11']], fleets: { Western: ['arabian_sea', 'gulf_aden'], Eastern: ['bay_bengal', 'indian_ocean', 'malacca'] } },
+  JPN: { prefix: 'JS', carriers: [['Izumo', 'DDH-183'], ['Kaga', 'DDH-184']], fleets: { 'Escort Flotilla': ['japan_sea', 'philippine_sea', 'east_china', 'north_pacific'] } },
+};
+export const hasNamedNavy = a3 => !!NAVIES[a3];
+const navyFleetOf = (a3, zone) => Object.entries(NAVIES[a3]?.fleets || {}).find(([, zs]) => zs.includes(zone))?.[0];
+
+// A name for a new carrier group, if its navy names them: the first carrier of that navy not already at sea.
 export function carrierName(units, a3) {
-  if (a3 !== 'USA') return undefined;
-  const used = new Set(Object.values(units).filter(u => u.type === 'carrier' && u.name).map(u => u.name));
-  const free = US_CARRIERS.find(([n]) => !used.has(n));
+  const navy = NAVIES[a3]; if (!navy) return undefined;
+  const used = new Set(Object.values(units).filter(u => u.type === 'carrier' && u.name && navy.carriers.some(c => c[0] === u.name)).map(u => u.name));
+  const free = navy.carriers.find(([n]) => !used.has(n));
   return free ? free[0] : undefined;
 }
 
 // How a warship group is called in the panel and on the map. Short form for map labels.
 export function navalLabel(u, a3, short = false) {
-  if (a3 === 'USA') {
-    if (u.type === 'carrier') {
-      const hull = US_CARRIERS.find(([n]) => n === u.name)?.[1];
-      return u.name ? (short ? `USS ${u.name}` : `USS ${u.name}${hull ? ` (${hull})` : ''} carrier strike group`) : (short ? 'Carrier strike group' : 'US carrier strike group');
-    }
-    if (u.type === 'fleet' && u.loc?.kind === 'sea') return short ? `${usFleetOf(u.loc.id)} Fleet` : `${usFleetOf(u.loc.id)} Fleet surface action group`;
+  const navy = NAVIES[a3];
+  if (navy && u.type === 'carrier') {
+    const hull = navy.carriers.find(([n]) => n === u.name)?.[1], pre = navy.prefix ? `${navy.prefix} ` : '';
+    return u.name ? (short ? `${pre}${u.name}` : `${pre}${u.name}${hull ? ` (${hull})` : ''} carrier strike group`) : (short ? 'Carrier strike group' : 'Carrier strike group');
+  }
+  if (a3 === 'USA' && u.type === 'fleet' && u.loc?.kind === 'sea') return short ? `${usFleetOf(u.loc.id)} Fleet` : `${usFleetOf(u.loc.id)} Fleet surface action group`;
+  if (navy && u.type === 'fleet' && u.loc?.kind === 'sea') {
+    const f = navyFleetOf(a3, u.loc.id);
+    if (f) return short ? `${f}${/Squadron|Group|Force|Flotilla/.test(f) ? '' : ' Fleet'}` : `${f}${/Squadron|Group|Force|Flotilla/.test(f) ? '' : ' Fleet'} surface action group`;
   }
   return u.type === 'carrier' ? 'Carrier group' : 'Fleet';
 }

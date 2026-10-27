@@ -3,7 +3,7 @@
 // numbered fleet whose waters they are in (7th Fleet). A blockade shows as a cordon on the water: around a strait
 // for a sea-zone blockade, or all along the coast for a blockade of a country.
 import { SEA_ZONES } from '/shared/data/places.js';
-import { navalLabel } from '/shared/data/militaries.js';
+import { navalLabel, hasNamedNavy } from '/shared/data/militaries.js';
 
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -28,7 +28,7 @@ function wake(ctx, x, y, len, a, time, seed) {
 export const NAVAL_FX = {
   // One marker per owner, type and sea zone. Called inside drawUnits with the origin at the marker.
   drawNavalGroup(ctx, g, time, color, scale) {
-    const s = this.state, owner = s.countries[g.owner], us = owner?.a3 === 'USA';
+    const s = this.state, owner = s.countries[g.owner], us = ['USA', 'CHN', 'RUS'].includes(owner?.a3), named = hasNamedNavy(owner?.a3), a3 = owner?.a3;
     const carrier = g.type === 'carrier', count = g.units.length, blockade = g.units.some(u => u.blockade);
     const seed = hash(g.loc.id + g.owner + g.type), heading = (seed % 628) / 100 + Math.sin(time * 0.15 + seed) * 0.08;
     scale *= 1.2;
@@ -77,7 +77,7 @@ export const NAVAL_FX = {
     ctx.restore();
     // Labels stay upright.
     const k = this.cam.k, ar = this.opts.lang === 'ar';
-    if (us && !carrier) {
+    if (a3 === 'USA' && !carrier) {
       const n = navalLabel(g.units[0], 'USA', true).split(' ')[0];
       const badge = n.replace(/\D/g, '') + 'F';
       ctx.font = '700 8px JetBrains Mono, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -85,9 +85,9 @@ export const NAVAL_FX = {
       ctx.strokeStyle = color; ctx.lineWidth = 0.8; ctx.stroke(); ctx.fillStyle = color; ctx.fillText(badge, -8 * scale - 6, -9 * scale);
     }
     if (count > 1) { ctx.fillStyle = color; ctx.font = '700 9px JetBrains Mono, monospace'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic'; ctx.fillText(`×${count}`, (carrier ? 14 : 10) * scale, -6 * scale); }
-    if ((us && k >= 1.6) || k >= 2.6) {
-      let text = us ? navalLabel(g.units[0], 'USA', true) : (carrier ? (ar ? 'مجموعة حاملة' : 'Carrier group') : (ar ? 'أسطول' : 'Fleet'));
-      if (us && carrier && count > 1) text += ` +${count - 1}`;
+    if ((named && k >= 1.6) || k >= 2.6) {
+      let text = named ? navalLabel(g.units[0], a3, true) : (carrier ? (ar ? 'مجموعة حاملة' : 'Carrier group') : (ar ? 'أسطول' : 'Fleet'));
+      if (named && carrier && count > 1) text += ` +${count - 1}`;
       ctx.font = '700 9px Rajdhani, Inter, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.save(); ctx.letterSpacing = '0.8px';
       ctx.strokeStyle = 'rgba(4,6,11,0.85)'; ctx.lineWidth = 3; ctx.strokeText(text.toUpperCase(), 0, (carrier ? 26 : 17) * scale);
