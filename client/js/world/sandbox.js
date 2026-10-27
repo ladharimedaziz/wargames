@@ -48,6 +48,7 @@ export function SandboxTab({ conn, state, selected, selZone }) {
         <button class=${cls('btn sm', state.settings.combinedArms === false && 'solid-danger')} onClick=${() => k({ type: 'setWarOption', key: 'combinedArms', value: state.settings.combinedArms === false })}>${state.settings.combinedArms === false ? 'Combined arms: off' : 'Combined arms: on'}</button>
         <button class="btn sm good" onClick=${() => k({ type: 'forcePeace', all: true }, 'Every war is over')}>End every war</button>
         <button class="btn sm good" disabled=${!Object.values(state.countries).some(c => c.outbreak)} onClick=${() => k({ type: 'endAllOutbreaks' }, 'Every outbreak is over')}>☣ End all outbreaks</button>
+        <button class="btn sm good" disabled=${!Object.values(state.units).some(u => u.strength < 100)} onClick=${() => k({ type: 'healUnits' }, 'Every unit is back to full strength')}>✚ Heal every unit</button>
         <button class="btn sm good" disabled=${!Object.values(state.countries).some(c => c.blackout)} onClick=${() => k({ type: 'restoreAllPower' }, 'Power is back everywhere')}>⚡ Restore all power</button>
       </div>
       <div class="row"><span class="dim small">Date</span><input class="input sm" type="date" value=${state.meta.clock} onChange=${e => k({ type: 'setClock', clock: e.target.value })} /><span class="dim small">Days per turn</span><input class="input sm" style="width:60px" type="number" min="1" max="90" value=${state.meta.turnDays} onChange=${e => k({ type: 'setClock', turnDays: +e.target.value })} /></div>

@@ -1319,7 +1319,7 @@ export class WorldMap {
     this.ambientStrikes(now);
     this.drawCities(ctx, time);
     if (this.layers.naval !== false) this.drawShips(ctx, time);
-    if (this.layers.air !== false) this.drawFlights(ctx, time);
+    if (this.layers.air !== false) { this.drawFlights(ctx, time); this.drawPatrols(ctx, time); }
     this.drawChokepoints(ctx, time);
     if (this.layers.units !== false) this.drawUnits(ctx, time);
     this.drawEffects(ctx, now, withCam);
@@ -1932,11 +1932,18 @@ export class WorldMap {
   }
   boom(ctx, x, y, r, iv, hot = 1) {
     const R = r * (0.35 + ease(iv) * 0.9);
+    // Ground flash and an expanding shockwave ring.
+    if (iv < 0.35) { ctx.fillStyle = `rgba(255,255,240,${0.55 * (1 - iv / 0.35) * hot})`; ctx.beginPath(); ctx.arc(x, y, r * 0.5, 0, TAU); ctx.fill(); }
+    ctx.strokeStyle = `rgba(255,220,170,${0.55 * (1 - iv)})`; ctx.lineWidth = 1.1;
+    ctx.beginPath(); ctx.ellipse(x, y, r * (0.5 + ease(iv) * 1.6), r * (0.5 + ease(iv) * 1.6) * 0.55, 0, 0, TAU); ctx.stroke();
     const g = ctx.createRadialGradient(x, y, 0, x, y, R);
     g.addColorStop(0, `rgba(255,248,220,${0.95 * (1 - iv) * hot})`); g.addColorStop(0.45, `rgba(255,140,55,${0.7 * (1 - iv)})`); g.addColorStop(1, 'rgba(255,60,30,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R, 0, TAU); ctx.fill();
+    // Sparks thrown off, then a column of smoke.
+    ctx.strokeStyle = `rgba(255,200,120,${0.8 * (1 - iv)})`; ctx.lineWidth = 0.8;
+    for (let i = 0; i < 7; i++) { const a = i * 2.4 + x * 0.7, d = r * (0.3 + ease(iv) * 1.1) * (0.6 + (i % 3) * 0.25); ctx.beginPath(); ctx.moveTo(x + Math.cos(a) * d * 0.7, y + Math.sin(a) * d * 0.5 - iv * 4); ctx.lineTo(x + Math.cos(a) * d, y + Math.sin(a) * d * 0.6 - iv * 8); ctx.stroke(); }
     ctx.fillStyle = `rgba(110,110,120,${0.4 * (1 - iv)})`;
-    for (let i = 0; i < 2; i++) { ctx.beginPath(); ctx.arc(x + (i - 0.5) * 2 + iv * 3, y - iv * (6 + i * 4), 1.6 + iv * r * 0.25, 0, TAU); ctx.fill(); }
+    for (let i = 0; i < 3; i++) { ctx.beginPath(); ctx.arc(x + (i - 1) * 2 + iv * 3, y - iv * (6 + i * 5), 1.6 + iv * r * 0.28, 0, TAU); ctx.fill(); }
   }
   // A surface-to-air missile climbing to meet an aircraft, and the aircraft breaking up into a falling smoke trail.
   shootDown(ctx, src, hit, iv, fall) {
@@ -2023,6 +2030,7 @@ export class WorldMap {
       if (u > rel && u < rel + fallT) { ctx.fillStyle = '#2a2f3a'; ctx.beginPath(); ctx.arc(x, y - (1 - (u - rel) / fallT) * 4, 1.1, 0, TAU); ctx.fill(); }
       const iv = (u - rel - fallT) / 0.22;
       if (iv > 0 && iv < 1) this.boom(ctx, x, y, 7 * sc, iv);
+      else if (iv >= 1 && u < 0.98) { const fl = 0.55 + 0.45 * Math.sin(now / 90 + sp.f * 20); ctx.fillStyle = `rgba(255,120,40,${0.35 * fl * (1 - u) * 3})`; ctx.beginPath(); ctx.arc(x, y - 1, 2.4 * sc * fl, 0, TAU); ctx.fill(); ctx.fillStyle = 'rgba(90,90,100,0.18)'; ctx.beginPath(); ctx.arc(x + 2, y - 7 - (u - rel) * 20, 3 * sc, 0, TAU); ctx.fill(); }
     }
     if (u > T1 - 0.05 && u < T2 + 0.08) this.tag(ctx, b[0], b[1] - 22 * sc, 'CARPET BOMBING', '#ffb36b');
   }
