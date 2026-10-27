@@ -224,6 +224,7 @@ function MapOverlay({ state, conn, layers, setLayers, picking, cancelPick, viewM
   return html`
     <div class="map-layers">
       <div class="seg sm" title="What a click on the map picks"><button class=${viewMode === 'countries' ? 'on' : ''} onClick=${() => setView('countries')}>◎ Countries</button><button class=${viewMode === 'factions' ? 'on' : ''} onClick=${() => setView('factions')}>⚑ Factions</button></div>
+      ${viewMode === 'factions' && html`<div class="seg sm" title="How wars between the two big factions are drawn on the map">${[['auto', 'Auto'], ['all', 'Faction fronts'], ['off', 'Per country']].map(([k, l]) => html`<button class=${(state.settings.unifyFronts || 'auto') === k ? 'on' : ''} onClick=${() => run(conn, { type: 'setSetting', key: 'unifyFronts', value: k })}>${l}</button>`)}</div>`}
       ${[['air', '✈ Air'], ['naval', '⛴ Sea'], ['units', '▲ Forces'], ['wars', '⚔ Wars'], ['relations', '◎ Relations'], ['labels', 'Aa Labels']].map(([k, l]) => html`<button class=${cls('btn xs', layers[k] && 'on')} onClick=${() => toggle(k)}>${l}</button>`)}
     </div>
     <div class="map-legend">
