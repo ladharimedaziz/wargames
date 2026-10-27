@@ -31,6 +31,7 @@ export const ORDER_TYPES = {
   satellite:  { label: 'Blind enemy satellites', group: 'covert', needs: ['target'] },
   propaganda: { label: 'Propaganda campaign', group: 'covert', needs: [] },
   neo:        { label: 'Evacuate citizens (NEO)', group: 'military', needs: ['target'] },
+  drone:      { label: 'Drone attack', group: 'military', needs: ['target'] },
   helistrike: { label: 'Helicopter strike', group: 'military', needs: ['target'] },
   airassault: { label: 'Air assault behind the lines', group: 'military', needs: ['target'] },
   airdrop:    { label: 'Paratroop drop', group: 'military', needs: ['target'] },
@@ -186,6 +187,9 @@ export function validateOrder(state, o) {
       if (o.type === 'airassault') o.units = [army.find(u => u.loc.id === o.target)?.id || army[0].id];
       return { ok: true };
     }
+    case 'drone':
+      if (sameSide(state, o.country, o.target)) return fail(`${T.name} is on the same side as ${c.name}.`);
+      return { ok: true };
     case 'lift': case 'cap': case 'propaganda': case 'election': case 'intel': case 'satellite':
     case 'alliance': case 'sanction': case 'unsanction': case 'trade': case 'overflight':
       return { ok: true };
@@ -318,6 +322,7 @@ export function describeOrder(state, o, lang = 'en') {
     case 'siege': return `${c} blockades the coast of ${t} with ${parts.join(', ') || 'no warships'}`;
     case 'lift': return `${c} lifts its blockades`;
     case 'cap': return `${c} flies air patrols over its territory`;
+    case 'drone': return `${c} launches a drone attack on ${t}`;
     case 'alert': return `${c} puts its nuclear forces on alert`;
     case 'nuke': return `${c} launches a nuclear weapon at ${t}`;
     case 'war': return `${c} declares war on ${t}`;

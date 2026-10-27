@@ -155,6 +155,44 @@ export const AIRCRAFT_FX = {
   },
 
   // Paratroopers: transports cross at altitude and canopies open behind them, drifting down onto the drop zone.
+  // A drone raid: a loose swarm of small delta airframes, low and slow, fanning out toward the target. The ones air
+  // defences pick off burst into a spark mid-flight; the rest arrive one after another as small flashes.
+  fx_drone(ctx, fx, u, now) {
+    const e = fx.e, a = this.pt(e.from) || this.countryPoint(e.owner), b = this.pt(e.to) || this.countryPoint(e.target);
+    if (!a || !b) return;
+    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
+    const owner = this.state.countries[e.owner];
+    const col = owner && owner.bloc !== 'N' ? this.state.blocs[owner.bloc].color : '#cfd6df';
+    let dx = b[0] - a[0], dy = b[1] - a[1]; const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
+    const nx = -dy, ny = dx;
+    // A raid always has room to read: start well back from a close target.
+    const span = Math.max(len, 60 * sc), s0 = [b[0] - dx * span, b[1] - dy * span];
+    const n = Math.min(e.n || 8, 14), downed = Math.max(0, n - (e.hits || 0));
+    const seed = fx.seed || (fx.seed = Array.from({ length: n }, () => ({ lane: Math.random() * 2 - 1, wob: Math.random() * 6, lag: Math.random() * 0.14, kill: 0.45 + Math.random() * 0.25 })));
+    const T = 0.72;
+    for (let i = 0; i < n; i++) {
+      const d = seed[i], v = clamp((u - d.lag) / T, 0, 1); if (v <= 0) continue;
+      const shot = i < downed;
+      if (shot && v > d.kill) {
+        const w = (v - d.kill) / 0.12; if (w > 1) continue;
+        const x = s0[0] + (b[0] - s0[0]) * d.kill + nx * d.lane * 14 * sc, y = s0[1] + (b[1] - s0[1]) * d.kill + ny * d.lane * 14 * sc;
+        ctx.strokeStyle = `rgba(255,200,120,${1 - w})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(x, y, (2 + w * 8) * sc, 0, TAU); ctx.stroke();
+        ctx.fillStyle = `rgba(255,240,200,${0.8 * (1 - w)})`; ctx.beginPath(); ctx.arc(x, y, 1.6 * sc, 0, TAU); ctx.fill();
+        continue;
+      }
+      const e2 = easeInOut(v), fan = (1 - e2) * 12 * d.lane * sc + Math.sin(now / 260 + d.wob) * 0.8 * sc;
+      const x = s0[0] + (b[0] - s0[0]) * e2 + nx * fan * (v < 0.5 ? 1 : 0.4) + nx * d.lane * 5 * sc * (1 - e2), y = s0[1] + (b[1] - s0[1]) * e2 + ny * fan * (v < 0.5 ? 1 : 0.4) + ny * d.lane * 5 * sc * (1 - e2);
+      const ang = Math.atan2(dy, dx);
+      ctx.strokeStyle = 'rgba(200,210,225,0.18)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(x - dx * 9 * sc, y - dy * 9 * sc); ctx.lineTo(x, y); ctx.stroke();
+      this.silhouette(ctx, x, y, ang, 2.6 * sc, v > 0.97 ? '#fff' : col, [[1, 0], [-0.6, 0.9], [-0.3, 0]]);
+      if (v >= 1 && !shot) {
+        const w = clamp((u - d.lag - T) / 0.22, 0, 1);
+        if (w < 1) { const g = ctx.createRadialGradient(x, y, 0, x, y, (3 + 9 * w) * sc); g.addColorStop(0, `rgba(255,245,210,${1 - w})`); g.addColorStop(0.5, `rgba(255,140,60,${0.7 * (1 - w)})`); g.addColorStop(1, 'rgba(255,60,20,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, (3 + 9 * w) * sc, 0, TAU); ctx.fill(); }
+      }
+    }
+    if (u > 0.15 && u < 0.75) this.tag(ctx, b[0], b[1] - 20 * sc, `DRONE SWARM · ${n}`, '#ffd27a');
+  },
+
   fx_airdrop(ctx, fx, u, now) {
     const e = fx.e, b = this.pt(e.to) || this.countryPoint(e.country); if (!b) return;
     const a0 = this.pt(e.from) || this.countryPoint(e.owner);

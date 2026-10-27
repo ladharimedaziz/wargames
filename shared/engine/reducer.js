@@ -7,7 +7,7 @@ import {
   UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures, isOOB, OOB_ERROR, aggressorOf, enemiesOf, unVoters, aiVote,
 } from './core.js';
 import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.js';
-import { resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
+import { OP_KINDS, resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
 import { bindGeo, hasGeo, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter, mainland } from './control.js';
 import { courtActions } from './court.js';
 import { joinText } from './ai.js';
@@ -573,6 +573,19 @@ const WORLD = {
   setNuclearExchange: { perm: 'kronos', run(s, a) { s.settings.nuclearExchange = !!a.value; return ok(); } },
   // War options Kronos can switch off: computer fleets sailing and hunting on their own, combined-arms bonuses.
   setWarOption: { perm: 'kronos', run(s, a) { if (!['autoNavy', 'combinedArms'].includes(a.key)) return err('Unknown option.'); s.settings[a.key] = !!a.value; return ok(); } },
+  // Standing operations: a bombing campaign, air patrols, drone raids or a combined-arms invasion that repeat every turn.
+  setOp: { perm: 'zeus', run(s, a, ctx) {
+    const c = C(s, a.country); if (!c) return err('Unknown country.');
+    if (!OP_KINDS.includes(a.kind)) return err('Unknown operation.');
+    s.ops ||= [];
+    const same = o => o.country === c.id && o.kind === a.kind && (a.kind === 'patrol' || o.target === a.target);
+    if (a.on === false) { s.ops = s.ops.filter(o => !same(o)); return ok(); }
+    if (a.kind !== 'patrol') { const T = C(s, a.target); if (!T || T.id === c.id) return err('Pick a target country.'); if (sameSide(s, c.id, T.id)) return err(`${T.name} is on the same side as ${c.name}.`); }
+    if (s.ops.some(same)) return ok();
+    s.ops.push({ id: newId(s, 'op'), k: s.ops.length % 4, country: c.id, target: a.kind === 'patrol' ? null : a.target, kind: a.kind, since: s.meta.turn, fresh: true });
+    log(s, ctx, `${c.name}: standing operation ${a.kind}${a.target ? ` against ${C(s, a.target).name}` : ''}`);
+    return ok();
+  } },
   setAiNukes: { perm: 'kronos', run(s, a) { s.settings.aiNukes = !!a.value; return ok(); } },
   disaster: { perm: 'kronos', run(s, a, ctx) {
     const c = C(s, a.country), d = DISASTERS[a.kind]; if (!c || !d) return err('Pick a country and event.');

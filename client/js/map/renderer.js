@@ -773,6 +773,7 @@ export class WorldMap {
     this.frontDelay = t;
     for (const e of evs.filter(e => e.kind === 'landing')) { add({ type: 'landing', e, dur: 4.6 }, t - 1.2); mark(1, e.from, e.to); }
     for (const e of evs.filter(e => e.kind === 'naval')) { add({ type: 'naval', e, dur: 5 }, t); mark(2, e.at); }
+    for (const e of evs.filter(e => e.kind === 'drone')) { add({ type: 'drone', e, dur: 5 }, t - 1.8); mark(3, e.from, e.to); }
     for (const e of evs.filter(e => e.kind === 'heli')) { add({ type: 'heli', e, dur: e.mode === 'assault' ? 7.5 : 6 }, t); mark(2, e.from, e.to); }
     for (const e of evs.filter(e => e.kind === 'airdrop')) { add({ type: 'airdrop', e, dur: 6.5 }, t - 0.6); mark(1, e.from, e.to); }
     // Diplomatic and covert orders each get a short flourish, staggered so a busy turn stays readable.
