@@ -9,7 +9,7 @@ import { relation, isOOB, OUT_OF_BOUNDS, sameSide } from '/shared/engine/core.js
 import { distanceKm, seaRoute, zonesTouching } from '/shared/geo.js';
 import { loadAtlas, makeCountryAt, makeLandAt, pairBorder } from './atlas.js';
 import { contours as d3contours } from 'd3-contour';
-import { CELL, NI, cellKey, cellIJ, cellCenter, neighbors as cellNeighbors } from '/shared/engine/control.js';
+import { CELL, NI, NJ, cellKey, cellIJ, cellCenter, neighbors as cellNeighbors } from '/shared/engine/control.js';
 import { AirTraffic, SeaTraffic } from './traffic.js';
 import { ACT_FX } from './acts.js';
 import { SEA_NAV } from './seanav.js';
@@ -293,7 +293,7 @@ export class WorldMap {
   // the line curves like a real front. It breathes slightly while the war is on.
   groupShape(g, now, time) {
     const u = this.ctlProgress(now), live = u < 1;
-    const pad = 3, i0 = g.i0 - pad, j0 = Math.max(0, g.j0 - pad), W = g.i1 - g.i0 + 1 + pad * 2, H = Math.min(g.j1 + pad, 599) - j0 + 1;
+    const pad = 3, i0 = g.i0 - pad, j0 = Math.max(0, g.j0 - pad), W = g.i1 - g.i0 + 1 + pad * 2, H = Math.min(g.j1 + pad, NJ - 1) - j0 + 1;
     // Small fronts breathe (redrawn every eighth of a second); a front across half of Russia is redrawn only
     // when it moves or the zoom changes, so it never stalls the frame.
     const big = W * H > 30000;
@@ -342,8 +342,8 @@ export class WorldMap {
     for (const r of rings) for (let a = 0; a < r.length; a += 8) {
       const [, , gx, gy] = r[a];
       let nx = at(gx + 1, gy) - at(gx - 1, gy), ny = at(gx, gy + 1) - at(gx, gy - 1); const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
-      const kIn = cellKey(Math.floor(i0 + gx + nx * 1.2), clamp(Math.floor(j0 + gy + ny * 1.2), 0, 599));
-      const kOut = cellKey(Math.floor(i0 + gx - nx * 1.2), clamp(Math.floor(j0 + gy - ny * 1.2), 0, 599));
+      const kIn = cellKey(Math.floor(i0 + gx + nx * 1.2), clamp(Math.floor(j0 + gy + ny * 1.2), 0, NJ - 1));
+      const kOut = cellKey(Math.floor(i0 + gx - nx * 1.2), clamp(Math.floor(j0 + gy - ny * 1.2), 0, NJ - 1));
       if (cells.homeOf(kIn) !== g.country || cells.homeOf(kOut) !== g.country) continue;
       const q2 = proj(gx - nx, gy - ny); if (!q2) continue;
       let dx = q2[0] - r[a][0], dy = q2[1] - r[a][1]; const dl = Math.hypot(dx, dy) || 1;
