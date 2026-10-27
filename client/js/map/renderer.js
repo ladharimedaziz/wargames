@@ -58,6 +58,7 @@ export class WorldMap {
     this.effects = [];
     this.state = null;
     this.selected = null;
+    this.multi = new Set();
     this.hover = null;
     this.dirty = true;
     this.layers = { air: true, naval: true, units: true, relations: false, labels: true, wars: true };
@@ -462,7 +463,7 @@ export class WorldMap {
   }
 
   setLayers(l) { this.layers = { ...this.layers, ...l }; this.dirty = true; }
-  setSelected(id) { this.selected = id; }
+  setSelected(id) { this.selected = id; this.multi.clear(); }
   setLang(lang) { this.opts.lang = lang; this.dirty = true; }
 
   // --- camera ---
@@ -567,6 +568,8 @@ export class WorldMap {
         const ll = this.screenToLonLat(mx, my);
         if (ll && isOOB(this.rawCountryAt(ll[0], ll[1]))) { drag = null; return; }
         const id = ll ? this.countryAt(ll[0], ll[1]) : null;
+        if (e.shiftKey && id && this.state?.countries?.[id]) { this.multi.has(id) ? this.multi.delete(id) : this.multi.add(id); this.dirty = true; drag = null; return; }
+        if (this.multi.size) { this.multi.clear(); this.dirty = true; }
         if (this.opts.stageControl) this.stageClick(id && this.state?.countries?.[id] ? id : null);
         else this.opts.onSelect?.(zone && !id ? { zone } : zone && this.state?.countries?.[id] == null ? { zone } : { id, zone: null }, e);
       }
@@ -1089,59 +1092,35 @@ export class WorldMap {
   }
 
   // --- coat of arms ---
-  // The selected or focused country wears its coat of arms on its own territory: it rises out of the land with a
-  // gold ring, then breathes gently while a band of light sweeps across it. On unless the Zeus turns it off.
+  // The focused country (and any picked with shift+click) shows its coat of arms beside it, on whichever side has
+  // room, fading in with a short slide. On unless the Zeus turns it off.
   drawCoat(ctx, time) {
-    const id = this.state?.display?.arms !== false ? this.focusedCountry() : null;
-    if (id !== this.coatId) { this.coatId = id; this.coatAt = performance.now(); }
-    if (!id || isOOB(id)) return;
-    if (Object.values(this.state.countries).some(f => f.rebelOf === id)) return; // the land is split between factions
-    this.coatImgs ||= new Map();
-    let img = this.coatImgs.get(id);
-    if (!img) { img = new Image(); img.onload = () => { this.coatAt = performance.now(); this.dirty = true; }; img.src = `/client/img/coats/${id}.webp`; this.coatImgs.set(id, img); }
-    if (!img.complete || !img.naturalWidth) return;
-    const b = this.bounds.get(id), cen = this.mainCentroids.get(id); if (!b || !cen || !Number.isFinite(cen[0])) return;
-    const k = this.cam.k, toS = (x, y) => [x * k + this.cam.x, y * k + this.cam.y];
-    const [x0, y0] = toS(b[0][0], b[0][1]), [x1, y1] = toS(b[1][0], b[1][1]);
-    const bw = x1 - x0, bh = y1 - y0; if (bw < 8 || bh < 8) return;
-    // Centre on the land, nudged toward the middle of the main landmass for odd shapes.
-    const c = toS(cen[0], cen[1]), cx = (c[0] * 2 + (x0 + x1) / 2) / 3, cy = (c[1] * 2 + (y0 + y1) / 2) / 3;
-    const t = (performance.now() - this.coatAt) / 1000, rise = ease(clamp(t / 1.4, 0, 1));
-    const aspect = img.naturalWidth / img.naturalHeight;
-    let H = clamp(Math.min(bh * 0.72, bw * 0.72 / aspect), 40, this.h * 0.55);
-    H *= (0.55 + 0.45 * rise) * (1 + 0.015 * Math.sin(time * 1.3));
-    const W = H * aspect;
-    // Draw the emblem once into an offscreen canvas with the light sweep, then lay it onto the country.
-    const dpr = this.dpr || 1, pw = Math.ceil(W * dpr), ph = Math.ceil(H * dpr);
-    const cv = (this.coatCv ||= document.createElement('canvas'));
-    if (cv.width !== pw || cv.height !== ph) { cv.width = pw; cv.height = ph; }
-    const g = cv.getContext('2d');
-    g.setTransform(1, 0, 0, 1, 0, 0); g.globalCompositeOperation = 'source-over'; g.clearRect(0, 0, pw, ph);
-    g.drawImage(img, 0, 0, pw, ph);
-    const sweep = ((time * 0.28) % 1.6) - 0.3;
-    if (sweep > -0.3 && sweep < 1.3) {
-      g.globalCompositeOperation = 'source-atop';
-      const lg = g.createLinearGradient(pw * (sweep - 0.25), 0, pw * (sweep + 0.25), ph);
-      lg.addColorStop(0, 'rgba(255,248,220,0)'); lg.addColorStop(0.5, 'rgba(255,248,220,0.55)'); lg.addColorStop(1, 'rgba(255,248,220,0)');
-      g.fillStyle = lg; g.fillRect(0, 0, pw, ph);
+    const on = this.state?.display?.arms !== false;
+    const ids = new Set(on ? [...this.multi] : []);
+    const f = on ? this.focusedCountry() : null; if (f) ids.add(f);
+    this.coatAts ||= new Map(); this.coatImgs ||= new Map();
+    for (const id of [...this.coatAts.keys()]) if (!ids.has(id)) this.coatAts.delete(id);
+    for (const id of ids) {
+      if (isOOB(id) || !this.state.countries[id]) continue;
+      if (Object.values(this.state.countries).some(r => r.rebelOf === id)) continue; // the land is split between factions
+      if (!this.coatAts.has(id)) this.coatAts.set(id, performance.now());
+      let img = this.coatImgs.get(id);
+      if (!img) { img = new Image(); img.onload = () => { this.coatAts.set(id, performance.now()); this.dirty = true; }; img.src = `/client/img/coats/${id}.webp`; this.coatImgs.set(id, img); }
+      if (!img.complete || !img.naturalWidth) continue;
+      const b = this.bounds.get(id); if (!b) continue;
+      const k = this.cam.k, x0 = b[0][0] * k + this.cam.x, y0 = b[0][1] * k + this.cam.y, x1 = b[1][0] * k + this.cam.x, y1 = b[1][1] * k + this.cam.y;
+      const bw = x1 - x0, bh = y1 - y0; if (bw < 8 || bh < 8) continue;
+      const t = (performance.now() - this.coatAts.get(id)) / 1000, rise = ease(clamp(t / 0.9, 0, 1));
+      const aspect = img.naturalWidth / img.naturalHeight;
+      const H = clamp(Math.min(bh * 0.55, bw * 0.55 / aspect), 38, 96), W = H * aspect, gap = 10;
+      const right = x1 + gap + W < this.w - 8 || x0 - gap - W < 8, cy = clamp((y0 + y1) / 2, H / 2 + 8, this.h - H / 2 - 8);
+      const cx = (right ? x1 + gap + W / 2 : x0 - gap - W / 2) + (right ? -1 : 1) * (1 - rise) * 14;
+      ctx.save(); ctx.globalAlpha = (this.night ? 0.95 : 0.9) * rise;
+      ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 10;
+      ctx.drawImage(img, cx - W / 2, cy - H / 2, W, H);
+      ctx.restore();
+      if (t < 1) this.dirty = true;
     }
-    this.clipTo(ctx, id, () => {
-      // A warm glow pools under the emblem, then the emblem itself, a little translucent so the map reads through.
-      const glow = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(W, H) * 0.9);
-      glow.addColorStop(0, `rgba(255,226,150,${0.22 * rise})`); glow.addColorStop(1, 'rgba(255,226,150,0)');
-      ctx.fillStyle = glow; ctx.fillRect(cx - W * 1.2, cy - H * 1.2, W * 2.4, H * 2.4);
-      ctx.globalAlpha = (this.night ? 0.74 : 0.68) * rise;
-      ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 14;
-      ctx.drawImage(cv, cx - W / 2, cy - H / 2, W, H);
-      ctx.shadowBlur = 0; ctx.globalAlpha = 1;
-      // The reveal: a gold ring expands across the country and fades.
-      if (t < 2.2) {
-        const u = clamp(t / 2.2, 0, 1), R = Math.max(bw, bh) * 0.75 * ease(u);
-        ctx.strokeStyle = `rgba(243,214,130,${0.7 * (1 - u)})`; ctx.lineWidth = 2 + 3 * (1 - u);
-        ctx.beginPath(); ctx.arc(cx, cy, R, 0, TAU); ctx.stroke();
-      }
-    });
-    if (t < 2.5) this.dirty = true;
   }
 
   // --- painting ground by hand (Zeus panel) ---
@@ -1287,6 +1266,10 @@ export class WorldMap {
         ctx.shadowColor = 'rgba(236,230,214,0.9)'; ctx.shadowBlur = 12;
         ctx.strokeStyle = `rgba(236,230,214,${0.75 + 0.25 * Math.sin(time * 4)})`; ctx.lineWidth = 1.8 / k; ctx.stroke(pathFor(this.selected));
         ctx.shadowBlur = 0;
+      }
+      for (const id of this.multi) if (pathFor(id)) {
+        ctx.fillStyle = 'rgba(236,230,214,0.14)'; ctx.fill(pathFor(id));
+        ctx.shadowColor = 'rgba(236,230,214,0.9)'; ctx.shadowBlur = 10; ctx.strokeStyle = 'rgba(236,230,214,0.95)'; ctx.lineWidth = 1.8 / k; ctx.stroke(pathFor(id)); ctx.shadowBlur = 0;
       }
       for (const h of this.highlights) if (pathFor(h.id)) { ctx.fillStyle = h.color; ctx.fill(pathFor(h.id)); }
     });
