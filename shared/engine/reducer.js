@@ -10,10 +10,11 @@ import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.j
 import { OP_KINDS, resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
 import { bindGeo, hasGeo, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter, mainland } from './control.js';
 import { courtActions } from './court.js';
+import { councilActions } from './council.js';
 import { joinText } from './ai.js';
 import { endingDetail } from './endings.js';
 
-const SCENES = ['map', 'disguise', 'intro', 'reveal', 'ending', 'report', 'blank', 'pause', 'vote', 'treaty', 'polls', 'web', 'court'];
+const SCENES = ['map', 'disguise', 'intro', 'reveal', 'ending', 'report', 'blank', 'pause', 'vote', 'treaty', 'polls', 'web', 'court', 'council'];
 const STAT_FIELDS = { gdp: [0.5, 1e6], treasury: [-1e5, 1e5], support: [0, 100], stability: [0, 100], industry: [0.05, 1.2], energy: [0.05, 1.2], damage: [0, 1], inflation: [-2, 80], airDefense: [0, 12], influence: [0, 100] };
 const DISASTERS = {
   earthquake: { en: 'A major earthquake strikes', ar: 'زلزال قوي يضرب', gdp: 0.04, industry: 0.12, support: 3 },
@@ -632,6 +633,7 @@ const WORLD = {
   setOp: { perm: 'zeus', run(s, a, ctx) {
     const c = C(s, a.country); if (!c) return err('Unknown country.');
     if (!OP_KINDS.includes(a.kind)) return err('Unknown operation.');
+    if (a.kind === 'drones' && s.settings.year && s.settings.year < 2000) return err('There are no combat drones in 1985.');
     s.ops ||= [];
     const same = o => o.country === c.id && o.kind === a.kind && (a.kind === 'patrol' || o.target === a.target);
     if (a.on === false) { s.ops = s.ops.filter(o => !same(o)); return ok(); }
@@ -739,7 +741,9 @@ const COMMON = {
   rename: { perm: 'kronos', run(s, a) { const n = String(a.name || '').trim().slice(0, 60); if (!n) return err('Give it a name.'); s.name = n; return ok(); } },
 };
 
+const SHARED_STAGE = ['setScene', 'setBanner', 'setSetting', 'timerSet', 'timerStart', 'timerPause', 'timerReset', 'timerAdd', 'timerHide', 'noteAdd', 'kronosBanner', 'setKronosNote'];
 export function actionsFor(state) {
+  if (state.mode === 'council') return { ...COMMON, ...councilActions, ...pick(WORLD, SHARED_STAGE) };
   return { ...COMMON, ...(state.mode === 'court' ? { ...courtActions, ...pick(WORLD, ['setScene', 'setBanner', 'setSetting', 'timerSet', 'timerStart', 'timerPause', 'timerReset', 'timerAdd', 'timerHide', 'noteAdd', 'kronosBanner', 'setKronosNote', 'playEnding']) } : WORLD) };
 }
 

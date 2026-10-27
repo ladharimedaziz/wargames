@@ -6,6 +6,7 @@ import { ECONOMIES, ECONOMY_DEFAULT } from '../data/economies.js';
 import { SEA_ZONES } from '../data/places.js';
 import { zonesTouching } from '../geo.js';
 import { COURT_PHASES, newId, isOOB } from './core.js';
+import { createCouncilFields } from './council.js';
 
 function baseState({ id, name, mode, seed }) {
   return {
@@ -126,4 +127,8 @@ export function createCourtState(opts) {
     stats: { speaking: {} },
   };
   return s;
+}
+
+export function createCouncilState(opts, preset) {
+  return createCouncilFields(baseState({ ...opts, mode: 'council' }), preset);
 }

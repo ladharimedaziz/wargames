@@ -88,31 +88,46 @@ export const AIR_BASES = {
 // Named aircraft a Zeus can pick for a strike. `by` is the countries (alpha-3) that fly it; stealth scales the chance of
 // being intercepted; `shape` picks the silhouette the map draws.
 export const AIRCRAFT = {
-  b2:   { name: 'B-2 Spirit', type: 'bomber', stealth: 0.12, power: 0.1, precise: true, by: ['USA'], shape: 'b2' },
-  f117: { name: 'F-117 Nighthawk', type: 'fighter', stealth: 0.22, power: 0.055, precise: true, by: ['USA'], shape: 'f117' },
-  b52:  { name: 'B-52 Stratofortress', type: 'bomber', stealth: 1, power: 0.085, by: ['USA'], shape: 'b52' },
-  b1b:  { name: 'B-1B Lancer', type: 'bomber', stealth: 0.7, power: 0.085, by: ['USA'], shape: 'b1b' },
-  f15:  { name: 'F-15E Strike Eagle', type: 'fighter', stealth: 0.9, power: 0.05, by: ['USA'], shape: 'twin' },
-  f16:  { name: 'F-16 Fighting Falcon', type: 'fighter', stealth: 0.9, power: 0.04, by: ['USA'], shape: 'single' },
-  f22:  { name: 'F-22 Raptor', type: 'fighter', stealth: 0.3, power: 0.05, by: ['USA'], shape: 'twin' },
-  f35:  { name: 'F-35 Lightning II', type: 'fighter', stealth: 0.28, power: 0.05, precise: true, by: ['USA', 'GBR', 'ITA', 'JPN', 'KOR', 'AUS', 'NLD', 'NOR', 'POL', 'DNK'], shape: 'single' },
-  su34: { name: 'Su-34 Fullback', type: 'fighter', stealth: 0.85, power: 0.055, by: ['RUS'], shape: 'twin' },
-  su35: { name: 'Su-35S Flanker-E', type: 'fighter', stealth: 0.8, power: 0.045, by: ['RUS'], shape: 'twin' },
-  su57: { name: 'Su-57 Felon', type: 'fighter', stealth: 0.45, power: 0.05, by: ['RUS'], shape: 'twin' },
-  tu95: { name: 'Tu-95 Bear', type: 'bomber', stealth: 1, power: 0.08, by: ['RUS'], shape: 'b52' },
-  tu160:{ name: 'Tu-160 Blackjack', type: 'bomber', stealth: 0.7, power: 0.09, by: ['RUS'], shape: 'b1b' },
-  j10:  { name: 'J-10C Vigorous Dragon', type: 'fighter', stealth: 0.85, power: 0.04, by: ['CHN'], shape: 'delta' },
-  j16:  { name: 'J-16 Flanker', type: 'fighter', stealth: 0.8, power: 0.05, by: ['CHN'], shape: 'twin' },
-  j20:  { name: 'J-20 Mighty Dragon', type: 'fighter', stealth: 0.4, power: 0.05, by: ['CHN'], shape: 'twin' },
-  h6:   { name: 'H-6K Bomber', type: 'bomber', stealth: 1, power: 0.08, by: ['CHN'], shape: 'b52' },
-  typhoon: { name: 'Eurofighter Typhoon', type: 'fighter', stealth: 0.8, power: 0.045, by: ['GBR', 'DEU', 'ITA', 'ESP', 'AUT', 'SAU'], shape: 'delta' },
-  tornado: { name: 'Panavia Tornado', type: 'fighter', stealth: 0.9, power: 0.045, by: ['DEU', 'GBR', 'ITA', 'SAU'], shape: 'single' },
-  rafale: { name: 'Dassault Rafale', type: 'fighter', stealth: 0.75, power: 0.05, precise: true, by: ['FRA', 'IND', 'EGY', 'QAT', 'ARE', 'GRC'], shape: 'delta' },
-  m2000: { name: 'Mirage 2000D', type: 'fighter', stealth: 0.85, power: 0.04, by: ['FRA'], shape: 'delta' },
+  b2:   { y: 1997, name: 'B-2 Spirit', type: 'bomber', stealth: 0.12, power: 0.1, precise: true, by: ['USA'], shape: 'b2' },
+  f117: { y: 1990, name: 'F-117 Nighthawk', type: 'fighter', stealth: 0.22, power: 0.055, precise: true, by: ['USA'], shape: 'f117' },
+  b52:  { y: 1955, name: 'B-52 Stratofortress', type: 'bomber', stealth: 1, power: 0.085, by: ['USA'], shape: 'b52' },
+  b1b:  { y: 1986, name: 'B-1B Lancer', type: 'bomber', stealth: 0.7, power: 0.085, by: ['USA'], shape: 'b1b' },
+  f15:  { y: 1976, name: 'F-15E Strike Eagle', type: 'fighter', stealth: 0.9, power: 0.05, by: ['USA'], shape: 'twin' },
+  f16:  { y: 1978, name: 'F-16 Fighting Falcon', type: 'fighter', stealth: 0.9, power: 0.04, by: ['USA'], shape: 'single' },
+  f22:  { y: 2005, name: 'F-22 Raptor', type: 'fighter', stealth: 0.3, power: 0.05, by: ['USA'], shape: 'twin' },
+  f35:  { y: 2016, name: 'F-35 Lightning II', type: 'fighter', stealth: 0.28, power: 0.05, precise: true, by: ['USA', 'GBR', 'ITA', 'JPN', 'KOR', 'AUS', 'NLD', 'NOR', 'POL', 'DNK'], shape: 'single' },
+  su34: { y: 1990, name: 'Su-34 Fullback', type: 'fighter', stealth: 0.85, power: 0.055, by: ['RUS'], shape: 'twin' },
+  su35: { y: 2014, name: 'Su-35S Flanker-E', type: 'fighter', stealth: 0.8, power: 0.045, by: ['RUS'], shape: 'twin' },
+  su57: { y: 2020, name: 'Su-57 Felon', type: 'fighter', stealth: 0.45, power: 0.05, by: ['RUS'], shape: 'twin' },
+  tu95: { y: 1956, name: 'Tu-95 Bear', type: 'bomber', stealth: 1, power: 0.08, by: ['RUS'], shape: 'b52' },
+  tu160:{ y: 1987, name: 'Tu-160 Blackjack', type: 'bomber', stealth: 0.7, power: 0.09, by: ['RUS'], shape: 'b1b' },
+  j10:  { y: 2005, name: 'J-10C Vigorous Dragon', type: 'fighter', stealth: 0.85, power: 0.04, by: ['CHN'], shape: 'delta' },
+  j16:  { y: 2013, name: 'J-16 Flanker', type: 'fighter', stealth: 0.8, power: 0.05, by: ['CHN'], shape: 'twin' },
+  j20:  { y: 2017, name: 'J-20 Mighty Dragon', type: 'fighter', stealth: 0.4, power: 0.05, by: ['CHN'], shape: 'twin' },
+  h6:   { y: 2011, name: 'H-6K Bomber', type: 'bomber', stealth: 1, power: 0.08, by: ['CHN'], shape: 'b52' },
+  typhoon: { y: 2003, name: 'Eurofighter Typhoon', type: 'fighter', stealth: 0.8, power: 0.045, by: ['GBR', 'DEU', 'ITA', 'ESP', 'AUT', 'SAU'], shape: 'delta' },
+  tornado: { y: 1979, name: 'Panavia Tornado', type: 'fighter', stealth: 0.9, power: 0.045, by: ['DEU', 'GBR', 'ITA', 'SAU'], shape: 'single' },
+  rafale: { y: 2001, name: 'Dassault Rafale', type: 'fighter', stealth: 0.75, power: 0.05, precise: true, by: ['FRA', 'IND', 'EGY', 'QAT', 'ARE', 'GRC'], shape: 'delta' },
+  m2000: { y: 1984, name: 'Mirage 2000D', type: 'fighter', stealth: 0.85, power: 0.04, by: ['FRA'], shape: 'delta' },
 };
+// Aircraft of the 1980s, for the Cold War committee.
+Object.assign(AIRCRAFT, {
+  f14:   { y: 1974, name: 'F-14 Tomcat', type: 'fighter', stealth: 0.9, power: 0.05, by: ['USA'], shape: 'twin' },
+  f111:  { y: 1967, name: 'F-111 Aardvark', type: 'bomber', stealth: 0.85, power: 0.07, by: ['USA'], shape: 'b1b' },
+  mig29: { y: 1983, name: 'MiG-29 Fulcrum', type: 'fighter', stealth: 0.9, power: 0.04, by: ['RUS'], shape: 'twin' },
+  su27:  { y: 1985, name: 'Su-27 Flanker', type: 'fighter', stealth: 0.9, power: 0.05, by: ['RUS'], shape: 'twin' },
+  mig25: { y: 1970, name: 'MiG-25 Foxbat', type: 'fighter', stealth: 0.95, power: 0.04, by: ['RUS'], shape: 'twin' },
+  su24:  { y: 1974, name: 'Su-24 Fencer', type: 'fighter', stealth: 0.9, power: 0.05, by: ['RUS'], shape: 'delta' },
+  tu22m: { y: 1972, name: 'Tu-22M Backfire', type: 'bomber', stealth: 0.9, power: 0.08, by: ['RUS'], shape: 'b1b' },
+  h6d:   { y: 1969, name: 'H-6 Bomber', type: 'bomber', stealth: 1, power: 0.07, by: ['CHN'], shape: 'b52' },
+  j7:    { y: 1967, name: 'J-7 (MiG-21)', type: 'fighter', stealth: 0.95, power: 0.03, by: ['CHN'], shape: 'delta' },
+  jaguar:{ y: 1973, name: 'SEPECAT Jaguar', type: 'fighter', stealth: 0.9, power: 0.035, by: ['GBR', 'FRA'], shape: 'single' },
+  harrier:{ y: 1969, name: 'Harrier GR3', type: 'fighter', stealth: 0.9, power: 0.03, by: ['GBR'], shape: 'single' },
+  mirf1: { y: 1973, name: 'Mirage F1', type: 'fighter', stealth: 0.9, power: 0.035, by: ['FRA'], shape: 'delta' },
+});
 export const US_AIRCRAFT = AIRCRAFT; // older name
 // The named aircraft a country can send: [id, spec] pairs.
-export const aircraftFor = a3 => Object.entries(AIRCRAFT).filter(([, v]) => v.by.includes(a3));
+export const aircraftFor = (a3, year = 9999) => Object.entries(AIRCRAFT).filter(([, v]) => v.by.includes(a3) && (v.y || 0) <= year);
 
 // Countries with the amphibious fleets to land troops on a defended coast. Any country with a carrier group also qualifies.
 export const AMPHIBIOUS_A3 = ['USA', 'CHN', 'RUS', 'GBR', 'FRA', 'JPN', 'KOR', 'IND', 'ITA', 'ESP', 'TUR', 'AUS', 'NLD', 'BRA', 'EGY'];

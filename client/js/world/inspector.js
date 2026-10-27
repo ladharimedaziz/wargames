@@ -68,8 +68,8 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
       <div class="quick-grid">
         ${[['strike', '✦ Strike'], ['drone', '✈ Drone attack'], ['invade', '➤ Invade'], ['fleet', '⛴ Fleet'], ['blockade', '⛓ Blockade sea'], ['siege', '⚓ Blockade country'], ['war', '⚔ War'], ['ceasefire', '✋ Ceasefire'], ['peace', '☮ Peace'], ['sanction', '$ Sanction'], ['aid', '+ Aid'], ['arms', '⇄ Arms'], ['cyber', '⌁ Cyber'], ['spy', '◐ Spy'], ['neo', '✈ Evacuate'], ['helistrike', '🚁 Heli strike'], ['airassault', '⇣ Air assault'], ['airdrop', '☂ Paratroops']].map(([t, l]) => html`<button class="btn xs" onClick=${() => startOrder(t)}>${l}</button>`)}
       </div>
-      ${aircraftFor(c.a3).length > 0 && html`<div class="quick-grid" style="margin-top:6px">
-        ${aircraftFor(c.a3).flatMap(([k, v]) => k === 'b2' ? [[k, v.name.split(' ')[0] + ' strike', {}], ['b2moab', 'B-2 MOAB', { payload: 'moab' }]] : [[k, v.name.replace(/ .*/, '') + (v.type === 'bomber' ? ' run' : ' strike'), {}]]).map(([k, l, extra]) => html`<button class="btn xs" onClick=${() => startOrder('strike', { counts: { aircraft: k === 'b2moab' ? 'b2' : k, ...extra } })}>✈ ${l}</button>`)}
+      ${aircraftFor(c.a3, state.settings.year).length > 0 && html`<div class="quick-grid" style="margin-top:6px">
+        ${aircraftFor(c.a3, state.settings.year).flatMap(([k, v]) => k === 'b2' ? [[k, v.name.split(' ')[0] + ' strike', {}], ['b2moab', 'B-2 MOAB', { payload: 'moab' }]] : [[k, v.name.replace(/ .*/, '') + (v.type === 'bomber' ? ' run' : ' strike'), {}]]).map(([k, l, extra]) => html`<button class="btn xs" onClick=${() => startOrder('strike', { counts: { aircraft: k === 'b2moab' ? 'b2' : k, ...extra } })}>✈ ${l}</button>`)}
       </div>`}
       <${Ops} conn=${conn} state=${state} id=${id} />
       ${c.a3 === 'USA' && html`<${UsNavy} state=${state} id=${id} />`}

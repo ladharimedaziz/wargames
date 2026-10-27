@@ -1,4 +1,5 @@
 // The stage display: what the room sees on the projector or stream. View-only; the Stage Zeus drives it.
+import { CouncilDisplay } from './council.js';
 import { html, render, useState, useEffect, useRef, useMemo, Connection, useConnState, useNow, timerRemaining, fmt, cls } from '../lib.js';
 import { WorldMap } from '../map/renderer.js';
 import { KronosEye } from '../fx/eye.js';
@@ -57,7 +58,7 @@ function Stage({ conn }) {
   const timerShown = state.timer.visible !== false && (state.timer.running || state.timer.remaining > 0) && !['disguise', 'ending', 'intro', 'reveal'].includes(state.display.scene);
   return html`
     <div class=${cls('stage', `lang-${lang}`, bannerShown && 'has-banner', timerShown && 'has-timer', state.kronos.eye && 'has-eye')} dir=${isAr(lang) ? 'rtl' : 'ltr'} onClick=${!soundOn ? enableSound : undefined}>
-      ${state.mode === 'court' ? html`<${CourtDisplay} conn=${conn} state=${state} lang=${lang} />` : html`<${WorldStage} conn=${conn} state=${state} lang=${lang} />`}
+      ${state.mode === 'court' ? html`<${CourtDisplay} conn=${conn} state=${state} lang=${lang} />` : state.mode === 'council' ? html`<${CouncilDisplay} conn=${conn} state=${state} />` : html`<${WorldStage} conn=${conn} state=${state} lang=${lang} />`}
       ${bannerShown && html`<${Banner} b=${state.display.banner} lang=${lang} />`}
       ${timerShown && html`<${StageTimer} conn=${conn} timer=${state.timer} />`}
       ${(global.pause || state.display.scene === 'pause') && html`<${PauseScreen} p=${global.pause} lang=${lang} />`}

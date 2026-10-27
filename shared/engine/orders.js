@@ -203,6 +203,7 @@ export function validateOrder(state, o) {
       return { ok: true };
     }
     case 'drone':
+      if (state.settings.year && state.settings.year < 2000) return fail('There are no combat drones in 1985.');
       if (sameSide(state, o.country, o.target)) return fail(`${T.name} is on the same side as ${c.name}.`);
       return { ok: true };
     case 'lift': case 'cap': case 'propaganda': case 'election': case 'intel': case 'satellite':
