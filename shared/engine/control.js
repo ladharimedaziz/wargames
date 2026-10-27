@@ -1,9 +1,24 @@
-// Territorial control for war fronts. The world is a grid of 0.3° cells; `state.control` lists only the cells held
+// Territorial control for war fronts. The world is a grid of 0.15° cells; `state.control` lists only the cells held
 // by someone other than the country they belong to. Every front, in either direction, is the edge between who
 // holds which cells, so two armies pushing against each other share one line, and a Zeus can paint ground by hand.
 import { clamp, rand, atWar, sameSide } from './core.js';
 
-export const CELL = 0.3, NI = Math.round(360 / CELL), NJ = Math.round(180 / CELL);
+export const CELL = 0.15, NI = Math.round(360 / CELL), NJ = Math.round(180 / CELL);
+// Saved games from the 0.3° grid: every old cell becomes four.
+export function migrateGrid(state) {
+  if (!state || state.mode === 'court' || !state.meta) return state;
+  if (state.meta.grid !== CELL && state.control) {
+    const old = {}, NI0 = 1200;
+    for (const [k, v] of Object.entries(state.control)) {
+      const i = k % NI0, j = Math.floor(k / NI0);
+      for (const dj of [0, 1]) for (const di of [0, 1]) old[cellKey(2 * i + di, 2 * j + dj)] = v;
+    }
+    state.control = old;
+  }
+  state.meta.grid = CELL;
+  return state;
+}
+const CELL_K = 0.3 / CELL; // spatial tuning below was made for 0.3° cells
 export const cellKey = (i, j) => j * NI + (((i % NI) + NI) % NI);
 export const cellIJ = k => [k % NI, Math.floor(k / NI)];
 export const cellCenter = k => { const [i, j] = cellIJ(k); return [-180 + (i + 0.5) * CELL, 90 - (j + 0.5) * CELL]; };
@@ -60,11 +75,11 @@ export function advance(state, X, Y, n, opts = {}) {
     const [i, j] = cellIJ(k);
     let xn = 0; for (const m of neighbors(k, true)) if (friendly(ctl(m))) xn++;
     if (!xn) return -Infinity;
-    let s = xn * 0.9 + noise(i, j, seed, 4.5) * 3.2 + noise(i, j, seed + 9, 1.6) * 0.8;
+    let s = xn * 0.9 + noise(i, j, seed, 4.5 * CELL_K) * 3.2 + noise(i, j, seed + 9, 1.6 * CELL_K) * 0.8;
     const home = G.homeOf(k);
     if (target && home === target) s += 2.5;
     if (home === X && (!target || target === X)) s += 3; // retaking your own land comes first
-    if (tw) { let di = tw[0] - i; if (di > NI / 2) di -= NI; if (di < -NI / 2) di += NI; const d = Math.hypot(di, tw[1] - j); s += 2.2 / (1 + d / 25); }
+    if (tw) { let di = tw[0] - i; if (di > NI / 2) di -= NI; if (di < -NI / 2) di += NI; const d = Math.hypot(di, tw[1] - j); s += 2.2 / (1 + d / (25 * CELL_K)); }
     return s;
   };
   // The starting frontier: every cell Y holds that touches ground X holds.

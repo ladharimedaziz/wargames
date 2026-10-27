@@ -10,7 +10,7 @@ import {
 } from './core.js';
 import { validateOrder, blockedFor, describeOrder, autoUnits } from './orders.js';
 import { tickEconomy } from './economy.js';
-import { hasGeo, cellsOf, cellCenter, advance, holdings, releaseCells, occupyCells, heldCenter, behindLines, dropPocket, nearestHeld } from './control.js';
+import { CELL, hasGeo, cellsOf, cellCenter, advance, holdings, releaseCells, occupyCells, heldCenter, behindLines, dropPocket, nearestHeld } from './control.js';
 import { planAI } from './ai.js';
 import { headlinesFrom } from './news.js';
 import { detectEndings } from './endings.js';
@@ -449,7 +449,7 @@ function resolveHelicopters(state, o, ev) {
 
 // A push is measured against the country, but capped at the size of a large theatre, so "+10" in Russia takes
 // about as much ground as "+10" in Ukraine rather than a tenth of Siberia.
-const FRONT_CAP = 1100;
+const FRONT_CAP = Math.round(1100 * (0.3 / CELL) ** 2);
 
 // Moves a front by `delta` points: the attacker takes cells along the line (or, going back, the defender retakes
 // its own). Holding all of it occupies the country; losing all of it ends the front. Returns true when the

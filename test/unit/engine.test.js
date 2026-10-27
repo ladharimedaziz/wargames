@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as geo from '../../server/geo-index.js';
 import { createWorldState, createCourtState } from '../../shared/engine/state.js';
+import { CELL, NI } from '../../shared/engine/control.js';
 import { applyAction } from '../../shared/engine/reducer.js';
 import { parseCommand } from '../../shared/engine/command.js';
 import { atWar, relation, warClosures } from '../../shared/engine/core.js';
@@ -358,7 +359,7 @@ test('fronts are ground held cell by cell, and both sides push the same line', (
 test('a Zeus paints ground for a side and hands it back', () => {
   const { s, zeus, kronos } = world();
   const keys = [];
-  for (let lon = 30; lon < 32; lon += 0.3) for (let lat = 48; lat < 49.5; lat += 0.3) keys.push(Math.floor((90 - lat) / 0.3) * 1200 + Math.floor((lon + 180) / 0.3));
+  for (let lon = 30; lon < 32; lon += CELL) for (let lat = 48; lat < 49.5; lat += CELL) keys.push(Math.floor((90 - lat) / CELL) * NI + Math.floor((lon + 180) / CELL));
   assert.equal(zeus({ type: 'paintControl', owner: RU, keys, mode: 'take' }).ok, false, 'not at war: nothing to take');
   kronos({ type: 'forceWar', a: RU, b: UA });
   assert.ok(zeus({ type: 'paintControl', owner: RU, keys, mode: 'take' }).ok);

@@ -1,4 +1,5 @@
 // Holds every committee in memory, autosaves to disk, and keeps rewind points.
+import { migrateGrid } from '../shared/engine/control.js';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { readJSON, writeJSON } from './files.js';
 import { COMMITTEE_IDS } from './auth.js';
@@ -23,7 +24,7 @@ export class Store {
     this.dms = readJSON(dir, 'dms.json', {});
     for (const id of COMMITTEE_IDS) {
       const saved = readJSON(dir, `committees/${id}.json.gz`, null);
-      this.committees.set(id, saved && saved.id === id ? saved : this.fresh(id));
+      this.committees.set(id, saved && saved.id === id ? migrateGrid(saved) : this.fresh(id));
       const snaps = readJSON(dir, `committees/${id}.snapshots.json.gz`, []);
       this.snapshots.set(id, snaps.map(s => ({ ...s, data: Buffer.from(s.data, 'base64') })));
     }
@@ -35,7 +36,7 @@ export class Store {
     const m = mode || d.mode;
     const seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
     const s = m === 'court' ? createCourtState({ id, name: name || d.name, seed }) : createWorldState({ id, name: name || d.name, seed }, geoInfo);
-    s.meta.createdAt = Date.now();
+    s.meta.createdAt = Date.now(); migrateGrid(s);
     if (d.disguise && m === 'world') s.display.scene = 'disguise';
     return s;
   }
@@ -76,7 +77,7 @@ export class Store {
     const snap = this.snapshots.get(id).find(s => s.id === snapId);
     if (!snap) return null;
     this.snapshot(id, `Before rewind to "${snap.label}"`, by);
-    const state = JSON.parse(gunzipSync(snap.data).toString('utf8'));
+    const state = migrateGrid(JSON.parse(gunzipSync(snap.data).toString('utf8')));
     state.version = (this.get(id).version || 0) + 1;
     state.kronos = this.get(id).kronos; // rewinding never undoes Kronos's eye or lock
     this.committees.set(id, state);
@@ -85,7 +86,7 @@ export class Store {
   }
   replace(id, state, by, label = 'Before restore') {
     this.snapshot(id, label, by);
-    state.id = id;
+    state.id = id; migrateGrid(state);
     state.version = Math.max(state.version || 0, (this.get(id).version || 0) + 1);
     this.committees.set(id, state);
     this.touch(id);
