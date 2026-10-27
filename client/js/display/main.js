@@ -437,12 +437,18 @@ function Ending({ state, lang, now }) {
 }
 
 function Standby({ state, lang, now }) {
+  const clock = new Date(now).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+  // PasionMUN's own card, full bleed on white, unless the Zeus switches it off.
+  if (state.display.brand !== false) return html`<div class="standby sb-card">
+    <img class="sb-logo" src="/client/img/pasionmun.png" alt="PasionMUN, Model United Nations" />
+    <div class="sb-card-name">${state.name}</div>
+    <div class="sb-card-clock mono">${clock}</div>
+  </div>`;
   return html`<div class="standby">
     <div class="sb-orb"><${Globe} className="sb-globe" speed=${4} glow="#36e2ff" arcs=${false} /></div>
     <div class="sb-name">${state.name}</div>
     <div class="sb-sub"><${Bi} k="standby" lang=${lang} /></div>
-    ${state.display.brand !== false && html`<div class="sb-brand">Brought to you by <b>PasionMUN</b></div>`}
-    <div class="sb-clock mono">${new Date(now).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
+    <div class="sb-clock mono">${clock}</div>
   </div>`;
 }
 
