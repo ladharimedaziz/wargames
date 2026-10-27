@@ -4,7 +4,7 @@ import { SEA_ZONES } from '../data/places.js';
 import { carrierName } from '../data/militaries.js';
 import { zonesTouching, nearestZone } from '../geo.js';
 import {
-  UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures, isOOB, OOB_ERROR, aggressorOf, enemiesOf, unVoters, aiVote,
+  UNIT_TYPES, ROE, BLOCS, ENDINGS, clamp, round1, newId, atWar, relation, shiftRelation, sameSide, isActive, airContested, warClosures, isOOB, OOB_ERROR, THEATERS, theaterOf, aggressorOf, enemiesOf, unVoters, aiVote,
 } from './core.js';
 import { ORDER_TYPES, validateOrder, autoUnits, describeOrder } from './orders.js';
 import { OP_KINDS, resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushFrontNow, syncFront, clearFront, publishInstant } from './resolve.js';
@@ -473,6 +473,50 @@ const WORLD = {
     for (const id of warClosures(s, a.a, a.b)) s.global.closedAirspace[id] ||= { turn: s.meta.turn, at: ctx.now, war: true };
     news(s, ctx, `BREAKING: ${C(s, a.a).name} declares war on ${C(s, a.b).name}`, `عاجل: ${C(s, a.a).ar} تعلن الحرب على ${C(s, a.b).ar}`, 6);
     sandboxFx(s, ctx, ev.filter(e => e.kind === 'war').length ? ev.filter(e => e.kind === 'war') : [{ kind: 'war', a: a.a, b: a.b }]);
+    return ok({ broadcastAnim: true });
+  } },
+  // A full war between two factions (blocs) across the world or one theatre, without picking countries one by one.
+  factionWar: { perm: 'zeus', run(s, a, ctx) {
+    const A = a.a, B = a.b; if (!s.blocs[A] || !s.blocs[B] || A === B) return err('Pick two different factions.');
+    const th = a.theater && a.theater !== 'all' ? a.theater : null; if (th && !THEATERS[th]) return err('Unknown theatre.');
+    const side = b => Object.values(s.countries).filter(c => c.bloc === b && !c.rebelOf && !isOOB(c.id) && (!th || theaterOf(c) === th));
+    const SA = side(A), SB = side(B), pairs = [];
+    for (const x of SA) for (const y of SB) {
+      if (atWar(s, x.id, y.id)) continue;
+      // A world war: countries fight in their own theatre, and the major powers fight each other everywhere.
+      if (!th && !(theaterOf(x) && theaterOf(x) === theaterOf(y)) && !(x.major && y.major)) continue;
+      pairs.push([x, y]);
+    }
+    if (!pairs.length) return err(th ? `Nobody to fight in the ${THEATERS[th]}.` : 'Those factions are already at war everywhere they can be.');
+    const involved = new Set();
+    for (const [x, y] of pairs.slice(0, 600)) {
+      s.wars.push({ a: x.id, b: y.id, since: s.meta.turn });
+      shiftRelation(s, x.id, y.id, -100); involved.add(x.id); involved.add(y.id);
+      for (const id of warClosures(s, x.id, y.id)) s.global.closedAirspace[id] ||= { turn: s.meta.turn, at: ctx.now, war: true };
+    }
+    for (const id of involved) s.countries[id].support = clamp(s.countries[id].support + 4, 0, 100);
+    s.global.theaterWar ||= {};
+    for (const t of th ? [th] : Object.keys(THEATERS)) if (pairs.some(([x, y]) => theaterOf(x) === t && theaterOf(y) === t)) s.global.theaterWar[t] = [A, B];
+    const where = th ? `in the ${THEATERS[th]}` : 'across the world';
+    news(s, ctx, `BREAKING: ${s.blocs[A].name} and ${s.blocs[B].name} go to war ${where}`, `عاجل: ${s.blocs[A].ar} و${s.blocs[B].ar} في حرب شاملة`, 8);
+    log(s, ctx, `Full faction war: ${s.blocs[A].name} v ${s.blocs[B].name} ${where} (${pairs.length} wars)`);
+    sandboxFx(s, ctx, pairs.slice(0, 14).map(([x, y]) => ({ kind: 'war', a: x.id, b: y.id })));
+    return ok({ broadcastAnim: true, wars: pairs.length });
+  } },
+  factionPeace: { perm: 'zeus', run(s, a, ctx) {
+    const A = a.a, B = a.b; if (!s.blocs[A] || !s.blocs[B] || A === B) return err('Pick two different factions.');
+    const th = a.theater && a.theater !== 'all' ? a.theater : null;
+    const between = w => { const x = C(s, w.a), y = C(s, w.b); return x && y && !x.rebelOf && !y.rebelOf && ((x.bloc === A && y.bloc === B) || (x.bloc === B && y.bloc === A)) && (!th || theaterOf(x) === th || theaterOf(y) === th); };
+    const ended = s.wars.filter(between);
+    if (!ended.length) return err('Those factions are not at war there.');
+    s.wars = s.wars.filter(w => !between(w));
+    for (const w of ended) {
+      shiftRelation(s, w.a, w.b, 40);
+      for (const [p, q] of [[w.a, w.b], [w.b, w.a]]) if (s.countries[p]?.front?.by === q) clearFront(s, s.countries[p], q);
+    }
+    for (const t of th ? [th] : Object.keys(s.global.theaterWar || {})) if (s.global.theaterWar?.[t]) delete s.global.theaterWar[t];
+    news(s, ctx, `${s.blocs[A].name} and ${s.blocs[B].name} agree to stop fighting${th ? ` in the ${THEATERS[th]}` : ''}`, `${s.blocs[A].ar} و${s.blocs[B].ar} يوقفان القتال`, 6);
+    log(s, ctx, `Faction ceasefire: ${s.blocs[A].name} / ${s.blocs[B].name}`);
     return ok({ broadcastAnim: true });
   } },
   forcePeace: { perm: 'kronos', run(s, a, ctx) {

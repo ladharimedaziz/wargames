@@ -33,6 +33,7 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
   const [draft, setDraft] = useState(null); // order being composed
   const [picking, setPicking] = useState(null); // 'target' | 'zone' while choosing on the map
   const [dmOpen, setDmOpen] = useState(false);
+  const [viewMode, setViewMode] = useState('countries'); // 'countries' | 'factions': what a map click picks
   const [brush, setBrush] = useState(null); // { owner, mode: 'take' | 'restore', r } while drawing ground on the map
   const [layers, setLayers] = useState({ air: true, naval: true, units: true, relations: false, labels: true, wars: true });
   const pending = state.review.filter(r => r.status === 'pending').length;
@@ -44,8 +45,10 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
     if (picking === 'target' && id) { setDraft(d => ({ ...d, target: id })); setPicking(null); setTab('orders'); return; }
     if (picking === 'zone' && zone) { setDraft(d => ({ ...d, zone })); setPicking(null); setTab('orders'); return; }
     if (zone) { setSelZone(zone); setSelected(null); return; }
+    if (viewMode === 'factions') { const c = id && state.countries[id]; setSelected(c ? `bloc:${c.bloc}` : null); setSelZone(null); return; }
     setSelected(id || null); setSelZone(null);
-  }, [picking]);
+  }, [picking, viewMode, state]);
+  const setView = v => { setViewMode(v); setSelected(null); setSelZone(null); };
 
   const startOrder = (type, extra = {}) => { setDraft({ type, country: selected, counts: {}, category: 'military', ...extra }); setTab('orders'); };
 
@@ -87,7 +90,7 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
         </aside>
         <main class="mid">
           <${MapView} conn=${conn} state=${state} selected=${selected} onSelect=${onMapSelect} layers=${layers} picking=${picking} draft=${draft} brush=${brush} setBrush=${setBrush} />
-          <${MapOverlay} state=${state} conn=${conn} layers=${layers} setLayers=${setLayers} picking=${picking} cancelPick=${() => setPicking(null)} />
+          <${MapOverlay} state=${state} conn=${conn} layers=${layers} setLayers=${setLayers} picking=${picking} cancelPick=${() => setPicking(null)} viewMode=${viewMode} setView=${setView} setSelected=${setSelected} />
           ${brush && html`<${DrawBar} conn=${conn} state=${state} brush=${brush} setBrush=${setBrush} />`}
           <${CommandBar} conn=${conn} state=${state} role=${user.role} />
         </main>
@@ -214,16 +217,17 @@ function DrawBar({ state, brush, setBrush, conn }) {
   </div>`;
 }
 
-function MapOverlay({ state, conn, layers, setLayers, picking, cancelPick }) {
+function MapOverlay({ state, conn, layers, setLayers, picking, cancelPick, viewMode, setView, setSelected }) {
   const toggle = k => setLayers(l => ({ ...l, [k]: !l[k] }));
   const g = state.global;
   const closedChokes = Object.entries(g.chokepoints).filter(([, c]) => c.status !== 'open');
   return html`
     <div class="map-layers">
+      <div class="seg sm" title="What a click on the map picks"><button class=${viewMode === 'countries' ? 'on' : ''} onClick=${() => setView('countries')}>◎ Countries</button><button class=${viewMode === 'factions' ? 'on' : ''} onClick=${() => setView('factions')}>⚑ Factions</button></div>
       ${[['air', '✈ Air'], ['naval', '⛴ Sea'], ['units', '▲ Forces'], ['wars', '⚔ Wars'], ['relations', '◎ Relations'], ['labels', 'Aa Labels']].map(([k, l]) => html`<button class=${cls('btn xs', layers[k] && 'on')} onClick=${() => toggle(k)}>${l}</button>`)}
     </div>
     <div class="map-legend">
-      ${Object.entries(state.blocs).filter(([k]) => k !== 'N').map(([k, b]) => html`<span class="row"><i class="dot" style=${`background:${b.color}`}></i>${b.name}</span>`)}
+      ${Object.entries(state.blocs).filter(([k]) => k !== 'N').map(([k, b]) => html`<span class=${cls('row', viewMode === 'factions' && 'click')} onClick=${() => viewMode === 'factions' && setSelected(`bloc:${k}`)}><i class="dot" style=${`background:${b.color}`}></i>${b.name}</span>`)}
       <span class="row"><i class="dot" style="background:#3a4760;outline:1px solid #e6edf7"></i>Delegate</span>
       <span class="row"><i class="hatch-sw"></i>Airspace closed</span>
     </div>
