@@ -75,19 +75,28 @@ export function CourtDisplay({ conn, state, lang }) {
     </div>`;
 }
 
+// The scales: an engraved brass balance, drawn flat. The beam tips with the case and the pans stay level as it
+// does, hanging from their chains.
 function Scales({ value, lang }) {
-  const tilt = value * 2.4; // positive = prosecution heavier (right pan drops)
+  const tilt = Math.max(-14, Math.min(14, value * 2.4)); // positive = prosecution heavier (right pan drops)
+  const ease = 'transform 1.6s cubic-bezier(.34,1.3,.5,1)';
+  const pan = (cx, band) => html`<g style=${`transform: rotate(${-tilt}deg); transform-origin: ${cx}px 31px; transition: ${ease}`}>
+    <path d=${`M${cx} 31 L${cx - 29} 90 M${cx} 31 L${cx} 90 M${cx} 31 L${cx + 29} 90`} class="sc-chain" />
+    <path d=${`M${cx - 33} 90 Q${cx} 112 ${cx + 33} 90 Z`} class="sc-pan" />
+    <path d=${`M${cx - 33} 90 L${cx + 33} 90`} class="sc-rim" style=${`stroke:${band}`} />
+  </g>`;
   return html`<div class="scales">
-    <svg viewBox="0 0 200 120">
-      <rect x="96" y="20" width="8" height="86" fill="#c9a227" /><rect x="70" y="104" width="60" height="8" rx="3" fill="#c9a227" />
-      <g style=${`transform: rotate(${tilt}deg); transform-origin: 100px 24px; transition: transform 1.2s cubic-bezier(.3,1.4,.5,1)`}>
-        <rect x="24" y="21" width="152" height="5" rx="2" fill="#e8c55a" />
-        <g style=${`transform: rotate(${-tilt}deg); transform-origin: 28px 24px; transition: transform 1.2s cubic-bezier(.3,1.4,.5,1)`}><path d="M28 24 L12 70 M28 24 L44 70" stroke="#e8c55a" stroke-width="1.5" /><path d="M6 70 Q28 86 50 70 Z" fill="#3d8bfd" opacity=".85" /></g>
-        <g style=${`transform: rotate(${-tilt}deg); transform-origin: 172px 24px; transition: transform 1.2s cubic-bezier(.3,1.4,.5,1)`}><path d="M172 24 L156 70 M172 24 L188 70" stroke="#e8c55a" stroke-width="1.5" /><path d="M150 70 Q172 86 194 70 Z" fill="#e5484d" opacity=".85" /></g>
+    <svg viewBox="0 0 240 150" aria-hidden="true">
+      <path d="M96 140 L104 126 L136 126 L144 140 Z" class="sc-base" /><rect x="88" y="140" width="64" height="6" rx="1" class="sc-base" />
+      <rect x="117" y="30" width="6" height="96" class="sc-col" /><rect x="112" y="118" width="16" height="9" class="sc-base" />
+      <g style=${`transform: rotate(${tilt}deg); transform-origin: 120px 31px; transition: ${ease}`}>
+        <path d="M34 31 Q120 22 206 31 Q120 38 34 31 Z" class="sc-beam" />
+        <circle cx="34" cy="31" r="3.6" class="sc-beam" /><circle cx="206" cy="31" r="3.6" class="sc-beam" />
+        ${pan(34, '#5b8def')}${pan(206, '#d9534f')}
       </g>
-      <circle cx="100" cy="22" r="6" fill="#ffd877" />
+      <circle cx="120" cy="31" r="6.5" class="sc-pivot" /><circle cx="120" cy="20" r="3.4" class="sc-pivot" />
     </svg>
-    <div class="scales-l"><span style="color:#8cb8ff">${t('defence', lang)}</span><span style="color:#ff8a8d">${t('prosecution', lang)}</span></div>
+    <div class="scales-l"><span style="color:#8cb8ff">${t('defence', lang)}</span><span style="color:#ff9a96">${t('prosecution', lang)}</span></div>
   </div>`;
 }
 
