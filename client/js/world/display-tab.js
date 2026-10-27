@@ -91,6 +91,7 @@ export function DisplayTab({ conn, state, committee }) {
         <button class=${cls('btn sm', st.night && 'on')} onClick=${() => run(conn, { type: 'setSetting', key: 'night', value: !st.night })} title="Dark map with glowing city lights">☾ Night mode</button>
         <button class=${cls('btn sm', st.showStrikes !== false && 'on')} onClick=${() => run(conn, { type: 'setSetting', key: 'showStrikes', value: st.showStrikes === false })} title="Jets fly precision strikes along active fronts every few seconds, for show only">✈ Show strikes</button>
         <button class=${cls('btn sm', st.aesthetic && 'on')} onClick=${() => run(conn, { type: 'setSetting', key: 'aesthetic', value: !st.aesthetic })} title="More intense visuals: busier skies and fronts. Changes nothing in the war itself">🔥 Aesthetic mode</button>
+        <button class=${cls('btn sm', d.brand !== false && 'on')} onClick=${() => run(conn, { type: 'setBrand', on: d.brand === false })} title="Show 'Brought to you by PasionMUN' on the standby screen">Brought to you by PasionMUN</button>
         <button class=${cls('btn sm', d.arms !== false && 'on')} onClick=${() => run(conn, { type: 'setCoat', on: d.arms === false })} title="Show the coat of arms of a country when it is selected or zoomed to, on every map">⚜ Coats of arms</button>
       </div>
 

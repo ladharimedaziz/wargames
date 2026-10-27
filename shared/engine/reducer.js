@@ -272,6 +272,7 @@ const WORLD = {
     return ok();
   } },
   // Coats of arms for the selected or focused country, on every map. On unless the Zeus turns it off.
+  setBrand: { perm: 'zeus', run(s, a) { s.display.brand = !!a.on; return ok(); } },
   setCoat: { perm: 'zeus', run(s, a) { s.display.arms = !!a.on; return ok(); } },
   playEnding: { perm: 'zeus', run(s, a, ctx) {
     if (!ENDINGS[a.ending]) return err('Unknown ending.');
