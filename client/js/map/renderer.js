@@ -164,8 +164,8 @@ export class WorldMap {
   syncControl(state, first) {
     const cells = this.atlas?.lo?.cells; if (!cells) return;
     const next = state.control || {}, now = performance.now();
-    const prevMap = this.ctl?.map;
-    if (first || !prevMap) { this.ctl = { map: { ...next }, old: null, start: 0, dur: 0, delay: new Map(), changed: new Set() }; this.ctlGroups = null; return; }
+    const prev = this.ctl, prevMap = prev?.map;
+    if (first || !prevMap) { this.ctl = { map: { ...next }, anim: new Map(), end: 0 }; this.ctlGroups = null; return; }
     const changed = new Set();
     for (const k in next) if (prevMap[k] !== next[k]) changed.add(+k);
     for (const k in prevMap) if (next[k] === undefined) changed.add(+k);
@@ -180,20 +180,26 @@ export class WorldMap {
       for (const k of q) for (const m of cellNeighbors(k, false)) if (changed.has(m) && !layer.has(m) && newOwner(m) === newOwner(k)) { layer.set(m, L); nq.push(m); }
       q = nq;
     }
-    const maxL = Math.max(1, L - 1), delay = new Map();
-    for (const k of changed) delay.set(k, layer.has(k) ? layer.get(k) / maxL : Math.random());
-    const wait = (this.frontDelay || 0) * 1000;
-    this.ctl = { map: { ...next }, old: { ...prevMap }, start: now + wait, dur: clamp(1800 + maxL * 110, 2400, 6000), delay, changed };
+    const maxL = Math.max(1, L - 1);
+    const start = now + (this.frontDelay || 0) * 1000, dur = clamp(1800 + maxL * 110, 2400, 6000);
+    // Each cell keeps its own clock, so a second front changing mid-sweep does not cut the first one short:
+    // cells still rolling over finish their own animation.
+    const anim = new Map();
+    let end = start + dur;
+    if (prev.anim) for (const [k, a] of prev.anim) if (!changed.has(k) && now < a.s + a.d) { anim.set(k, a); end = Math.max(end, a.s + a.d); }
+    for (const k of changed) anim.set(k, { o: oldOwner(k), s: start, d: dur, dl: layer.has(k) ? layer.get(k) / maxL : Math.random() });
+    this.ctl = { map: { ...next }, anim, end };
     this.ctlGroups = null;
   }
-  ctlProgress(now) { const c = this.ctl; return c && c.dur ? clamp((now - c.start) / c.dur, 0, 1) : 1; }
+  ctlProgress(now) { const c = this.ctl; return c && c.end > now ? 0.5 : 1; }
   // How much a cell belongs to `owner` right now (0..1, blending while ground changes hands).
-  ctlValue(k, owner, u) {
+  ctlValue(k, owner, now) {
     const c = this.ctl, cells = this.atlas.lo.cells;
     const n = (c.map[k] ?? cells.homeOf(k)) === owner ? 1 : 0;
-    if (u >= 1 || !c.changed.has(k)) return n;
-    const o = (c.old[k] ?? cells.homeOf(k)) === owner ? 1 : 0;
-    const t = clamp((u - c.delay.get(k) * 0.72) / 0.28, 0, 1);
+    const a = c.anim.get(k); if (!a) return n;
+    const u = clamp((now - a.s) / a.d, 0, 1); if (u >= 1) return n;
+    const o = (a.o ?? cells.homeOf(k)) === owner ? 1 : 0;
+    const t = clamp((u - a.dl * 0.72) / 0.28, 0, 1);
     return o + (n - o) * easeInOut(t);
   }
   // Every (holder, country) pair with ground changing or held, with the box of cells it covers.
@@ -216,7 +222,7 @@ export class WorldMap {
       if (c.map[k] === owner) { const [lon, lat] = cellCenter(k); g.n++; g.sx += lon; g.sy += lat; }
     };
     for (const k in c.map) add(+k, c.map[k]);
-    if (this.ctlProgress(now) < 1) for (const k in c.old || {}) add(+k, c.old[k]);
+    if (this.ctlProgress(now) < 1) for (const [k, a] of c.anim) if (now < a.s + a.d && a.o != null) add(k, a.o);
     this.ctlGroupsSettled = this.ctlProgress(now) >= 1;
     this.ctlGroups = [...groups.values()].filter(g => g.i1 - g.i0 < 400);
     return this.ctlGroups;
@@ -228,7 +234,7 @@ export class WorldMap {
     if (g.shape && !live && time - g.shape.t < 0.12 && g.shape.k === this.cam.k) return g.shape;
     const pad = 3, i0 = g.i0 - pad, j0 = Math.max(0, g.j0 - pad), W = g.i1 - g.i0 + 1 + pad * 2, H = Math.min(g.j1 + pad, 599) - j0 + 1;
     const v = new Float64Array(W * H);
-    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) v[y * W + x] = this.ctlValue(cellKey(i0 + x, j0 + y), g.owner, u);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) v[y * W + x] = this.ctlValue(cellKey(i0 + x, j0 + y), g.owner, now);
     // Separable [1 2 1] blur, twice, for soft organic curves.
     const tmp = new Float64Array(W * H);
     for (let pass = 0; pass < 2; pass++) {
@@ -311,6 +317,30 @@ export class WorldMap {
             ctx.fillStyle = '#ffe2bd'; ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.5)'; ctx.lineWidth = 1 / k; ctx.stroke(); ctx.restore();
           }
           if (fighting) {
+            // Skirmishes flare up at random points along the line: a ping, then shells landing on both sides.
+            const sk = (g.skirm ||= []);
+            if (!g.nextSk || time > g.nextSk) {
+              g.nextSk = time + 0.7 + Math.random() * 2;
+              const f = sh.front[Math.floor(Math.random() * sh.front.length)];
+              sk.push({ x: f.x, y: f.y, nx: f.nx, ny: f.ny, t: time, big: Math.random() < 0.3, seed: Math.random() * 100 });
+              if (sk.length > 10) sk.shift();
+            }
+            for (const p of sk) {
+              const dur = p.big ? 3.2 : 2.2, v = (time - p.t) / dur; if (v < 0 || v > 1) continue;
+              const pr = ease(Math.min(1, v * 1.6));
+              ctx.strokeStyle = `rgba(255,170,90,${0.7 * (1 - pr)})`; ctx.lineWidth = 1.2 / k;
+              ctx.beginPath(); ctx.arc(p.x, p.y, (3 + pr * (p.big ? 18 : 11)) / k, 0, TAU); ctx.stroke();
+              const shells = p.big ? 9 : 5;
+              for (let q = 0; q < shells; q++) {
+                const at = q / shells * 0.7, w = (v - at) / 0.3; if (w < 0 || w > 1) continue;
+                const side = q % 2 ? 1 : -1, h = Math.sin(p.seed + q * 12.7) * 0.5 + 0.5, lat = Math.cos(p.seed * 1.3 + q * 7.1);
+                const x = p.x + (p.nx * side * (2 + h * 7) - p.ny * lat * 6) / k, y = p.y + (p.ny * side * (2 + h * 7) + p.nx * lat * 6) / k;
+                const r2 = (1 + w * (p.big ? 5 : 3.5)) / k;
+                const gr = ctx.createRadialGradient(x, y, 0, x, y, r2);
+                gr.addColorStop(0, `rgba(255,240,190,${1 - w})`); gr.addColorStop(0.5, `rgba(255,120,40,${0.6 * (1 - w)})`); gr.addColorStop(1, 'rgba(255,60,20,0)');
+                ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(x, y, r2, 0, TAU); ctx.fill();
+              }
+            }
             for (let j = 0; j < Math.min(16, sh.front.length); j++) {
               const cyc = time * 1.4 + j * 0.57, m = Math.floor(cyc), v2 = cyc - m;
               const r = Math.abs(Math.sin(m * 12.9898 + j * 78.233 + g.i0) * 43758.5453) % 1;
@@ -733,8 +763,9 @@ export class WorldMap {
   }
 
   // --- battles for cities ---
-  // A city within a few cells of enemy-held ground is being fought over: muzzle flashes, tracers and shell
-  // bursts flicker across it, and the capital gets a caption.
+  // A city on the front line is being fought over: muzzle flashes, tracers and shell bursts flicker across it,
+  // and the capital gets a caption. Once a city falls and the line moves past it, the fighting there carries on
+  // through the next turn and then dies down, rather than lasting the whole war.
   cityBattles() {
     if (this.battles) return this.battles;
     const s = this.state, cells = this.atlas?.lo?.cells, out = [];
@@ -742,16 +773,35 @@ export class WorldMap {
     const held = new Map();
     for (const k in s.control) { const C = cells.homeOf(+k); if (C) { if (!held.has(C)) held.set(C, []); held.get(C).push(+k); } }
     const a3id = {}; for (const c of Object.values(s.countries)) if (c.a3) a3id[c.a3] = c.id;
+    const fell = (this.cityFell ||= new Map()), turn = s.meta?.turn || 0;
     for (const city of CITIES) {
       if (city.tier > 2) continue;
-      const C = a3id[city.a3], list = held.get(C); if (!list) continue;
+      const C = a3id[city.a3], list = held.get(C);
+      if (!list) { fell.delete(city.name); continue; }
       const ci = (city.lon + 180) / CELL, cj = (90 - city.lat) / CELL;
       let best = Infinity;
       for (const k of list) { const [i, j] = cellIJ(k); const d = Math.hypot(i + 0.5 - ci, j + 0.5 - cj); if (d < best) best = d; }
       const country = s.countries[C];
       const capital = Math.abs(country.lat - city.lat) < 0.3 && Math.abs(country.lon - city.lon) < 0.3;
-      if (best <= (capital ? 3.2 : 2.2) && !country.occupiedBy) out.push({ city, capital, heat: clamp(1.4 - best / 3, 0.35, 1) });
+      const reach = capital ? 3.2 : 2.2;
+      if (best > reach || country.occupiedBy) { fell.delete(city.name); continue; }
+      // Is any of the city's own ground still in the defender's hands nearby?
+      const i0 = Math.floor(ci), j0 = Math.floor(cj), r = Math.ceil(reach);
+      let free = false;
+      for (let dj = -r; dj <= r && !free; dj++) for (let di = -r; di <= r; di++) {
+        if (Math.hypot(di, dj) > reach) continue;
+        const k = cellKey(i0 + di, j0 + dj);
+        if (cells.homeOf(k) === C && s.control[k] == null) { free = true; break; }
+      }
+      const taken = s.control[cellKey(i0, j0)] != null;
+      if (taken && !free) {
+        // Fallen and behind the line: keep the fighting going for the rest of this turn and the next.
+        if (!fell.has(city.name)) fell.set(city.name, this.ctlSeen ? turn : -99);
+        if (turn > fell.get(city.name) + 1) continue;
+      } else fell.delete(city.name);
+      out.push({ city, capital, heat: clamp(1.4 - best / 3, 0.35, 1) * (taken && !free ? 0.6 : 1) });
     }
+    this.ctlSeen = true;
     return (this.battles = out);
   }
   drawBattles(ctx, time) {
@@ -848,8 +898,10 @@ export class WorldMap {
     if (!a || !b0) return;
     const sc = clamp(Math.sqrt(this.cam.k), 1, 2.4);
     let dx = b0[0] - a[0], dy = b0[1] - a[1], len = Math.hypot(dx, dy);
-    if (len < 18 * sc) { const an = Math.random() * TAU; dx = Math.cos(an); dy = Math.sin(an); len = 1; }
-    dx /= len || 1; dy /= len || 1;
+    // The heading is fixed on the first frame (the camera only pans and zooms, so it never changes). Picking a
+    // fresh random one each frame for a short hop is what made the helicopters spin as they closed in.
+    if (!fx.dir) { const an = len < 18 * sc ? Math.random() * TAU : Math.atan2(dy, dx); fx.dir = [Math.cos(an), Math.sin(an)]; }
+    [dx, dy] = fx.dir;
     const nx = -dy, ny = dx;
     // Short flights still need room to read on screen.
     const span = Math.max(len, 46 * sc), start = [b0[0] - dx * span, b0[1] - dy * span], b = b0;
