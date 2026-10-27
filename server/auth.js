@@ -32,7 +32,6 @@ const hmac = (...parts) => createHmac('sha256', SECRET).update(parts.join('\u000
 export function accounts() {
   const list = [{ username: 'kronos', role: 'kronos', committee: null }];
   for (const c of COMMITTEE_IDS) {
-    list.push({ username: `${c}-stage`, role: 'stage', committee: c });
     list.push({ username: `${c}-backroom`, role: 'backroom', committee: c });
   }
   return list;

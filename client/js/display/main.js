@@ -424,7 +424,6 @@ function Ending({ state, lang, now }) {
     <div class="end-content">
       <div class="end-kicker" style="animation-delay:.6s">${state.name} · ${fmt.date(state.meta.clock, isAr(lang) ? 'ar' : 'en')}</div>
       <h1 style=${tone === 'dark' ? 'animation-delay:3s' : 'animation-delay:1.2s'}>${isAr(lang) ? e.ar || e.title : e.title}</h1>
-      ${lang === 'both' && e.ar && html`<div class="end-ar">${e.ar}</div>`}
       <p style=${tone === 'dark' ? 'animation-delay:5.5s' : 'animation-delay:2.4s'}>${e.line}</p>
       ${el > 7 && e.facts?.length && html`<div class="end-stats">${e.facts.map(f => html`<div><b>${f.k}</b><span>${f.v}</span></div>`)}</div>`}
       ${el > 7 && !e.facts?.length && html`<div class="end-stats">

@@ -53,7 +53,6 @@ export function TimerControls({ conn, state }) {
 export function DisplayTab({ conn, state, committee }) {
   const d = state.display, st = state.settings;
   const [banner, setBanner] = useState(d.banner?.text || '');
-  const [bannerAr, setBannerAr] = useState(d.banner?.ar || '');
   const [dis, setDis] = useState(false);
   const [endingCustom, setEndingCustom] = useState({ title: '', line: '' });
   const setScene = scene => run(conn, { type: 'setScene', scene });
@@ -70,7 +69,7 @@ export function DisplayTab({ conn, state, committee }) {
       <div class="sub-h">Banner</div>
       <div class="col">
         <input class="input" placeholder="e.g. EMERGENCY SESSION CALLED" value=${banner} onInput=${e => setBanner(e.target.value)} />
-        <div class="row wrap">${['alert', 'info', 'good', 'dark'].map(tone => html`<button class=${cls('btn sm', tone === 'alert' ? 'danger' : tone === 'good' ? 'good' : tone === 'info' ? 'on' : '')} disabled=${!banner.trim()} onClick=${() => run(conn, { type: 'setBanner', text: banner, ar: bannerAr, tone })}>${tone}</button>`)}
+        <div class="row wrap">${['alert', 'info', 'good', 'dark'].map(tone => html`<button class=${cls('btn sm', tone === 'alert' ? 'danger' : tone === 'good' ? 'good' : tone === 'info' ? 'on' : '')} disabled=${!banner.trim()} onClick=${() => run(conn, { type: 'setBanner', text: banner, tone })}>${tone}</button>`)}
           <button class="btn sm ghost" disabled=${!d.banner} onClick=${() => run(conn, { type: 'setBanner', text: '' })}>Clear</button></div>
       </div>
 

@@ -53,7 +53,7 @@ try {
   const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || undefined, args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
 
   // Stage Zeus: the panel loads, the map draws, the command bar queues an order.
-  const zeus = await page(browser, 'ww3-stage');
+  const zeus = await page(browser, 'ww3-backroom');
   await zeus.p.waitForSelector('.cmd-input', { timeout: 15000 });
   await zeus.p.waitForTimeout(2500);
   const mapSize = await zeus.p.evaluate(() => { const c = document.querySelector('.map-wrap canvas, .mid canvas'); return c ? [c.width, c.height] : [0, 0]; });
@@ -83,7 +83,7 @@ try {
   await kronos.p.screenshot({ path: join(SHOTS, 'kronos-home.png') });
 
   // Court Zeus: the court panel loads.
-  const court = await page(browser, 'charlie-stage');
+  const court = await page(browser, 'charlie-backroom');
   await court.p.waitForTimeout(2500);
   check(await court.p.locator('text=Presiding Judge').count() > 0, 'court panel shows the bench');
   await court.p.screenshot({ path: join(SHOTS, 'court-panel.png') });
