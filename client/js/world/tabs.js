@@ -57,7 +57,6 @@ export function ReviewTab({ conn, state }) {
           <div class=${cls('news-item', r.kind === 'ending' && 'ending', r.priority >= 6 && 'hot')} key=${r.id}>
             ${editing === r.id ? html`<${EditNews} conn=${conn} item=${r} done=${() => setEditing(null)} />` : html`
               <div class="news-en">${r.kind === 'ending' ? html`<span class="chip gold">Ending</span> ` : r.kind === 'join' ? html`<span class="chip red">Needs approval</span> ` : ''}${r.en}</div>
-              ${r.ar && r.ar !== r.en && html`<div class="news-ar ar" dir="rtl">${r.ar}</div>`}
               ${r.detail && html`<div class="dim small">${r.detail}</div>`}
               ${r.kind === 'join' && (r.countries || []).length > 1 && html`<div class="row wrap join-members">${r.countries.map(id => html`
                 <span class="chip join-chip" key=${id}>${state.countries[id]?.name || id}
@@ -78,7 +77,6 @@ export function ReviewTab({ conn, state }) {
       <div class="sub-h">Write a headline</div>
       <div class="col">
         <input class="input" placeholder="English headline" value=${en} onInput=${e => setEn(e.target.value)} />
-        <input class="input ar" dir="rtl" placeholder="العنوان بالعربية (اختياري)" value=${ar} onInput=${e => setAr(e.target.value)} />
         <div class="row"><button class="btn sm" disabled=${!en.trim()} onClick=${() => add(false)}>Queue</button><button class="btn sm solid-danger" disabled=${!en.trim()} onClick=${() => add(true)}>Air now as breaking</button></div>
       </div>
       <div class="sub-h">On air</div>
@@ -93,7 +91,6 @@ function EditNews({ conn, item, done }) {
   const [en, setEn] = useState(item.en), [ar, setAr] = useState(item.ar);
   return html`<div class="col">
     <textarea class="input" rows="2" value=${en} onInput=${e => setEn(e.target.value)}></textarea>
-    <textarea class="input ar" dir="rtl" rows="2" value=${ar} onInput=${e => setAr(e.target.value)}></textarea>
     <div class="row"><button class="btn xs" onClick=${done}>Cancel</button><button class="btn xs primary" onClick=${async () => { await run(conn, { type: 'editItem', id: item.id, en, ar }); done(); }}>Save</button>
     <button class="btn xs good" onClick=${async () => { await run(conn, { type: 'editItem', id: item.id, en, ar }); await run(conn, { type: 'airItem', id: item.id }); done(); }}>Save and air</button></div>
   </div>`;

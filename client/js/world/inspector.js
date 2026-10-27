@@ -36,7 +36,6 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
         <img class="insp-coat" src=${`/client/img/coats/${id}.webp`} alt="" onError=${e => { e.target.style.display = 'none'; }} />
         <div class="grow">
           <div class="insp-name">${c.name}</div>
-          <div class="ar dim" dir="rtl">${c.ar}</div>
         </div>
         <button class=${cls('btn xs', state.display.arms !== false ? 'on' : 'ghost')} title="Coats of arms on every map when a country is selected or in focus (click to turn off or on)"
           onClick=${() => run(conn, { type: 'setCoat', on: state.display.arms === false })}>⚜ Arms ${state.display.arms !== false ? 'on' : 'off'}</button>
@@ -169,7 +168,7 @@ function ZoneCard({ conn, state, selZone, startOrder }) {
   const ships = Object.values(state.units).filter(u => u.loc.kind === 'sea' && u.loc.id === selZone && u.strength > 0);
   const owners = [...new Set(ships.map(u => u.owner))];
   return html`<div class="pane inspector">
-    <div class="insp-head" style="--bloc:#36e2ff"><div class="grow"><div class="insp-name">${z.name}</div><div class="ar dim" dir="rtl">${z.ar}</div></div></div>
+    <div class="insp-head" style="--bloc:#36e2ff"><div class="grow"><div class="insp-name">${z.name}</div></div></div>
     ${cp && html`<div class="card" style="margin:10px 0"><div class="card-b"><div class="row between"><b>Chokepoint</b><span class=${cls('chip', cp.status === 'closed' ? 'red' : cp.status === 'contested' ? 'gold' : 'green')}>${cp.status}${cp.by ? ` by ${state.countries[cp.by]?.name}` : ''}</span></div><div class="dim small" style="margin-top:4px">Closing it adds about $${z.oil} to a barrel of oil and forces shipping the long way round.</div></div></div>`}
     <div class="sub-h">Coastal states</div>
     <div class="small">${z.coasts.map(id => state.countries[id]?.name).filter(Boolean).join(', ') || 'Open ocean'}</div>

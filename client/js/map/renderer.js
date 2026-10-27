@@ -1159,7 +1159,6 @@ export class WorldMap {
     this.drawChokepoints(ctx, time);
     if (this.layers.units !== false) this.drawUnits(ctx, time);
     this.drawEffects(ctx, now, withCam);
-    this.drawOOBLabel(ctx);
     this.drawBrush(ctx);
     if (this.night) {
       const v = ctx.createRadialGradient(this.w / 2, this.h / 2, this.h * 0.35, this.w / 2, this.h / 2, this.w * 0.75);

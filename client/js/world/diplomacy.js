@@ -50,7 +50,6 @@ function UNVote({ conn, state }) {
   const lastVote = [...state.unVotes].reverse().find(v => !v.open);
   return html`<div class="col">
     <label class="field">Resolution<input class="input" placeholder="e.g. Demands an immediate ceasefire in the Gulf" value=${f.title} onInput=${e => set({ title: e.target.value })} /></label>
-    <label class="field">Arabic title (optional)<input class="input ar" dir="rtl" value=${f.ar} onInput=${e => set({ ar: e.target.value })} /></label>
     <div class="row">
       <label class="field grow">Body<select class="input" value=${f.body} onChange=${e => set({ body: e.target.value })}><option value="assembly">General Assembly</option><option value="council">Security Council (veto)</option></select></label>
       <label class="field grow">Type<select class="input" value=${f.kind} onChange=${e => set({ kind: e.target.value })}><option value="condemn">Condemn</option><option value="sanction">Sanctions</option><option value="ceasefire">Ceasefire</option><option value="humanitarian">Humanitarian</option><option value="custom">Other</option></select></label>
