@@ -403,3 +403,6 @@ html, body { background: #000; }
 /* new world order: rings expanding from the centre */
 .es-neworder i { left: 50% !important; top: 50% !important; width: 6em; height: 6em; border: 1px solid rgba(150, 200, 255, .7); border-radius: 50%; animation: es-ring 7s ease-out infinite; }
 @keyframes es-ring { 0% { opacity: .9; transform: translate(-50%, -50%) scale(.3); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(14); } }
+
+.sb-brand { margin-top: 1.4em; font: 500 1.05em/1 var(--font); letter-spacing: .32em; text-transform: uppercase; color: rgba(255, 255, 255, .5); }
+.sb-brand b { color: #f2d28b; font-weight: 700; }

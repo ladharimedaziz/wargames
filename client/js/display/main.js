@@ -441,6 +441,7 @@ function Standby({ state, lang, now }) {
     <div class="sb-orb"><${Globe} className="sb-globe" speed=${4} glow="#36e2ff" arcs=${false} /></div>
     <div class="sb-name">${state.name}</div>
     <div class="sb-sub"><${Bi} k="standby" lang=${lang} /></div>
+    ${state.display.brand !== false && html`<div class="sb-brand">Brought to you by <b>PasionMUN</b></div>`}
     <div class="sb-clock mono">${new Date(now).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}</div>
   </div>`;
 }
