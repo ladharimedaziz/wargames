@@ -167,9 +167,9 @@ export function OrderBar({ ids, act, placing, setPlacing, roe, fixed }) {
   const arm = (order, pickTarget) => setPlacing(placing?.order === order ? null : { order, pickTarget });
   const btn = (order, label, pick) => html`<button class=${cls('btn sm', placing?.order === order && 'on', order === 'attack' && 'danger')} disabled=${fixed} onClick=${() => arm(order, pick)}>${placing?.order === order ? (pick ? 'Click a unit…' : 'Click the map…') : label}</button>`;
   return html`<div class="sub-h">Orders</div>
-    <div class="row wrap">${btn('move', 'Move')}${btn('patrol', 'Patrol')}${btn('attack', 'Attack', true)}${btn('escort', 'Escort', true)}<button class="btn sm" onClick=${() => { setPlacing(null); act({ type: 'usaOrder', ids, order: { type: 'hold' } }); }}>Hold</button></div>
+    <div class="row wrap">${btn('move', 'Move')}${btn('amove', 'Attack-move')}${btn('patrol', 'Patrol')}${btn('attack', 'Attack', true)}${btn('escort', 'Escort', true)}<button class="btn sm" onClick=${() => { setPlacing(null); act({ type: 'usaOrder', ids, order: { type: 'hold' } }); }}>Hold</button></div>
     <div class="row wrap">${Object.entries(ROES).map(([k, l]) => html`<button class=${cls('btn xs', roe === k && 'on')} onClick=${() => act({ type: 'usaRoe', ids, roe: k })}>${l}</button>`)}</div>
-    <div class="dim small">Right-click the map to send the picked units there; right-click an enemy to attack, a friend to escort. Shift-click or Shift-drag picks more units.</div>`;
+    <div class="dim small">Right-click the map to send the picked units there; right-click an enemy to attack, a friend to escort. Shift-click or Shift-drag picks more units; Shift+right-click queues a waypoint. Keys: M move, A attack-move, P patrol, S stop, F centre, Ctrl+1-9 save a group, 1-9 recall it, double-click picks all of a kind.</div>`;
 }
 
 // Several units picked together.

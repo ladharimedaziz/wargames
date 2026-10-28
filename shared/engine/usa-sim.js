@@ -52,6 +52,14 @@ function step(w, tx, ty, km) {
   return d - km;
 }
 
+// A unit that has reached the end of a move goes on to the next queued order, or stops.
+function arrive(usa, w, o) {
+  if (o.type === 'return') w.routed = false;
+  const next = o.q?.length ? o.q[0] : null;
+  w.order = next ? { ...next, q: o.q.slice(1) } : null; w.mv = null; w.spd = null;
+  if (!next) log(usa, `${w.short || w.name} arrived.`, { id: w.id });
+}
+
 // Advances the clock to `now` (milliseconds). Returns true when anything on the map changed and clients should be sent the state.
 export function usaTick(s, now, getUnits, put, home) {
   const usa = s.usa, sim = usa.sim;
@@ -76,7 +84,9 @@ export function usaTick(s, now, getUnits, put, home) {
     const km = ty.speed * (w.strength < 30 ? 0.6 : 1) * (ty.domain === 'ground' && ty.speed >= 30 && !onRoad ? OFFROAD : 1) * dt / 3600;
     let tx = null, tyy = null, stopAt = 0, finish = null;
     // Along a road route the unit runs through its waypoints, carrying the rest of the tick's distance from one to the next.
-    if ((o.type === 'move' || o.type === 'return') && o.path?.length) {
+    if ((o.type === 'move' || o.type === 'amove' || o.type === 'return') && o.path?.length) {
+      // An attack-move halts while its unit has something to shoot at, and goes on when the fight is over.
+      if (o.type === 'amove' && w.eng) { if (w.mv) { w.mv = null; w.spd = null; } continue; }
       let rem = km, arrived = false; o.pi ||= 0;
       while (rem > 0) {
         const [px, py] = o.path[o.pi], d = distKm(w, { lon: px, lat: py });
@@ -84,13 +94,14 @@ export function usaTick(s, now, getUnits, put, home) {
         else { step(w, px, py, rem); rem = 0; }
       }
       dirty(w.id);
-      if (arrived) { if (o.type === 'return') w.routed = false; w.order = null; w.mv = null; log(usa, `${w.short || w.name} arrived.`, { id: w.id }); continue; }
+      if (arrived) { arrive(usa, w, o); continue; }
       [tx, tyy] = o.path[o.pi];
       const d = Math.hypot((tx - w.lon) * KM_LON(w.lat), (tyy - w.lat) * KM_LAT) || 1, perReal = km / real;
       w.mv = [+((tx - w.lon) / d * perReal).toFixed(6), +((tyy - w.lat) / d * perReal).toFixed(6)]; w.spd = +perReal.toFixed(5);
       continue;
     }
-    if (o.type === 'move' || o.type === 'return') { [tx, tyy] = o.to; finish = 'arrive'; }
+    if (o.type === 'amove' && w.eng) { if (w.mv) { w.mv = null; w.spd = null; dirty(w.id); } continue; }
+    if (o.type === 'move' || o.type === 'amove' || o.type === 'return') { [tx, tyy] = o.to; finish = 'arrive'; }
     else if (o.type === 'patrol') { [tx, tyy] = o.toB ? o.b : o.a; finish = 'turn'; }
     else if (o.type === 'attack' || o.type === 'escort') {
       const t = W[o.target];
@@ -102,7 +113,7 @@ export function usaTick(s, now, getUnits, put, home) {
     const left = step(w, tx, tyy, Math.min(km, before - stopAt));
     dirty(w.id);
     if (finish && left <= 0.001) {
-      if (finish === 'arrive') { if (o.type === 'return') w.routed = false; w.order = null; w.mv = null; log(usa, `${w.short || w.name} arrived.`, { id: w.id }); continue; }
+      if (finish === 'arrive') { arrive(usa, w, o); continue; }
       o.toB = !o.toB;
     }
     // Degrees per real second, for clients to glide the dot between ticks.
@@ -122,7 +133,7 @@ export function usaTick(s, now, getUnits, put, home) {
       const ta = typeOf(a), tb = typeOf(b), atk = ta.atk[domainKey(tb)];
       if (!atk || d > ta.range) return 0;
       const ordered = a.order?.type === 'attack' && a.order.target === b.id;
-      if (!(ordered || a.roe === 'free' || (a.roe === 'defend' && (recently(a) || d <= Math.min(ta.range, 3))))) return 0;
+      if (!(ordered || a.roe === 'free' || a.order?.type === 'amove' || (a.roe === 'defend' && (recently(a) || d <= Math.min(ta.range, 3))))) return 0;
       return atk;
     };
     for (const [sa, sb] of hostile) for (const [x, y] of [[sa, sb], [sb, sa]]) {

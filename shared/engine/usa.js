@@ -158,11 +158,26 @@ export function tickUsa(s, now) {
 }
 const GUARD_IDS = Object.values(CATALOG).filter(x => x.kind === 'guard').map(x => x.id);
 // A move order. Wheeled and tracked units go by road where the server has the road map; everything else goes straight.
-function movement(u, to, budget) {
+// Where a unit will end up once its current move and any queued moves are done; a queued order starts from there.
+function lastStop(u) {
+  const o = u.order; let end = o?.to || null;
+  for (const n of o?.q || []) if (n.to) end = n.to;
+  return end || [u.lon, u.lat];
+}
+// Slots for n units around a point: a rough square, about 4 km apart, so a column does not stack on one pixel.
+function formation(to, n, kind) {
+  const cols = kind === 'line' ? n : kind === 'column' ? 1 : Math.ceil(Math.sqrt(n)), rows = Math.ceil(n / cols), gap = 4, out = [];
+  for (let i = 0; i < n; i++) {
+    const c = i % cols, r = Math.floor(i / cols);
+    out.push([to[0] + (c - (cols - 1) / 2) * gap / (111.32 * Math.cos(to[1] * Math.PI / 180)), to[1] + (r - (rows - 1) / 2) * gap / 110.57]);
+  }
+  return out.map(([x, y]) => [Math.max(-134, Math.min(-51, x)), Math.max(15, Math.min(59, y))]);
+}
+function movement(u, to, budget, from) {
   const order = { type: 'move', to };
   // Routing is a search, so a big group order routes only its first few units; the rest go straight.
   if (typeOf(u).domain === 'ground' && typeOf(u).speed >= 30 && budget.n-- > 0) {
-    const path = roadRoute([u.lon, u.lat], to);
+    const path = roadRoute(from || [u.lon, u.lat], to);
     if (path && path.length > 2) { order.path = path; order.pi = 0; }
   }
   return order;
@@ -189,23 +204,28 @@ export const usaActions = {
     migrateUsa(s);
     const ids = [...new Set(Array.isArray(a.ids) ? a.ids : [])].slice(0, 200), o = a.order || {}, units = getUnits(s.usa);
     if (!ids.length) return err('Pick at least one unit.');
-    if (!['hold', 'move', 'patrol', 'attack', 'escort'].includes(o.type)) return err('Unknown order.');
+    if (!['hold', 'move', 'amove', 'patrol', 'attack', 'escort'].includes(o.type)) return err('Unknown order.');
     let target = null;
     if (o.type === 'attack' || o.type === 'escort') { target = units[o.target]; if (!target || target.destroyed || target.hidden) return err('Pick a target.'); }
     const to = Array.isArray(o.to) ? [Number(o.to[0]), Number(o.to[1])] : null;
-    if ((o.type === 'move' || o.type === 'patrol') && !(to && inBox(to[0], to[1]))) return err('Place it on the map.');
+    if ((o.type === 'move' || o.type === 'amove' || o.type === 'patrol') && !(to && inBox(to[0], to[1]))) return err('Place it on the map.');
+    const movers = ids.filter(id => { const u = units[id]; return u && !u.destroyed && !u.hidden && id !== o.target && (o.type === 'hold' || typeOf(u).speed) && !(o.type === 'attack' && effSide(u) === effSide(target)); });
+    // A group sent to one point spreads out around it instead of stacking on it.
+    const spread = (to && movers.length > 1 && a.formation !== 'none') ? formation(to, movers.length, a.formation) : null;
     let n = 0; const budget = { n: 12 };
-    for (const id of ids) {
-      const u = units[id];
-      if (!u || u.destroyed || u.hidden || id === o.target) continue;
-      if (o.type !== 'hold' && !typeOf(u).speed) continue;
-      if (o.type === 'attack' && effSide(u) === effSide(target)) continue;
-      const order = o.type === 'hold' ? null : o.type === 'move' ? movement(u, [+to[0].toFixed(3), +to[1].toFixed(3)], budget)
-        : o.type === 'patrol' ? { type: 'patrol', a: [+u.lon.toFixed(3), +u.lat.toFixed(3)], b: [+to[0].toFixed(3), +to[1].toFixed(3)], toB: true } : { type: o.type, target: o.target };
-      putUnit(s.usa, id, { order, mv: null, routed: false });
+    movers.forEach((id, i) => {
+      const u = units[id], dest = spread ? spread[i] : to;
+      const next = o.type === 'hold' ? null : o.type === 'move' || o.type === 'amove' ? { ...movement(u, [+dest[0].toFixed(3), +dest[1].toFixed(3)], budget, a.queue ? lastStop(u) : null), type: o.type }
+        : o.type === 'patrol' ? { type: 'patrol', a: a.queue ? lastStop(u) : [+u.lon.toFixed(3), +u.lat.toFixed(3)], b: [+dest[0].toFixed(3), +dest[1].toFixed(3)], toB: true } : { type: o.type, target: o.target };
+      // Shift-queued orders wait their turn behind a move the unit is already making.
+      const cur = u.order;
+      if (a.queue && next && cur && (cur.type === 'move' || cur.type === 'amove') && next.type !== 'attack') {
+        if ((cur.q?.length || 0) >= 8) return;
+        putUnit(s.usa, id, { order: { ...cur, q: [...(cur.q || []), next] } });
+      } else putUnit(s.usa, id, { order: next, mv: null, spd: null, routed: false });
       if (o.type === 'attack') addHostile(s.usa, effSide(u), effSide(target));
       n++;
-    }
+    });
     if (!n) return err('None of those units can take that order.');
     return ok({ count: n });
   } },

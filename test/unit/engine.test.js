@@ -806,13 +806,13 @@ test('wheeled units follow roads when the road map is loaded', async () => {
   const foot = z({ type: 'usaSpawn', utype: 'inf_co', side: 'fed', name: 'Foot', lon: -87.63, lat: 41.88 }).id;
   assert.ok(z({ type: 'usaOrder', ids: [a, foot], order: { type: 'move', to: [-84.39, 33.75] } }).ok);
   const o = getUnits(s.usa)[a].order, f = getUnits(s.usa)[foot].order;
-  assert.ok(o.path.length > 20 && o.path.at(-1)[0] === -84.39, 'a road route to Atlanta');
+  assert.ok(o.path.length > 20 && Math.abs(o.path.at(-1)[0] + 84.39) < 0.2, 'a road route to Atlanta');
   assert.equal(f.path, undefined, 'infantry on foot go straight');
   z({ type: 'usaSim', running: true, speed: 1000 }); s.usa.sim.at = 1_000_000;
   for (let i = 1; i <= 120 && getUnits(s.usa)[a].order; i++) tickUsa(s, 1_000_000 + i * 1000);
   const u = getUnits(s.usa)[a];
   assert.equal(u.order, null, 'it arrives');
-  assert.ok(Math.abs(u.lon + 84.39) < 0.01 && Math.abs(u.lat - 33.75) < 0.01);
+  assert.ok(Math.abs(u.lon + 84.39) < 0.2 && Math.abs(u.lat - 33.75) < 0.2, 'it arrives at its slot beside Atlanta');
 });
 
 test('the US stage camera is separate from the Zeus map', async () => {
@@ -840,4 +840,24 @@ test('vehicles use a road only when it pays, and never overshoot a stop', async 
   const p = { lon: -100, lat: 35, spd: 1, order: { type: 'move', to: [-99, 35], path: [[-100, 35.01], [-100, 35.02]], pi: 0 } };
   const [, py] = glidePos(p, {}, 5);
   assert.ok(py > 35.03 === false && py > 35.01, 'turns a corner along its path, not past it');
+});
+
+test('US orders can be queued, spread into a formation, and attack-moved', async () => {
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const { applyAction } = await import('../../shared/engine/reducer.js');
+  const { tickUsa, getUnits } = await import('../../shared/engine/usa.js');
+  const s = createUsaState({ id: 'u', name: 'US', seed: 9 });
+  const z = a => applyAction(s, a, { role: 'zeus', user: 'z', now: 1_000_000 });
+  const ids = [0, 1, 2, 3].map(i => z({ type: 'usaSpawn', utype: 'inf_bn', side: 'fed', name: `Bn ${i}`, lon: -100, lat: 35 }).id);
+  assert.ok(z({ type: 'usaOrder', ids, order: { type: 'move', to: [-100.2, 35.1] } }).ok);
+  const dest = new Set(ids.map(id => getUnits(s.usa)[id].order.to.join()));
+  assert.equal(dest.size, 4, 'four units get four slots, not one');
+  assert.ok(z({ type: 'usaOrder', ids: [ids[0]], order: { type: 'move', to: [-100.4, 35.1] }, queue: true }).ok);
+  assert.equal(getUnits(s.usa)[ids[0]].order.q.length, 1, 'a shift-click waits behind the current move');
+  z({ type: 'usaSim', running: true, speed: 300 }); s.usa.sim.at = 1_000_000;
+  for (let i = 1; i <= 60 && getUnits(s.usa)[ids[0]].order; i++) tickUsa(s, 1_000_000 + i * 1000);
+  const u = getUnits(s.usa)[ids[0]];
+  assert.equal(u.order, null);
+  assert.ok(Math.abs(u.lon + 100.4) < 0.01, 'it went on to the queued point');
+  assert.ok(z({ type: 'usaOrder', ids: [ids[1]], order: { type: 'amove', to: [-101, 35] } }).ok && getUnits(s.usa)[ids[1]].order.type === 'amove');
 });

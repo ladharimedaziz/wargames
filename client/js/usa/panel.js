@@ -4,7 +4,7 @@ import { TimerControls } from '../world/display-tab.js';
 import { DMDrawer, useUnread } from '../views/dm.js';
 import { UnitCard, StateInspector, NationOverview, CrossingCard, GroupCard, SideOptions } from './inspector.js';
 import { UNIT_TYPES, TYPE_GROUPS } from '/shared/data/usa-types.js';
-import { effSide, simClock, simSeconds, SIM_SPEEDS } from '/shared/engine/usa-sim.js';
+import { effSide, typeOf, simClock, simSeconds, SIM_SPEEDS } from '/shared/engine/usa-sim.js';
 import { UsMap, loadUsa, viewFor, unitLabel } from './map.js';
 import { USA_VIEW, USA_UNIT_KINDS, UNIT_LAYERS, LIGHT_SERVICES, LIGHT_PALETTE, LIGHT_PATTERNS, lightColors, getUnits, SILS } from '/shared/engine/usa.js';
 
@@ -38,17 +38,54 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
     if (add) { setSelIds(ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])); return; }
     setSelIds([id]); const x = units[id]; if (x && x.owner?.length === 2) setSelState(x.owner);
   };
+  // Double-click a unit to pick every unit of its kind and side.
+  const lastClick = useRef({ id: null, at: 0 });
+  const pickUnitDbl = (id, add) => {
+    const x = units[id], now = Date.now(), dbl = lastClick.current.id === id && now - lastClick.current.at < 380;
+    lastClick.current = { id, at: now };
+    if (dbl && x && !id.startsWith('bx-') && !placing) { setSelX(null); setSelIds(Object.values(units).filter(y => !y.hidden && !y.destroyed && y.type === x.type && effSide(y) === effSide(x) && y.kind !== 'governor').map(y => y.id)); return; }
+    pickUnit(id, add);
+  };
+  // Control groups: Ctrl+1..9 stores the picked units, 1..9 recalls them, and a quick second press centres the map on them.
+  const miniUsa = useMemo(() => ({ ...u, layers: { states: true, cities: false, highways: false, labels: false, neighbors: false, border: false, uGov: false, uFed: true, uAgency: false, uGuard: true, uState: false, uCustom: true } }), [u.mods, u.custom, u.sim]);
+  const [groups, setGroups] = useState({});
+  const lastGroup = useRef({ n: 0, at: 0 });
+  const centreOn = ids => {
+    const list = ids.map(i => units[i]).filter(Boolean); if (!list.length) return;
+    jump({ lon: list.reduce((a, x) => a + x.lon, 0) / list.length, lat: list.reduce((a, x) => a + x.lat, 0) / list.length, k: Math.max(view.k, 4) });
+  };
   const onBox = ids => { setSelX(null); setSelIds(ids.filter(id => units[id])); };
   // Right-click: an enemy is attacked, a friend escorted, open ground is where the picked units go.
-  const onOrder = ({ lon, lat, target }) => {
+  const onOrder = ({ lon, lat, target, queue }) => {
     if (!selIds.length) return;
     const t = target && units[target], first = units[selIds[0]];
     if (t && !selIds.includes(target)) act({ type: 'usaOrder', ids: selIds, order: { type: first && effSide(first) !== effSide(t) ? 'attack' : 'escort', target } });
-    else if (!t) act({ type: 'usaOrder', ids: selIds, order: { type: 'move', to: [lon, lat] } });
+    else if (!t) act({ type: 'usaOrder', ids: selIds, order: { type: 'move', to: [lon, lat] }, queue });
   };
-  // Esc drops whatever is armed (a placement or an order) and clears the pick.
+  // Keys, as in an RTS: Esc disarms; 1-9 recall a group (Ctrl+1-9 stores one); S stops; M, A, P arm a move, an attack-move or a patrol;
+  // F centres on the picked units; Ctrl+A picks every armed unit on the map.
+  const keyRef = useRef(); keyRef.current = { selIds, units, groups, view, centreOn, act };
   useEffect(() => {
-    const k = e => { if (e.key === 'Escape' && !/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) setPlacing(null); };
+    const k = e => {
+      if (/INPUT|SELECT|TEXTAREA/.test(e.target.tagName) || e.altKey) return;
+      const { selIds, units, groups, centreOn, act } = keyRef.current, key = e.key.toLowerCase();
+      if (key === 'escape') { setPlacing(null); return; }
+      if (/^[1-9]$/.test(key)) {
+        if (e.ctrlKey || e.metaKey) { e.preventDefault(); setGroups(g => ({ ...g, [key]: [...selIds] })); toast(`Group ${key} saved.`); return; }
+        const g = (groups[key] || []).filter(id => units[id] && !units[id].destroyed);
+        if (!g.length) return;
+        const dbl = lastGroup.current.n === key && Date.now() - lastGroup.current.at < 400; lastGroup.current = { n: key, at: Date.now() };
+        setSelX(null); setSelIds(g); if (dbl) centreOn(g); return;
+      }
+      if ((e.ctrlKey || e.metaKey) && key === 'a') { e.preventDefault(); setSelX(null); setSelIds(Object.values(units).filter(x => !x.hidden && !x.destroyed && typeOf(x).speed && x.kind !== 'governor' && x.owner !== undefined).map(x => x.id)); return; }
+      if (e.ctrlKey || e.metaKey) return;
+      if (!selIds.length) return;
+      if (key === 's') act({ type: 'usaOrder', ids: selIds, order: { type: 'hold' } });
+      else if (key === 'm') setPlacing({ order: 'move' });
+      else if (key === 'a') setPlacing({ order: 'amove' });
+      else if (key === 'p') setPlacing({ order: 'patrol' });
+      else if (key === 'f') centreOn(selIds);
+    };
     window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k);
   }, []);
   const onPlace = (lon, lat) => {
@@ -112,7 +149,8 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
           </div></div>
           <${TimerControls} conn=${conn} state=${state} />`}
         </aside>
-        <div class="us-mapbox"><${UsMap} usa=${u} view=${view} interactive=${true} onView=${onView} onPick=${onPick} onPickUnit=${pickUnit} onPlace=${placing && !placing.pickTarget ? onPlace : null} selectedUnit=${sel} selectedUnits=${selIds} selectedState=${selState} selectedCrossing=${selX} onBox=${onBox} onOrder=${onOrder} /><${SimBar} u=${u} act=${act} /><div class="us-readout mono">zoom ${view.k.toFixed(1)}×</div></div>
+        <div class="us-mapbox"><${UsMap} usa=${u} view=${view} interactive=${true} onView=${onView} onPick=${onPick} onPickUnit=${pickUnitDbl} onPlace=${placing && !placing.pickTarget ? onPlace : null} selectedUnit=${sel} selectedUnits=${selIds} selectedState=${selState} selectedCrossing=${selX} onBox=${onBox} onOrder=${onOrder} />
+          <div class="us-mini"><${UsMap} usa=${miniUsa} view=${USA_VIEW} className="us-mini-c" onMapClick=${v => jump({ ...v, k: Math.max(view.k, 3) })} /></div><${SimBar} u=${u} act=${act} /><div class="us-readout mono">zoom ${view.k.toFixed(1)}×</div></div>
         <aside class="us-right">
           ${selX ? html`<${CrossingCard} u=${u} id=${selX} act=${act} close=${() => setSelX(null)} />`
             : selIds.length > 1 ? html`<${GroupCard} ids=${selIds} units=${units} act=${act} placing=${placing} setPlacing=${setPlacing} close=${() => setSelIds([])} setSelIds=${setSelIds} />`
