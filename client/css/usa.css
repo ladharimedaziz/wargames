@@ -37,3 +37,11 @@
 .us-meter.low { accent-color: #ff5a4a; } .us-meter.mid { accent-color: #ffd166; } .us-meter.hi { accent-color: #5fd08a; }
 @media (max-width: 1100px) { .us-body { grid-template-columns: 280px 1fr; } .us-right { grid-column: 1 / -1; max-height: 40vh; } }
 .us-bside { padding: 6px 8px; border-radius: 10px; background: #0e1a30; border: 1px solid #1d2c4a; display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+
+.us-sim { position: absolute; left: 10px; top: 10px; display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 10px; background: rgba(8,18,36,.88); border: 1px solid #1d2c4a; z-index: 2; }
+.us-sim .row { gap: 3px; }
+.us-force { display: flex; flex-direction: column; gap: 3px; padding: 6px 8px; border-radius: 10px; background: #0e1a30; border: 1px solid #1d2c4a; }
+.us-urow.kill em, .us-urow.kill span:last-child { color: #ff8a7a; }
+.us-urow.war span:last-child { color: #ffd166; }
+.us-urow.fight span:last-child { color: #ff9a8a; }
+.us-urow:disabled { opacity: 1; cursor: default; }

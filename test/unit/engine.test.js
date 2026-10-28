@@ -689,3 +689,51 @@ test('a US save from before lightbars is brought up to date', async () => {
   assert.equal(s.usa.layers.neighbors, true);
   assert.equal('hospital' in s.usa.layers, false, 'old facility layers are dropped');
 });
+
+test('US units move on orders, fight hostile sides and fall back', async () => {
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const { applyAction } = await import('../../shared/engine/reducer.js');
+  const { tickUsa, getUnits } = await import('../../shared/engine/usa.js');
+  const { distKm } = await import('../../shared/engine/usa-sim.js');
+  const s = createUsaState({ id: 'u', name: 'US', seed: 4 });
+  const z = a => applyAction(s, a, { role: 'zeus', user: 'z', now: 1_000_000 });
+  const a = z({ type: 'usaSpawn', utype: 'arm_bct', side: 'fed', name: 'Test armor', lon: -100, lat: 35 }).id;
+  const b = z({ type: 'usaSpawn', utype: 'militia_co', side: 'mil', name: 'Test militia', lon: -100, lat: 35.02 }).id;
+  assert.ok(a && b);
+  // The clock does nothing until it runs.
+  assert.equal(tickUsa(s, 1_000_000), false);
+  assert.ok(z({ type: 'usaSim', running: true, speed: 60 }).ok);
+  assert.equal(z({ type: 'usaSim', speed: 7 }).ok, false);
+  // A move order: 45 km/h for an armored brigade, 60 game seconds per second, so a minute of real time is 45 km.
+  assert.ok(z({ type: 'usaOrder', ids: [a], order: { type: 'move', to: [-100, 35.04] } }).ok);
+  const y0 = getUnits(s.usa)[a].lat;
+  assert.ok(tickUsa(s, 1_001_000));
+  assert.ok(getUnits(s.usa)[a].lat > y0 && getUnits(s.usa)[a].lat < 35.04, 'it is on its way');
+  assert.ok(getUnits(s.usa)[a].mv[1] > 0, 'clients are told which way it is gliding');
+  for (let t = 1_002_000; t < 1_040_000; t += 1000) tickUsa(s, t);
+  assert.equal(getUnits(s.usa)[a].order, null, 'it arrived');
+  assert.ok(s.usa.events.some(e => e.text.includes('arrived')));
+  // Orders: fixed headquarters cannot move; a unit cannot be ordered to attack its own side.
+  assert.equal(z({ type: 'usaOrder', ids: ['f-pentagon'], order: { type: 'move', to: [-90, 35] } }).ok, false);
+  assert.equal(z({ type: 'usaOrder', ids: [a], order: { type: 'move', to: [10, 35] } }).ok, false);
+  // Hostile sides: nothing happens while at peace, even point blank.
+  const before = getUnits(s.usa)[b].strength;
+  for (let t = 1_041_000; t < 1_050_000; t += 1000) tickUsa(s, t);
+  assert.equal(getUnits(s.usa)[b].strength, before);
+  assert.ok(z({ type: 'usaHostile', a: 'fed', b: 'mil' }).ok && s.usa.hostile.includes('fed|mil'));
+  // At war, units that return fire answer once shot at; the Zeus sets "fire at will" and the fight starts.
+  assert.ok(z({ type: 'usaRoe', ids: [a], roe: 'free' }).ok);
+  assert.equal(z({ type: 'usaRoe', ids: [a], roe: 'nope' }).ok, false);
+  for (let t = 1_051_000; t < 1_200_000; t += 1000) tickUsa(s, t);
+  const U = getUnits(s.usa);
+  assert.ok(U[b].strength < before, 'the militia took fire');
+  assert.ok(U[a].strength >= U[b].strength, 'the armored brigade wins the fight');
+  assert.ok(s.usa.events.some(e => e.text.includes('engaged')));
+  for (let t = 1_201_000; t < 1_900_000; t += 1000) tickUsa(s, t);
+  assert.ok(getUnits(s.usa)[b].destroyed || getUnits(s.usa)[b].routed, 'it was destroyed or fled');
+  assert.ok(z({ type: 'usaUnit', id: b, revive: true }).ok && getUnits(s.usa)[b].strength === 100 && !getUnits(s.usa)[b].destroyed);
+  // Attack orders pull a target in and make the sides hostile.
+  assert.ok(z({ type: 'usaHostile', a: 'fed', b: 'mil', on: false }).ok && !s.usa.hostile.length);
+  assert.ok(z({ type: 'usaOrder', ids: [a], order: { type: 'attack', target: b } }).ok && s.usa.hostile.includes('fed|mil'));
+  assert.equal(z({ type: 'usaOrder', ids: [a], order: { type: 'attack', target: 'x-nope' } }).ok, false);
+});

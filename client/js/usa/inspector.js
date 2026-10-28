@@ -3,13 +3,16 @@
 import { html, useState, useEffect, useMemo, cls, run, toast } from '../lib.js';
 import { geoContains } from 'd3-geo';
 import { unitLabel, viewFor } from './map.js';
+import { effSide, typeOf, menNow, sideName, ROES, SIDE_NAMES, sideColor, simClock, isHostile, hostileKeyOf } from '/shared/engine/usa-sim.js';
+import { UNIT_TYPES, TYPE_GROUPS } from '/shared/data/usa-types.js';
+import { STATES } from '/shared/data/usa-units.js';
 import { USA_UNIT_KINDS, SILS, STATE_STATUS, STATE_METRICS, BORDER_SIDES, BORDER_POSTURE, CROSSING_STATUS, CROSSING_LIST, getState, getUnits, crossingState } from '/shared/engine/usa.js';
 
 const Bar = ({ label, value, onChange }) => html`<label class="stat"><div class="row between"><span class="dim small">${label}</span><b>${value}</b></div>
   <input type="range" min="0" max="100" value=${value} onChange=${e => onChange(Number(e.target.value))} class=${cls('us-meter', value < 30 ? 'low' : value < 55 ? 'mid' : 'hi')} /></label>`;
 
 // A unit's card. Governors can be edited: the AI plays them, or a delegate does under their own name and photo.
-export function UnitCard({ unit: x, act, close, jump, placing, setPlacing }) {
+export function UnitCard({ unit: x, units, act, close, jump, placing, setPlacing }) {
   const gov = x.kind === 'governor', code = x.owner;
   const [name, setName] = useState(x.person || ''), [party, setParty] = useState(x.party || '');
   const [uname, setUname] = useState(x.name), [short, setShort] = useState(x.short || ''), [desc, setDesc] = useState(x.desc || '');
@@ -40,6 +43,10 @@ export function UnitCard({ unit: x, act, close, jump, placing, setPlacing }) {
       <div class="row wrap"><button class="btn sm gold" onClick=${() => act({ type: 'usaGovernor', state: code, name, party })}>Save name</button>
         <label class="btn sm">Upload photo<input type="file" accept="image/*" hidden onChange=${photo} /></label>${x.photo && html`<button class="btn sm ghost" onClick=${() => act({ type: 'usaGovernor', state: code, photo: null })}>Remove photo</button>`}</div>`
       : html`<div class="row wrap"><button class=${cls('btn sm', x.control !== 'delegate' && 'on')} onClick=${() => edit({ control: 'ai' })}>AI plays</button><button class=${cls('btn sm gold', x.control === 'delegate' && 'on')} onClick=${() => edit({ control: 'delegate' })}>Delegate plays</button></div>`}
+    <${ForceInfo} x=${x} units=${units} />
+    <${OrderBar} ids=${[x.id]} act=${act} placing=${placing} setPlacing=${setPlacing} roe=${x.roe} fixed=${!typeOf(x).speed} />
+    ${(x.destroyed || x.strength < 100) && html`<button class="btn sm" onClick=${() => edit({ revive: true })}>Repair and revive</button>`}
+    <label class="field small">Side<select class="input sm" value=${x.side} onChange=${e => edit({ side: e.target.value })}><${SideOptions} /></select></label>
     <div class="sub-h">Any unit: Zeus controls it</div>
     <input class="input sm" placeholder="Full name" value=${uname} onInput=${e => setUname(e.target.value)} />
     <input class="input sm" placeholder="Short name on the badge" value=${short} onInput=${e => setShort(e.target.value)} />
@@ -48,7 +55,7 @@ export function UnitCard({ unit: x, act, close, jump, placing, setPlacing }) {
     <label class="row small">Strength <input type="range" min="0" max="100" value=${x.strength} onChange=${e => edit({ strength: e.target.value })} /> <b>${x.strength}%</b></label>
     <select class="input sm" value=${x.sil} onChange=${e => edit({ sil: e.target.value })}>${SILS.map(k => html`<option value=${k}>Picture: ${k}</option>`)}</select>
     <div class="row wrap">
-      <button class=${cls('btn sm', moving && 'on')} onClick=${() => setPlacing(moving ? null : { id: x.id })}>${moving ? 'Click the map…' : 'Move on map'}</button>
+      <button class=${cls('btn sm', moving && 'on')} onClick=${() => setPlacing(moving ? null : { id: x.id })}>${moving ? 'Click the map…' : 'Teleport'}</button>
       <button class="btn sm" onClick=${() => edit({ hidden: !x.hidden })}>${x.hidden ? 'Show' : 'Hide'}</button>
       ${(x.kind === 'guard' || x.kind === 'police') && html`<button class=${cls('btn sm', x.federal && 'on')} onClick=${() => edit({ federal: !x.federal })}>${x.federal ? 'Federalized' : 'Federalize'}</button>`}
       ${builtIn ? html`<button class="btn sm ghost" onClick=${() => act({ type: 'usaUnitReset', id: x.id })}>Reset</button>` : html`<button class="btn sm ghost" onClick=${() => { act({ type: 'usaDeleteUnit', id: x.id }); close(); }}>Delete</button>`}
@@ -106,6 +113,10 @@ export function NationOverview({ u, units, act, setSel, setState, setCrossing })
     ${Object.entries(BORDER_SIDES).map(([side, name]) => html`<div class="us-bside"><div class="row between"><b>${name}</b><span class="dim small">${CROSSING_LIST.filter(c => c.side === side).length} crossings</span></div>
       <div class="row wrap">${Object.entries(BORDER_POSTURE).map(([k, l]) => html`<button class=${cls('btn xs', (u.border?.[side] || 'open') === k && 'on', k === 'closed' && 'danger')} onClick=${() => act({ type: 'usaBorder', side, status: k })}>${l}</button>`)}</div></div>`)}
     <div class="us-unitlist">${CROSSING_LIST.map(c => ({ c, cs: crossingState(u, c.id) })).filter(x => x.cs.status !== 'open').map(({ c, cs }) => html`<button class="us-urow" onClick=${() => setCrossing(c.id)}><i class="us-sw" style=${`background:${cs.status === 'closed' ? '#f87171' : '#fbbf24'}`}></i><span>${c.name}</span><em>${CROSSING_STATUS[cs.status]}</em></button>`)}</div>
+    <div class="sub-h">Conflicts</div>
+    <${ConflictCard} u=${u} act=${act} />
+    <div class="sub-h">Latest events</div>
+    <${EventLog} u=${u} units=${units} setSel=${setSel} />
     <div class="sub-h">Federal forces</div>
     <div class="dim small">${fed} unit${fed === 1 ? '' : 's'} federalized.</div>
     <div class="row wrap"><button class="btn sm" onClick=${() => act({ type: 'usaFederalize', state: 'all', on: true })}>Federalize every Guard</button><button class="btn sm ghost" onClick=${() => act({ type: 'usaFederalize', state: 'all', on: false })}>Release them</button></div>
@@ -125,4 +136,63 @@ export function CrossingCard({ u, id, act, close }) {
     <div class="dim small">${cs.wait == null ? 'Closed: nothing crosses.' : `About ${cs.wait} minutes to cross.`}</div>
     <div class="dim small">Cars and trucks drive through and fade out after crossing; those arriving fade in. White vehicles are entering the US, amber ones leaving.</div>
   </div>`;
+}
+
+// Every side a unit can be on, for a select.
+export function SideOptions() {
+  return html`<optgroup label="Sides">${Object.entries(SIDE_NAMES).map(([k, l]) => html`<option value=${k}>${l}</option>`)}</optgroup>
+    <optgroup label="State forces">${STATES.map(r => html`<option value=${`st:${r[0]}`}>${r[1]} forces</option>`)}</optgroup>`;
+}
+
+// What a unit is, how strong it is and what it is doing now.
+function ForceInfo({ x, units }) {
+  const ty = typeOf(x), tg = x.eng && units?.[x.eng], o = x.order, to = o?.target && units?.[o.target];
+  const doing = x.destroyed ? 'Destroyed' : x.routed ? 'Routing back to base' : !o ? (ty.speed ? 'Holding position' : 'Fixed in place') : o.type === 'move' ? 'Moving' : o.type === 'return' ? 'Falling back' : o.type === 'patrol' ? 'On patrol' : o.type === 'attack' ? `Attacking ${to?.short || to?.name || 'a target'}` : `Escorting ${to?.short || to?.name || 'a unit'}`;
+  return html`<div class="us-force">
+    <div class="row between"><b>${ty.name}</b><span class="chip" style=${`border-color:${sideColor(effSide(x))};color:${sideColor(effSide(x))}`}>${sideName(effSide(x))}${x.federal ? ' · federalized' : ''}</span></div>
+    <div class="dim small">${menNow(x).toLocaleString('en-US')} of ${ty.men.toLocaleString('en-US')} people · ${ty.speed ? `${ty.speed} km/h` : 'does not move'} · range ${ty.range} km</div>
+    <div class="dim small">Hits ground ${ty.atk.ground} · air ${ty.atk.air} · sea ${ty.atk.sea} · toughness ${ty.def}</div>
+    <div class="dim small"><b>${doing}</b>${tg ? ` · firing at ${tg.short || tg.name}` : ''}</div>
+  </div>`;
+}
+
+// RTS orders for one or many units. Move and patrol wait for a click on the map; attack and escort wait for a click on a unit.
+export function OrderBar({ ids, act, placing, setPlacing, roe, fixed }) {
+  const arm = (order, pickTarget) => setPlacing(placing?.order === order ? null : { order, pickTarget });
+  const btn = (order, label, pick) => html`<button class=${cls('btn sm', placing?.order === order && 'on', order === 'attack' && 'danger')} disabled=${fixed} onClick=${() => arm(order, pick)}>${placing?.order === order ? (pick ? 'Click a unit…' : 'Click the map…') : label}</button>`;
+  return html`<div class="sub-h">Orders</div>
+    <div class="row wrap">${btn('move', 'Move')}${btn('patrol', 'Patrol')}${btn('attack', 'Attack', true)}${btn('escort', 'Escort', true)}<button class="btn sm" onClick=${() => { setPlacing(null); act({ type: 'usaOrder', ids, order: { type: 'hold' } }); }}>Hold</button></div>
+    <div class="row wrap">${Object.entries(ROES).map(([k, l]) => html`<button class=${cls('btn xs', roe === k && 'on')} onClick=${() => act({ type: 'usaRoe', ids, roe: k })}>${l}</button>`)}</div>
+    <div class="dim small">Right-click the map to send the picked units there; right-click an enemy to attack, a friend to escort. Shift-click or Shift-drag picks more units.</div>`;
+}
+
+// Several units picked together.
+export function GroupCard({ ids, units, act, placing, setPlacing, close, setSelIds }) {
+  const list = ids.map(i => units[i]).filter(Boolean), men = list.reduce((n, x) => n + menNow(x), 0);
+  const avg = Math.round(list.reduce((n, x) => n + x.strength, 0) / Math.max(1, list.length));
+  const byType = {}; for (const x of list) byType[typeOf(x).name] = (byType[typeOf(x).name] || 0) + 1;
+  return html`<div class="pane inspector">
+    <div class="insp-head"><div class="grow"><div class="insp-name">${list.length} units picked</div><div class="dim small">${men.toLocaleString('en-US')} people · average strength ${avg}%</div></div><button class="btn xs ghost" onClick=${close}>✕</button></div>
+    <div class="row wrap" style="gap:4px">${Object.entries(byType).map(([n, c]) => html`<span class="chip">${c} × ${n}</span>`)}</div>
+    <${OrderBar} ids=${ids} act=${act} placing=${placing} setPlacing=${setPlacing} />
+    <div class="us-unitlist">${list.map(x => html`<button class="us-urow" onClick=${() => setSelIds([x.id])}><i class="us-sw" style=${`background:${sideColor(effSide(x))}`}></i><span>${x.name}</span><em>${x.strength}%</em></button>`)}</div>
+  </div>`;
+}
+
+// Sides at war: units only fight units of a side they are at war with.
+function ConflictCard({ u, act }) {
+  const [a, setA] = useState('fed'), [b, setB] = useState('mil');
+  const war = isHostile(u, a, b), pairs = (u.hostile || []).map(k => k.split('|'));
+  const name = side => sideName(side, c => STATES.find(r => r[0] === c)?.[1] || c);
+  return html`<div class="us-bside">
+    <div class="row wrap"><select class="input sm grow" value=${a} onChange=${e => setA(e.target.value)}><${SideOptions} /></select><span class="dim">vs</span><select class="input sm grow" value=${b} onChange=${e => setB(e.target.value)}><${SideOptions} /></select></div>
+    <button class=${cls('btn sm', !war && 'danger')} disabled=${a === b} onClick=${() => act({ type: 'usaHostile', a, b, on: !war })}>${war ? 'Make peace' : 'Declare war'}</button>
+    ${pairs.length ? pairs.map(([x, y]) => html`<div class="row between small"><span>${name(x)} ⚔ ${name(y)}</span><button class="btn xs ghost" onClick=${() => act({ type: 'usaHostile', a: x, b: y, on: false })}>Peace</button></div>`) : html`<div class="dim small">Nobody is at war.</div>`}
+  </div>`;
+}
+
+function EventLog({ u, units, setSel }) {
+  const list = (u.events || []).slice(-14).reverse();
+  if (!list.length) return html`<p class="pane-hint">Nothing has happened yet. Start the clock and give some orders.</p>`;
+  return html`<div class="us-unitlist">${list.map(e => html`<button class=${cls('us-urow', e.kind)} disabled=${!e.id || !units[e.id]} onClick=${() => e.id && units[e.id] && setSel(e.id)}><span class="mono dim small">${simClock(e.t).replace('Day ', 'D')}</span><span>${e.text}</span></button>`)}</div>`;
 }

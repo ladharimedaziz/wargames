@@ -2,6 +2,8 @@
 import { clamp } from './core.js';
 import { STATES, FEDERAL, STATE_INFO } from '../data/usa-units.js';
 import { CROSSINGS } from '../data/usa-border.js';
+import { UNIT_TYPES } from '../data/usa-types.js';
+import { usaTick, SIM_SPEEDS, ROES, validSide, effSide, typeOf, inBox, isHostile, hostileKeyOf, sideName } from './usa-sim.js';
 
 const err = error => ({ ok: false, error });
 const ok = (r = {}) => ({ ok: true, ...r });
@@ -77,20 +79,26 @@ export const USA_UNIT_KINDS = {
   custom: { layer: 'uCustom', name: 'Zeus-made units', color: '#ff8a5a', dot: 1, label: 3 },
 };
 // The drawn pictures a unit can use (see client/js/usa/art.js).
-export const SILS = ['tank', 'infantry', 'fighter', 'bomber', 'helicopter', 'carrier', 'destroyer', 'ship', 'sub', 'missile', 'satellite', 'shield', 'guard', 'police', 'person'];
+export const SILS = ['tank', 'infantry', 'fighter', 'bomber', 'helicopter', 'carrier', 'destroyer', 'ship', 'sub', 'missile', 'satellite', 'shield', 'guard', 'police', 'person', 'truck', 'fire', 'ambulance', 'artillery', 'crowd', 'plane'];
 export const UNIT_LAYERS = Object.fromEntries(Object.values(USA_UNIT_KINDS).map(k => [k.layer, k.name]));
 const AGENCIES = new Set(['fbi', 'dhs', 'fema', 'cdc', 'ice', 'cbp', 'usss', 'dea', 'atf', 'usms']);
+
+// What kind of formation each federal catalog entry is.
+const FED_TYPE = { '82nd': 'div_light', '101st': 'div_light', '10mtn': 'div_light', '1cav': 'division', '1ad': 'division', '1id': 'division', '3id': 'division', '4id': 'division', icorps: 'hq',
+  '2mef': 'mef', '1mef': 'mef', norfolk: 'csg', sandiego: 'csg', mayport: 'ddg', kingsbay: 'ssn', bangor: 'ssn', oceana: 'air_wing', langley: 'f22_sqn', barksdale: 'bomber', whiteman: 'bomber', minot: 'bomber',
+  malmstrom: 'icbm', warren: 'icbm', nellis: 'air_wing', edwards: 'air_wing', eglin: 'air_wing', offutt: 'hq', peterson: 'hq', macdill: 'hq', pentagon: 'hq', ngb: 'hq', meade: 'hq', cgatl: 'cg_area', cgpac: 'cg_area',
+  fbi: 'fbi_hrt', dhs: 'hq', fema: 'usar', cdc: 'hq', ice: 'ice_team', cbp: 'bp_sector', usss: 'usss_detail', dea: 'atf_team', atf: 'atf_team', usms: 'marshals' };
 
 function makeUnits() {
   const u = {};
   for (const [code, name, cap, lon, lat, gov, party, police] of STATES) {
-    u[`gov-${code}`] = { id: `gov-${code}`, kind: 'governor', name: code === 'DC' ? 'Mayor of Washington' : `Governor of ${name}`, person: gov, party, short: gov, owner: code, lon, lat, sil: 'person', img: `flag-${code}`, photo: null, desc: `${code === 'DC' ? 'Mayor' : 'Governor'} of ${name}, seated in ${cap}.`, strength: 100, control: 'ai', hidden: false };
+    u[`gov-${code}`] = { id: `gov-${code}`, kind: 'governor', name: code === 'DC' ? 'Mayor of Washington' : `Governor of ${name}`, person: gov, party, short: gov, owner: code, lon, lat, type: 'vip', side: `st:${code}`, roe: 'hold', sil: 'person', img: `flag-${code}`, photo: null, desc: `${code === 'DC' ? 'Mayor' : 'Governor'} of ${name}, seated in ${cap}.`, strength: 100, control: 'ai', hidden: false };
     if (code === 'DC') continue; // the District has a mayor, but its Guard answers to the President
-    u[`ng-${code}`] = { id: `ng-${code}`, kind: 'guard', name: `${name} National Guard`, short: `${code} Guard`, owner: code, lon: lon + 0.1, lat: lat + 0.07, sil: 'guard', img: 'ngb', desc: `The ${name} Army and Air National Guard, commanded by the governor until the President federalizes it.`, strength: 100, control: 'ai', hidden: false };
-    u[`sp-${code}`] = { id: `sp-${code}`, kind: 'police', name: police, short: police, owner: code, lon: lon - 0.1, lat: lat - 0.07, sil: 'police', img: null, desc: `${police}, the state's highway and state police force.`, strength: 100, control: 'ai', hidden: false };
+    u[`ng-${code}`] = { id: `ng-${code}`, kind: 'guard', name: `${name} National Guard`, short: `${code} Guard`, owner: code, lon: lon + 0.1, lat: lat + 0.07, type: 'ng_bct', side: `st:${code}`, roe: 'defend', sil: 'guard', img: 'ngb', desc: `The ${name} Army and Air National Guard, commanded by the governor until the President federalizes it.`, strength: 100, control: 'ai', hidden: false };
+    u[`sp-${code}`] = { id: `sp-${code}`, kind: 'police', name: police, short: police, owner: code, lon: lon - 0.1, lat: lat - 0.07, type: 'state_patrol', side: `st:${code}`, roe: 'defend', sil: 'police', img: null, desc: `${police}, the state's highway and state police force.`, strength: 100, control: 'ai', hidden: false };
   }
   for (const [id, name, short, lon, lat, sil, img, desc] of FEDERAL) {
-    u[`f-${id}`] = { id: `f-${id}`, kind: AGENCIES.has(id) || id.startsWith('bp-') ? 'agency' : 'military', name, short, owner: 'US', lon, lat, sil, img, desc, strength: 100, control: 'ai', hidden: false };
+    u[`f-${id}`] = { id: `f-${id}`, kind: AGENCIES.has(id) || id.startsWith('bp-') ? 'agency' : 'military', name, short, owner: 'US', side: 'fed', type: id.startsWith('bp-') ? 'bp_sector' : FED_TYPE[id] || 'hq', roe: 'defend', lon, lat, sil, img, desc, strength: 100, control: 'ai', hidden: false };
   }
   return u;
 }
@@ -108,6 +116,8 @@ export function migrateUsa(s) {
   const u = s.usa; if (!u) return s;
   u.layers = { ...DEFAULT_LAYERS, ...Object.fromEntries(Object.entries(u.layers || {}).filter(([k]) => USA_LAYERS.includes(k))) };
   u.mods ||= {}; u.custom ||= {}; u.states ||= {}; u.border ||= { CAN: 'open', MEX: 'open' }; u.crossings ||= {};
+  u.sim ||= { running: false, speed: 60, t: 0, at: 0 }; u.hostile ||= []; u.events ||= [];
+  for (const c of Object.values(u.custom)) { c.type ||= 'militia_sq'; c.side ||= 'mil'; c.roe ||= 'defend'; c.home ||= [c.lon, c.lat]; }
   u.lightbars ||= { police: false, fire: false, ambulance: false }; u.lightPattern ||= 'mixed'; u.lightColors ||= {};
   return s;
 }
@@ -121,7 +131,7 @@ export function createUsaFields(s) {
     accent: '#4aa8ff',
     view: { ...USA_VIEW },
     layers: { ...DEFAULT_LAYERS },
-    mods: {}, custom: {}, states: {}, border: { CAN: 'open', MEX: 'open' }, crossings: {},
+    mods: {}, custom: {}, states: {}, border: { CAN: 'open', MEX: 'open' }, crossings: {}, sim: { running: false, speed: 60, t: 0, at: 0 }, hostile: [], events: [],
     lightbars: { police: false, fire: false, ambulance: false }, lightPattern: 'mixed', lightColors: {},
     highlight: [], // state postal codes marked on the stage
     note: '',
@@ -129,7 +139,77 @@ export function createUsaFields(s) {
   return s;
 }
 
+// Writes dynamic fields (position, strength, orders) onto a unit: built-in units keep them as overrides, made ones in place.
+function putUnit(usa, id, patch) {
+  const g = CATALOG[id] ? (usa.mods[id] ||= {}) : usa.custom[id];
+  if (g) Object.assign(g, patch);
+}
+const homeOf = (usa, id, w) => (CATALOG[id] ? [CATALOG[id].lon, CATALOG[id].lat] : usa.custom[id]?.home || [w.lon, w.lat]);
+// One step of the clock; the server calls this about once a second. True when the map changed and clients need the state.
+export function tickUsa(s, now) {
+  migrateUsa(s);
+  return usaTick(s, now, getUnits, putUnit, (id, w) => homeOf(s.usa, id, w));
+}
+function addHostile(usa, a, b) {
+  if (isHostile(usa, a, b)) return false;
+  usa.hostile.push(hostileKeyOf(a, b));
+  usa.events.push({ t: Math.round(usa.sim.t), text: `${sideName(a)} and ${sideName(b)} are now at war.`, kind: 'war' });
+  if (usa.events.length > 100) usa.events.shift();
+  return true;
+}
+
 export const usaActions = {
+  // The game clock: start or stop it, and how fast it runs (game seconds per real second).
+  usaSim: { perm: 'zeus', run(s, a, ctx) {
+    migrateUsa(s);
+    if (a.speed !== undefined) { if (!SIM_SPEEDS.includes(Number(a.speed))) return err('Pick a speed from the list.'); s.usa.sim.speed = Number(a.speed); }
+    if (a.running !== undefined) s.usa.sim.running = !!a.running;
+    s.usa.sim.at = ctx?.now || Date.now();
+    return ok();
+  } },
+  // Orders for one or many units: hold, move, patrol, attack or escort. An attack order puts the two sides at war.
+  usaOrder: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const ids = [...new Set(Array.isArray(a.ids) ? a.ids : [])].slice(0, 200), o = a.order || {}, units = getUnits(s.usa);
+    if (!ids.length) return err('Pick at least one unit.');
+    if (!['hold', 'move', 'patrol', 'attack', 'escort'].includes(o.type)) return err('Unknown order.');
+    let target = null;
+    if (o.type === 'attack' || o.type === 'escort') { target = units[o.target]; if (!target || target.destroyed || target.hidden) return err('Pick a target.'); }
+    const to = Array.isArray(o.to) ? [Number(o.to[0]), Number(o.to[1])] : null;
+    if ((o.type === 'move' || o.type === 'patrol') && !(to && inBox(to[0], to[1]))) return err('Place it on the map.');
+    let n = 0;
+    for (const id of ids) {
+      const u = units[id];
+      if (!u || u.destroyed || u.hidden || id === o.target) continue;
+      if (o.type !== 'hold' && !typeOf(u).speed) continue;
+      if (o.type === 'attack' && effSide(u) === effSide(target)) continue;
+      const order = o.type === 'hold' ? null : o.type === 'move' ? { type: 'move', to: [+to[0].toFixed(3), +to[1].toFixed(3)] }
+        : o.type === 'patrol' ? { type: 'patrol', a: [+u.lon.toFixed(3), +u.lat.toFixed(3)], b: [+to[0].toFixed(3), +to[1].toFixed(3)], toB: true } : { type: o.type, target: o.target };
+      putUnit(s.usa, id, { order, mv: null, routed: false });
+      if (o.type === 'attack') addHostile(s.usa, effSide(u), effSide(target));
+      n++;
+    }
+    if (!n) return err('None of those units can take that order.');
+    return ok({ count: n });
+  } },
+  usaRoe: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    if (!(a.roe in ROES)) return err('Pick hold fire, return fire or fire at will.');
+    const units = getUnits(s.usa); let n = 0;
+    for (const id of new Set(Array.isArray(a.ids) ? a.ids : [])) if (units[id]) { putUnit(s.usa, id, { roe: a.roe }); n++; }
+    return n ? ok({ count: n }) : err('Pick at least one unit.');
+  } },
+  // Two sides at war (or not). Units only fight units of a side they are at war with.
+  usaHostile: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    if (!validSide(a.a) || !validSide(a.b) || a.a === a.b) return err('Pick two different sides.');
+    const key = hostileKeyOf(a.a, a.b), has = s.usa.hostile.includes(key), want = a.on === undefined ? !has : !!a.on;
+    if (want) addHostile(s.usa, a.a, a.b); else if (has) {
+      s.usa.hostile = s.usa.hostile.filter(k => k !== key);
+      s.usa.events.push({ t: Math.round(s.usa.sim.t), text: `${sideName(a.a)} and ${sideName(a.b)} are at peace.`, kind: 'peace' });
+    }
+    return ok();
+  } },
   usaSetView: { perm: 'zeus', run(s, a) {
     migrateUsa(s);
     const lon = Number(a.lon), lat = Number(a.lat), k = Number(a.k);
@@ -197,11 +277,14 @@ export const usaActions = {
     if (a.strength !== undefined) { const v = num(a.strength, 0, 100); if (v == null) return err('Strength is 0 to 100.'); g.strength = Math.round(v); }
     if (a.control !== undefined) { if (!['ai', 'delegate'].includes(a.control)) return err('Control is ai or delegate.'); g.control = a.control; }
     if (a.hidden !== undefined) g.hidden = !!a.hidden;
+    if (a.roe !== undefined) { if (!(a.roe in ROES)) return err('Unknown rules of engagement.'); g.roe = a.roe; }
+    if (a.side !== undefined) { if (!validSide(a.side)) return err('Unknown side.'); g.side = a.side; }
+    if (a.revive) Object.assign(g, { strength: 100, destroyed: false, routed: false, order: null, mv: null, eng: null, hitAt: null });
     if (a.federal !== undefined) { if (!['guard', 'police'].includes(base.kind)) return err('Only a Guard or police unit can be federalized.'); g.federal = !!a.federal; }
     if (a.sil !== undefined) { if (!SILS.includes(a.sil)) return err('Unknown picture.'); g.sil = a.sil; }
     if (a.lon !== undefined || a.lat !== undefined) {
       const lon = Number(a.lon ?? base.lon), lat = Number(a.lat ?? base.lat);
-      if (!Number.isFinite(lon) || !Number.isFinite(lat) || lon < -126 || lon > -65 || lat < 23 || lat > 50.5) return err('That place is not on the map.');
+      if (!inBox(lon, lat)) return err('That place is not on the map.');
       g.lon = +lon.toFixed(3); g.lat = +lat.toFixed(3);
     }
     return ok();
@@ -225,16 +308,23 @@ export const usaActions = {
   usaSpawn: { perm: 'zeus', run(s, a) {
     migrateUsa(s);
     if (Object.keys(s.usa.custom).length >= 300) return err('That is the most custom units (300).');
-    const name = String(a.name || '').trim().slice(0, 80);
+    const ty = a.utype === undefined ? null : UNIT_TYPES[a.utype];
+    if (a.utype !== undefined && !ty) return err('Unknown kind of unit.');
+    const name = String(a.name || ty?.name || '').trim().slice(0, 80);
     if (!name) return err('Give the unit a name.');
-    const lon = Number(a.lon), lat = Number(a.lat);
-    if (!Number.isFinite(lon) || !Number.isFinite(lat) || lon < -126 || lon > -65 || lat < 23 || lat > 50.5) return err('Place it on the map.');
-    const sil = a.sil === undefined ? 'infantry' : a.sil;
+    let lon = Number(a.lon), lat = Number(a.lat);
+    if (a.at === 'capital') { const row = STATES.find(r => r[0] === String(a.state || '').toUpperCase()); if (!row) return err('No such state.'); lon = row[3]; lat = row[4]; }
+    if (!inBox(lon, lat)) return err('Place it on the map.');
+    const side = a.side === undefined ? 'mil' : a.side;
+    if (!validSide(side) || (side.startsWith('st:') && !STATE_INFO[side.slice(3)])) return err('Unknown side.');
+    const sil = a.sil === undefined ? ty?.sil || 'infantry' : a.sil;
     if (!SILS.includes(sil)) return err('Unknown picture.');
     let n = (s.usa.nextCustom || 1); while (s.usa.custom[`x-${n}`]) n++;
     const id = `x-${n}`; s.usa.nextCustom = n + 1;
     const st = Number(a.strength);
-    s.usa.custom[id] = { id, kind: 'custom', name, short: String(a.short || name).trim().slice(0, 40), owner: 'US', lon: +lon.toFixed(3), lat: +lat.toFixed(3), sil, img: null, photo: null, desc: String(a.desc || '').slice(0, 300), strength: Number.isFinite(st) ? clamp(Math.round(st), 0, 100) : 100, control: a.control === 'delegate' ? 'delegate' : 'ai', hidden: false };
+    lon = +lon.toFixed(3); lat = +lat.toFixed(3);
+    s.usa.custom[id] = { id, kind: 'custom', type: a.utype || 'militia_sq', side, roe: a.roe in ROES ? a.roe : ty?.group === 'Civilians' ? 'hold' : 'defend', home: [lon, lat], name, short: String(a.short || name).trim().slice(0, 40),
+      owner: side.startsWith('st:') ? side.slice(3) : 'US', lon, lat, sil, img: null, photo: null, desc: String(a.desc ?? ty?.desc ?? '').slice(0, 300), strength: Number.isFinite(st) ? clamp(Math.round(st), 0, 100) : 100, control: a.control === 'delegate' ? 'delegate' : 'ai', hidden: false, order: null };
     return ok({ id });
   } },
   usaDeleteUnit: { perm: 'zeus', run(s, a) {
