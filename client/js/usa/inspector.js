@@ -6,6 +6,7 @@ import { unitLabel, viewFor } from './map.js';
 import { effSide, typeOf, menNow, sideName, ROES, SIDE_NAMES, sideColor, simClock, isHostile, hostileKeyOf } from '/shared/engine/usa-sim.js';
 import { UNIT_TYPES, TYPE_GROUPS } from '/shared/data/usa-types.js';
 import { GovPanel, IncidentCard } from './gov.js';
+import { ABILITIES, abilitiesOf } from '/shared/data/usa-abilities.js';
 import { STATES } from '/shared/data/usa-units.js';
 import { USA_UNIT_KINDS, SILS, STATE_STATUS, STATE_METRICS, BORDER_SIDES, BORDER_POSTURE, CROSSING_STATUS, CROSSING_LIST, getState, getUnits, crossingState } from '/shared/engine/usa.js';
 
@@ -13,7 +14,7 @@ const Bar = ({ label, value, onChange }) => html`<label class="stat"><div class=
   <input type="range" min="0" max="100" value=${value} onChange=${e => onChange(Number(e.target.value))} class=${cls('us-meter', value < 30 ? 'low' : value < 55 ? 'mid' : 'hi')} /></label>`;
 
 // A unit's card. Governors can be edited: the AI plays them, or a delegate does under their own name and photo.
-export function UnitCard({ unit: x, units, act, close, jump, placing, setPlacing }) {
+export function UnitCard({ unit: x, units, act, close, jump, placing, setPlacing, simT = 0 }) {
   const gov = x.kind === 'governor', code = x.owner;
   const [name, setName] = useState(x.person || ''), [party, setParty] = useState(x.party || '');
   const [uname, setUname] = useState(x.name), [short, setShort] = useState(x.short || ''), [desc, setDesc] = useState(x.desc || '');
@@ -47,6 +48,7 @@ export function UnitCard({ unit: x, units, act, close, jump, placing, setPlacing
       : html`<div class="row wrap"><button class=${cls('btn sm', x.control !== 'delegate' && 'on')} onClick=${() => edit({ control: 'ai' })}>AI plays</button><button class=${cls('btn sm gold', x.control === 'delegate' && 'on')} onClick=${() => edit({ control: 'delegate' })}>Delegate plays</button></div>`}
     <${ForceInfo} x=${x} units=${units} />
     <${AirInfo} x=${x} units=${units} act=${act} />
+    <${AbilityBar} list=${[x]} act=${act} placing=${placing} setPlacing=${setPlacing} simT=${simT} />
     <${OrderBar} ids=${[x.id]} act=${act} placing=${placing} setPlacing=${setPlacing} roe=${x.roe} fixed=${!typeOf(x).speed} air=${typeOf(x).domain === 'air' && !!x.base} />
     ${(x.destroyed || x.strength < 100) && html`<button class="btn sm" onClick=${() => edit({ revive: true })}>Repair and revive</button>`}
     <label class="field small">Side<select class="input sm" value=${x.side} onChange=${e => edit({ side: e.target.value })}><${SideOptions} /></select></label>
@@ -173,6 +175,19 @@ export function OrderBar({ ids, act, placing, setPlacing, roe, fixed, air }) {
     <div class="dim small">Right-click the map to send the picked units there; right-click an enemy to attack, a friend to escort. Shift-click or Shift-drag picks more units; Shift+right-click queues a waypoint. Keys: M move, A attack-move, P patrol, S stop, F centre, Ctrl+1-9 save a group, 1-9 recall it, double-click picks all of a kind.</div>`;
 }
 
+// Special abilities for the picked units: buttons for what they can do, a rest timer on each, and a click on the map for the aimed ones.
+export function AbilityBar({ list, act, placing, setPlacing, simT }) {
+  const live = list.filter(x => x && !x.destroyed), ids = [...new Set(live.flatMap(x => abilitiesOf(x.type)))];
+  if (!ids.length) return null;
+  return html`<div class="sub-h">Abilities</div><div class="row wrap">${ids.map(id => {
+    const ab = ABILITIES[id], users = live.filter(x => abilitiesOf(x.type).includes(id)), ready = users.filter(x => (x.cd?.[id] || 0) <= simT), wait = ready.length ? 0 : Math.min(...users.map(x => (x.cd?.[id] || 0) - simT)), arm = placing?.ability === id;
+    const go = () => {
+      if (ab.target === 'point') { setPlacing(arm ? null : { ability: id, ids: ready.map(x => x.id) }); return; }
+      for (const x of ready) act({ type: 'usaAbility', id: x.id, ability: id });
+    };
+    return html`<button class=${cls('btn sm', arm && 'on', id === 'barrage' || id === 'airstrike' || id === 'carpet' ? 'danger' : '')} disabled=${!ready.length} title=${ab.desc} onClick=${go}>${arm ? 'Click the map…' : ab.name}${ready.length < users.length || !ready.length ? html` <em class="dim small">${ready.length ? `${ready.length}/${users.length}` : `${Math.ceil(wait / 60)}m`}</em>` : ''}</button>`;
+  })}</div>`;
+}
 const AIR_STATE = { parked: 'Parked', takeoff: 'Taking off', flying: 'In the air', landing: 'Landing' };
 // An air base shows what it holds and can launch or recall it; an aircraft shows where it is based.
 function AirInfo({ x, units, act }) {
@@ -191,7 +206,7 @@ function AirInfo({ x, units, act }) {
 }
 
 // Several units picked together.
-export function GroupCard({ ids, units, act, placing, setPlacing, close, setSelIds }) {
+export function GroupCard({ ids, units, act, placing, setPlacing, close, setSelIds, simT = 0 }) {
   const list = ids.map(i => units[i]).filter(Boolean), men = list.reduce((n, x) => n + menNow(x), 0);
   const avg = Math.round(list.reduce((n, x) => n + x.strength, 0) / Math.max(1, list.length));
   const byType = {}; for (const x of list) byType[typeOf(x).name] = (byType[typeOf(x).name] || 0) + 1;
@@ -199,6 +214,7 @@ export function GroupCard({ ids, units, act, placing, setPlacing, close, setSelI
     <div class="insp-head"><div class="grow"><div class="insp-name">${list.length} units picked</div><div class="dim small">${men.toLocaleString('en-US')} people · average strength ${avg}%</div></div><button class="btn xs ghost" onClick=${close}>✕</button></div>
     <div class="row wrap" style="gap:4px">${Object.entries(byType).map(([n, c]) => html`<span class="chip">${c} × ${n}</span>`)}</div>
     <${OrderBar} ids=${ids} act=${act} placing=${placing} setPlacing=${setPlacing} air=${list.length > 0 && list.every(x => typeOf(x).domain === 'air' && x.base)} />
+    <${AbilityBar} list=${list} act=${act} placing=${placing} setPlacing=${setPlacing} simT=${simT} />
     <div class="us-unitlist">${list.map(x => html`<button class="us-urow" onClick=${() => setSelIds([x.id])}><i class="us-sw" style=${`background:${sideColor(effSide(x))}`}></i><span>${x.name}</span><em>${x.strength}%</em></button>`)}</div>
   </div>`;
 }

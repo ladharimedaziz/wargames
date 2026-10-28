@@ -6,6 +6,7 @@ import { html, useRef, useEffect, useMemo, cls } from '../lib.js';
 import { drawSil, getImage, sealUrl } from './art.js';
 import { USA_VIEW, USA_MAX_ZOOM, USA_UNIT_KINDS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors, getUnits, CROSSING_LIST, crossingState } from '/shared/engine/usa.js';
 import { sideColor, effSide, glidePos } from '/shared/engine/usa-sim.js';
+import { detect, drawFx, drawTrails } from './fx.js';
 
 let loading = null;
 // Loads and indexes the map files once: the states, the roads, and the Canadian and Mexican regions beside them.
@@ -330,6 +331,9 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
       ctx.fillStyle = ph < 1 ? 'rgba(255,200,80,.9)' : 'rgba(255,90,60,.7)'; ctx.beginPath(); ctx.arc(pb[0], pb[1], 3 + (ph % 1) * 6, 0, 6.2832); ctx.fill();
     }
     if (anyMv) flashing = true;
+    if (S.fxFor !== S.units) { S.fxFor = S.units; if (detect(S, now)) flashing = true; }
+    if (drawTrails(ctx, S, proj, now, posOf)) flashing = true;
+    if (drawFx(ctx, S, proj, now, posOf)) flashing = true;
     if (S.box) { const b = S.box; ctx.fillStyle = 'rgba(74,168,255,.15)'; ctx.strokeStyle = 'rgba(74,168,255,.9)'; ctx.lineWidth = 1; ctx.fillRect(Math.min(b[0], b[2]), Math.min(b[1], b[3]), Math.abs(b[2] - b[0]), Math.abs(b[3] - b[1])); ctx.strokeRect(Math.min(b[0], b[2]), Math.min(b[1], b[3]), Math.abs(b[2] - b[0]), Math.abs(b[3] - b[1])); }
     // Labels go in priority order (units first, then the layers in order); one that would overlap a placed label is dropped.
     if (wantLabels) {

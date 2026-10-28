@@ -90,6 +90,7 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
   }, []);
   const onPlace = (lon, lat) => {
     const p = placing; if (!p) return;
+    if (p.ability) { setPlacing(null); for (const id of p.ids) act({ type: 'usaAbility', id, ability: p.ability, to: [lon, lat] }); return; }
     if (p.incident) { setPlacing(null); act({ type: 'usaIncident', kind: p.incident, lon, lat }); return; }
     if (p.order) { setPlacing(null); act({ type: 'usaOrder', ids: selIds, order: { type: p.order, to: [lon, lat] } }); return; }
     if (p.id) { setPlacing(null); act({ type: 'usaUnit', id: p.id, lon, lat }); return; }
@@ -153,8 +154,8 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
           <div class="us-mini"><${UsMap} usa=${miniUsa} view=${USA_VIEW} className="us-mini-c" onMapClick=${v => jump({ ...v, k: Math.max(view.k, 3) })} /></div><${SimBar} u=${u} act=${act} /><div class="us-readout mono">zoom ${view.k.toFixed(1)}×</div></div>
         <aside class="us-right">
           ${selX ? html`<${CrossingCard} u=${u} id=${selX} act=${act} close=${() => setSelX(null)} />`
-            : selIds.length > 1 ? html`<${GroupCard} ids=${selIds} units=${units} act=${act} placing=${placing} setPlacing=${setPlacing} close=${() => setSelIds([])} setSelIds=${setSelIds} />`
-            : sel && units[sel] ? html`<${UnitCard} unit=${units[sel]} units=${units} act=${act} placing=${placing} setPlacing=${setPlacing} close=${() => setSel(null)} jump=${v => jump(v)} />`
+            : selIds.length > 1 ? html`<${GroupCard} ids=${selIds} units=${units} act=${act} simT=${u.sim?.t || 0} placing=${placing} setPlacing=${setPlacing} close=${() => setSelIds([])} setSelIds=${setSelIds} />`
+            : sel && units[sel] ? html`<${UnitCard} unit=${units[sel]} units=${units} act=${act} simT=${u.sim?.t || 0} placing=${placing} setPlacing=${setPlacing} close=${() => setSel(null)} jump=${v => jump(v)} />`
             : selState ? html`<${StateInspector} u=${u} units=${units} code=${selState} data=${data} act=${act} setSel=${setSel} placing=${placing} close=${() => setSelState(null)} jump=${jump} />`
             : html`<${NationOverview} u=${u} units=${units} act=${act} placing=${placing} setPlacing=${setPlacing} setSel=${setSel} setState=${setSelState} setCrossing=${setSelX} />`}
         </aside>
