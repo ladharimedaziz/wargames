@@ -83,6 +83,16 @@ export function govTick(usa, guards) {
         queue(usa, { office: 'speaker', act: 'statement', text: 'The Speaker calls for hearings on the losses.' }, 30);
         queue(usa, { office: 'joint', act: 'statement', text: 'The Joint Chiefs brief the President on casualties.' }, 10);
         nudge(g, -3); changed = true;
+      } else if (e.kind === 'incident' && ready(g, `inc${e.grp}`, t, 20)) {
+        const R = {
+          disaster: [['fema', 'FEMA begins a federal response and the President offers help to the governor.', 10], ['pres', 'The President declares a major disaster and promises federal aid.', 40]],
+          unrest: [['justice', 'The Attorney General warns that federal charges will follow any violence.', 10], ['pres', 'The President calls for calm and says the Guard is ready if the governor asks.', 25]],
+          attack: [['fbi', 'The FBI takes the lead on the investigation.', 8], ['dhs', 'Homeland Security raises the alert level.', 12], ['pres', 'The President addresses the nation and orders a full response.', 30]],
+          border: [['dhs', 'Homeland Security surges officers to the crossing.', 8], ['pres', 'The President demands the border be secured.', 30]],
+          war: [['nsa', 'The National Security Adviser convenes the Situation Room.', 5], ['joint', 'The Joint Chiefs put forces on alert.', 12], ['pres', 'The President addresses the nation on the crisis.', 25]],
+        }[e.grp] || [];
+        for (const [office, text, delay] of R) queue(usa, { office, act: 'statement', text }, delay);
+        nudge(g, e.grp === 'disaster' ? 0 : -2); changed = true;
       } else if (e.kind === 'peace' && ready(g, 'peace', t, 10)) {
         queue(usa, { office: 'pres', act: 'statement', text: 'The President welcomes the end of the fighting and orders the Guard released.', effect: 'release_all' }, 20);
         nudge(g, 2); changed = true;

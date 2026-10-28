@@ -2,6 +2,9 @@
 // has queued to do, and controls to make it speak, give an order or put a bill to a vote.
 import { html, useState, cls } from '../lib.js';
 import { OFFICES, OFFICE_BRANCH, GOV_EFFECTS, getGov, officeState } from '/shared/engine/usa-gov.js';
+import { INCIDENTS } from '/shared/data/usa-incidents.js';
+import { STATES } from '/shared/data/usa-units.js';
+import { CROSSING_LIST } from '/shared/engine/usa.js';
 import { simClock } from '/shared/engine/usa-sim.js';
 
 export function GovPanel({ u, act }) {
@@ -39,4 +42,18 @@ function OfficeEdit({ o, act }) {
   const [name, setName] = useState(o.person);
   return html`<div class="us-bside"><div class="row"><input class="input sm grow" placeholder="Name of the person" value=${name} onInput=${e => setName(e.target.value)} onBlur=${() => name !== o.person && act({ type: 'usaGov', office: o.id, person: name })} />
     </div><div class="row wrap"><button class=${cls('btn sm', o.control !== 'delegate' && 'on')} onClick=${() => act({ type: 'usaGov', office: o.id, control: 'ai' })}>AI plays</button><button class=${cls('btn sm gold', o.control === 'delegate' && 'on')} onClick=${() => act({ type: 'usaGov', office: o.id, control: 'delegate' })}>Delegate plays</button></div></div>`;
+}
+
+// Sandbox for Zeus and Kronos: set off something at a state or a border crossing and watch the government deal with it.
+export function IncidentCard({ act }) {
+  const [kind, setKind] = useState('riot'), [place, setPlace] = useState('st:TX');
+  const go = () => act(place.startsWith('st:') ? { type: 'usaIncident', kind, state: place.slice(3) } : { type: 'usaIncident', kind, crossing: place.slice(3) });
+  return html`<div class="us-bside">
+    <select class="input sm" value=${kind} onChange=${e => setKind(e.target.value)}>${Object.entries(INCIDENTS).map(([k, v]) => html`<option value=${k}>${v.name}</option>`)}</select>
+    <select class="input sm" value=${place} onChange=${e => setPlace(e.target.value)}>
+      <optgroup label="Border crossings">${CROSSING_LIST.map(c => html`<option value=${`cx:${c.id}`}>${c.name}</option>`)}</optgroup>
+      <optgroup label="States">${STATES.map(r => html`<option value=${`st:${r[0]}`}>${r[1]}</option>`)}</optgroup></select>
+    <button class="btn sm danger" onClick=${go}>Set it off</button>
+    <div class="dim small">Drops units on the map, may put the state under alert or emergency, and the government reacts. Units made this way can be ordered, fought or deleted like any other.</div>
+  </div>`;
 }

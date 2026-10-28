@@ -762,3 +762,26 @@ test('the US government answers a war, and the Zeus can make it act or vote', as
   assert.equal(s.usa.border.CAN, 'closed', 'a passed bill closes the border');
   assert.ok(s.usa.events.some(e => /Border Act.*passes/.test(e.text)));
 });
+
+test('the Zeus can set off incidents that spawn units, change status and get a government answer', async () => {
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const { applyAction } = await import('../../shared/engine/reducer.js');
+  const { tickUsa, getUnits } = await import('../../shared/engine/usa.js');
+  const s = createUsaState({ id: 'u', name: 'US', seed: 6 });
+  const z = a => applyAction(s, a, { role: 'zeus', user: 'z', now: 1_000_000 });
+  const before = Object.keys(s.usa.custom).length;
+  const r = z({ type: 'usaIncident', kind: 'wildfire', state: 'CA' });
+  assert.ok(r.ok && r.ids.length === 3 && Object.keys(s.usa.custom).length === before + 3);
+  assert.equal(s.usa.states.CA.status, 'emergency');
+  assert.ok(r.ids.every(id => getUnits(s.usa)[id].side === 'st:CA' || getUnits(s.usa)[id].side === 'civil'));
+  const b = z({ type: 'usaIncident', kind: 'breach', crossing: 'bx-sanysidro' });
+  assert.ok(b.ok && b.ids.length === 4 && s.usa.crossings['bx-sanysidro'].status === 'closed', 'a breach closes the crossing');
+  assert.equal(getUnits(s.usa)[b.ids[0]].order.type, 'move', 'the migrants head inland');
+  assert.equal(z({ type: 'usaIncident', kind: 'nope', state: 'CA' }).ok, false);
+  assert.equal(z({ type: 'usaIncident', kind: 'riot', state: 'ZZ' }).ok, false);
+  assert.equal(z({ type: 'usaIncident', kind: 'riot', lon: 10, lat: 10 }).ok, false);
+  assert.ok(z({ type: 'usaIncident', kind: 'riot', lon: -89.5, lat: 39.9 }).ok && s.usa.states.IL.status === 'alert', 'a point is matched to the nearest state');
+  z({ type: 'usaSim', running: true, speed: 60 }); s.usa.sim.at = 1_000_000;
+  for (let i = 1; i <= 30; i++) tickUsa(s, 1_000_000 + i * 1000);
+  assert.ok(s.usa.events.some(e => e.kind === 'gov' && /FEMA begins/.test(e.text)), 'FEMA answers the wildfire');
+});
