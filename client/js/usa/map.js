@@ -270,9 +270,11 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
     // A moving unit glides from where the last tick put it, in the direction `mv` says, until the next tick arrives.
     const ulabels = [], posOf = new Map(), glide = S.usa.sim?.running ? Math.min(2.5, (now - (S.recvAt || now)) / 1000) : 0;
     let anyMv = false;
+    // Aircraft parked at a base are not drawn; the base shows how many it holds.
+    const parked = {}; for (const u of Object.values(S.units || {})) if (u.air === 'parked' && !u.destroyed && !u.hidden) parked[u.base] = (parked[u.base] || 0) + 1;
     for (const u of Object.values(S.units || {})) {
       const kd = USA_UNIT_KINDS[u.kind];
-      if (!kd || u.hidden || !L[kd.layer] || k < kd.dot) continue;
+      if (!kd || u.hidden || !L[kd.layer] || k < kd.dot || u.air === 'parked') continue;
       const gp = u.mv && glide ? glidePos(u, S.units, glide) : null, lon = gp ? gp[0] : u.lon, lat = gp ? gp[1] : u.lat;
       if (u.mv && glide) anyMv = true;
       posOf.set(u.id, [lon, lat]);
@@ -289,7 +291,10 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
         for (const st of def.steps) { if (t < st[1]) { ci = st[0]; break; } t -= st[1]; }
         fill = ci >= 0 ? cols[ci % cols.length] : '#2a3144';
       }
-      ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 6.2832); ctx.fill();
+      if (u.air === 'flying' && !u.destroyed) { ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.arc(p[0] + 4, p[1] + 7, r * 0.9, 0, 6.2832); ctx.fill(); } // its shadow on the ground
+      if (u.air === 'takeoff' || u.air === 'landing') { const ph = (now / 500) % 1; ctx.strokeStyle = `rgba(143,224,255,${1 - ph})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p[0], p[1], r + 3 + ph * 12, 0, 6.2832); ctx.stroke(); }
+      if (u.type === 'airbase') { ctx.fillStyle = fill; ctx.fillRect(p[0] - r, p[1] - r, r * 2, r * 2); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.strokeRect(p[0] - r, p[1] - r, r * 2, r * 2); ctx.strokeStyle = '#06101f'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(p[0] - r + 1, p[1] + r - 1); ctx.lineTo(p[0] + r - 1, p[1] - r + 1); ctx.stroke(); }
+      else { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(p[0], p[1], u.air === 'flying' ? r + 1 : r, 0, 6.2832); ctx.fill(); }
       ctx.lineWidth = 2; ctx.strokeStyle = u.routed ? '#ffffff' : u.control === 'delegate' ? '#ffd166' : 'rgba(0,0,0,.75)'; ctx.stroke();
       if (u.destroyed) { ctx.strokeStyle = '#ff6a5a'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(p[0] - r, p[1] - r); ctx.lineTo(p[0] + r, p[1] + r); ctx.moveTo(p[0] + r, p[1] - r); ctx.lineTo(p[0] - r, p[1] + r); ctx.stroke(); }
       else if (k >= 2 && (u.strength < 100 || chosen)) {
@@ -298,7 +303,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
         ctx.fillStyle = f > 0.6 ? '#5fd08a' : f > 0.3 ? '#ffd166' : '#ff5a4a'; ctx.fillRect(p[0] - w / 2, p[1] + r + 3, w * f, 3);
       }
       S.hits.push([p[0], p[1], u.id]);
-      if (k >= kd.label || chosen) ulabels.push([p[0], p[1] - r - 4, unitLabel(u), u]);
+      if (k >= kd.label || chosen) ulabels.push([p[0], p[1] - r - 4, unitLabel(u) + (u.type === 'airbase' && parked[u.id] ? ` ✈${parked[u.id]}` : ''), u]);
     }
     // What the picked units are doing: a dashed line to where they are going (green move, blue patrol, red attack, gold escort).
     const proj2 = g => proj(g);

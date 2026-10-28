@@ -4,13 +4,14 @@ import { STATES, FEDERAL, STATE_INFO } from '../data/usa-units.js';
 import { CROSSINGS } from '../data/usa-border.js';
 import { UNIT_TYPES } from '../data/usa-types.js';
 import { route as roadRoute } from './usa-route.js';
+import { AIRBASES, AIR_RADIUS } from '../data/usa-airbases.js';
 import { INCIDENTS } from '../data/usa-incidents.js';
 import { getGov, govTick, govLog, queue, applyEffect, officeState, OFFICE_BY_ID, GOV_EFFECTS } from './usa-gov.js';
-import { distKm, usaTick, SIM_SPEEDS, ROES, validSide, effSide, typeOf, inBox, isHostile, hostileKeyOf, sideName } from './usa-sim.js';
+import { distKm, baseWorks, nearestBase, TAKEOFF, usaTick, SIM_SPEEDS, ROES, validSide, effSide, typeOf, inBox, isHostile, hostileKeyOf, sideName } from './usa-sim.js';
 
 const err = error => ({ ok: false, error });
 const ok = (r = {}) => ({ ok: true, ...r });
-export const USA_LAYERS = ['states', 'cities', 'highways', 'labels', 'neighbors', 'border', 'uGov', 'uFed', 'uAgency', 'uGuard', 'uState', 'uCustom'];
+export const USA_LAYERS = ['states', 'cities', 'highways', 'labels', 'neighbors', 'border', 'uGov', 'uFed', 'uAgency', 'uGuard', 'uState', 'uBase', 'uAir', 'uCustom'];
 
 // ---- Emergency lightbars ----
 export const LIGHT_SERVICES = { police: 'Police', fire: 'Fire', ambulance: 'EMS' };
@@ -79,17 +80,19 @@ export const USA_UNIT_KINDS = {
   agency: { layer: 'uAgency', name: 'Federal agencies', color: '#b79cff', dot: 1.4, label: 4 },
   guard: { layer: 'uGuard', name: 'National Guard', color: '#b9a66a', dot: 2.5, label: 5 },
   police: { layer: 'uState', name: 'State police', color: '#4f9bff', dot: 4.5, label: 7 },
+  base: { layer: 'uBase', name: 'Air bases', color: '#9ad0ff', dot: 1.2, label: 3.5 },
+  air: { layer: 'uAir', name: 'Aircraft', color: '#8fe0ff', dot: 1, label: 4.5 },
   custom: { layer: 'uCustom', name: 'Zeus-made units', color: '#ff8a5a', dot: 1, label: 3 },
 };
 // The drawn pictures a unit can use (see client/js/usa/art.js).
-export const SILS = ['tank', 'infantry', 'fighter', 'bomber', 'helicopter', 'carrier', 'destroyer', 'ship', 'sub', 'missile', 'satellite', 'shield', 'guard', 'police', 'person', 'truck', 'fire', 'ambulance', 'artillery', 'crowd', 'plane'];
+export const SILS = ['base', 'tank', 'infantry', 'fighter', 'bomber', 'helicopter', 'carrier', 'destroyer', 'ship', 'sub', 'missile', 'satellite', 'shield', 'guard', 'police', 'person', 'truck', 'fire', 'ambulance', 'artillery', 'crowd', 'plane'];
 export const UNIT_LAYERS = Object.fromEntries(Object.values(USA_UNIT_KINDS).map(k => [k.layer, k.name]));
 const AGENCIES = new Set(['fbi', 'dhs', 'fema', 'cdc', 'ice', 'cbp', 'usss', 'dea', 'atf', 'usms']);
 
 // What kind of formation each federal catalog entry is.
 const FED_TYPE = { '82nd': 'div_light', '101st': 'div_light', '10mtn': 'div_light', '1cav': 'division', '1ad': 'division', '1id': 'division', '3id': 'division', '4id': 'division', icorps: 'hq',
-  '2mef': 'mef', '1mef': 'mef', norfolk: 'csg', sandiego: 'csg', mayport: 'ddg', kingsbay: 'ssn', bangor: 'ssn', oceana: 'air_wing', langley: 'f22_sqn', barksdale: 'bomber', whiteman: 'bomber', minot: 'bomber',
-  malmstrom: 'icbm', warren: 'icbm', nellis: 'air_wing', edwards: 'air_wing', eglin: 'air_wing', offutt: 'hq', peterson: 'hq', macdill: 'hq', pentagon: 'hq', ngb: 'hq', meade: 'hq', cgatl: 'cg_area', cgpac: 'cg_area',
+  '2mef': 'mef', '1mef': 'mef', norfolk: 'csg', sandiego: 'csg', mayport: 'ddg', kingsbay: 'ssn', bangor: 'ssn',     
+  malmstrom: 'icbm', warren: 'icbm',    offutt: 'hq', peterson: 'hq', macdill: 'hq', pentagon: 'hq', ngb: 'hq', meade: 'hq', cgatl: 'cg_area', cgpac: 'cg_area',
   fbi: 'fbi_hrt', dhs: 'hq', fema: 'usar', cdc: 'hq', ice: 'ice_team', cbp: 'bp_sector', usss: 'usss_detail', dea: 'atf_team', atf: 'atf_team', usms: 'marshals' };
 
 function makeUnits() {
@@ -102,6 +105,16 @@ function makeUnits() {
   }
   for (const [id, name, short, lon, lat, sil, img, desc] of FEDERAL) {
     u[`f-${id}`] = { id: `f-${id}`, kind: AGENCIES.has(id) || id.startsWith('bp-') ? 'agency' : 'military', name, short, owner: 'US', side: 'fed', type: id.startsWith('bp-') ? 'bp_sector' : FED_TYPE[id] || 'hq', roe: 'defend', lon, lat, sil, img, desc, strength: 100, control: 'ai', hidden: false };
+  }
+  // Air bases, and the squadrons parked on them. A parked squadron is not drawn; the base shows how many it holds.
+  for (const [id, name, short, branch, lon, lat, st, squads] of AIRBASES) {
+    const ang = branch === 'ang', side = ang ? `st:${st}` : 'fed', owner = ang ? st : 'US';
+    u[`ab-${id}`] = { id: `ab-${id}`, kind: 'base', name, short, owner, lon, lat, type: 'airbase', side, roe: 'defend', sil: 'base', img: null, ang, branch, desc: `${{ usaf: 'Air Force', navy: 'Navy', usmc: 'Marine Corps', ang: 'Air National Guard' }[branch]} air base. Aircraft launch from here and land back on it; if the base is destroyed, the aircraft parked on it are lost.`, strength: 100, control: 'ai', hidden: false };
+    let n = 0;
+    for (const [type, count] of squads) for (let i = 1; i <= count; i++) {
+      const ty = UNIT_TYPES[type], aid = `ac-${id}-${++n}`;
+      u[aid] = { id: aid, kind: 'air', name: `${short}: ${ty.name} ${i}`, short: `${short} ${ty.name.split(' ')[0]} ${i}`, owner, lon, lat, type, side, roe: 'defend', sil: ty.sil, img: null, ang, base: `ab-${id}`, air: 'parked', desc: ty.desc, strength: 100, control: 'ai', hidden: false };
+    }
   }
   return u;
 }
@@ -126,7 +139,7 @@ export function migrateUsa(s) {
   return s;
 }
 
-const DEFAULT_LAYERS = { states: true, cities: true, highways: true, labels: true, neighbors: true, border: true, uGov: true, uFed: true, uAgency: true, uGuard: true, uState: true, uCustom: true };
+const DEFAULT_LAYERS = { states: true, cities: true, highways: true, labels: true, neighbors: true, border: true, uGov: true, uFed: true, uAgency: true, uGuard: true, uState: true, uBase: true, uAir: true, uCustom: true };
 
 export function createUsaFields(s) {
   s.display.scene = 'usa';
@@ -156,7 +169,7 @@ export function tickUsa(s, now) {
   const moved = usaTick(s, now, getUnits, putUnit, (id, w) => homeOf(s.usa, id, w));
   return govTick(s.usa, GUARD_IDS) || moved;
 }
-const GUARD_IDS = Object.values(CATALOG).filter(x => x.kind === 'guard').map(x => x.id);
+const GUARD_IDS = Object.values(CATALOG).filter(x => x.kind === 'guard' || x.ang).map(x => x.id);
 // A move order. Wheeled and tracked units go by road where the server has the road map; everything else goes straight.
 // Where a unit will end up once its current move and any queued moves are done; a queued order starts from there.
 function lastStop(u) {
@@ -204,18 +217,35 @@ export const usaActions = {
     migrateUsa(s);
     const ids = [...new Set(Array.isArray(a.ids) ? a.ids : [])].slice(0, 200), o = a.order || {}, units = getUnits(s.usa);
     if (!ids.length) return err('Pick at least one unit.');
-    if (!['hold', 'move', 'amove', 'patrol', 'attack', 'escort'].includes(o.type)) return err('Unknown order.');
+    if (!['hold', 'move', 'amove', 'patrol', 'attack', 'escort', 'rtb', 'cap'].includes(o.type)) return err('Unknown order.');
     let target = null;
     if (o.type === 'attack' || o.type === 'escort') { target = units[o.target]; if (!target || target.destroyed || target.hidden) return err('Pick a target.'); }
     const to = Array.isArray(o.to) ? [Number(o.to[0]), Number(o.to[1])] : null;
-    if ((o.type === 'move' || o.type === 'amove' || o.type === 'patrol') && !(to && inBox(to[0], to[1]))) return err('Place it on the map.');
-    const movers = ids.filter(id => { const u = units[id]; return u && !u.destroyed && !u.hidden && id !== o.target && (o.type === 'hold' || typeOf(u).speed) && !(o.type === 'attack' && effSide(u) === effSide(target)); });
+    if ((o.type === 'move' || o.type === 'amove' || o.type === 'patrol' || o.type === 'cap') && !(to && inBox(to[0], to[1]))) return err('Place it on the map.');
+    const aim = o.type === 'attack' || o.type === 'escort' ? (target && [target.lon, target.lat]) : to;
+    let refused = '';
+    const movers = ids.filter(id => {
+      const u = units[id];
+      if (!u || u.destroyed || u.hidden || id === o.target || !(o.type === 'hold' || typeOf(u).speed) || (o.type === 'attack' && effSide(u) === effSide(target))) return false;
+      if (o.type === 'rtb' || o.type === 'cap') { if (typeOf(u).domain !== 'air') return false; }
+      if (o.type === 'rtb' && (!u.base || u.air === 'parked')) return false;
+      // An aircraft based on an airfield needs a working field to leave from, and may only be sent within its combat radius of it.
+      if (u.base && o.type !== 'hold' && o.type !== 'rtb') {
+        const b = units[u.base];
+        if (u.air === 'parked' && !baseWorks(b)) { refused = 'Its air base is too damaged to launch aircraft.'; return false; }
+        if (aim && b && distKm(b, { lon: aim[0], lat: aim[1] }) > (AIR_RADIUS[u.type] ?? 1200)) { refused = 'That is beyond the aircraft\'s combat radius from its base.'; return false; }
+      }
+      return true;
+    });
     // A group sent to one point spreads out around it instead of stacking on it.
     const spread = (to && movers.length > 1 && a.formation !== 'none') ? formation(to, movers.length, a.formation) : null;
     let n = 0; const budget = { n: 12 };
     movers.forEach((id, i) => {
       const u = units[id], dest = spread ? spread[i] : to;
-      const next = o.type === 'hold' ? null : o.type === 'move' || o.type === 'amove' ? { ...movement(u, [+dest[0].toFixed(3), +dest[1].toFixed(3)], budget, a.queue ? lastStop(u) : null), type: o.type }
+      let next;
+      if (o.type === 'rtb') { const b = baseWorks(units[u.base]) ? units[u.base] : nearestBase(u, units); if (!b) return; next = { type: 'rtb', to: [b.lon, b.lat] }; }
+      else if (o.type === 'cap') next = { type: 'patrol', cap: true, a: [+(dest[0] - 0.3).toFixed(3), +dest[1].toFixed(3)], b: [+(dest[0] + 0.3).toFixed(3), +dest[1].toFixed(3)], toB: true };
+      else next = o.type === 'hold' ? null : o.type === 'move' || o.type === 'amove' ? { ...movement(u, [+dest[0].toFixed(3), +dest[1].toFixed(3)], budget, a.queue ? lastStop(u) : null), type: o.type }
         : o.type === 'patrol' ? { type: 'patrol', a: a.queue ? lastStop(u) : [+u.lon.toFixed(3), +u.lat.toFixed(3)], b: [+dest[0].toFixed(3), +dest[1].toFixed(3)], toB: true } : { type: o.type, target: o.target };
       // Shift-queued orders wait their turn behind a move the unit is already making.
       const cur = u.order;
@@ -223,11 +253,29 @@ export const usaActions = {
         if ((cur.q?.length || 0) >= 8) return;
         putUnit(s.usa, id, { order: { ...cur, q: [...(cur.q || []), next] } });
       } else putUnit(s.usa, id, { order: next, mv: null, spd: null, routed: false });
+      // A parked aircraft taxis and lifts off before it starts the order.
+      if (next && u.air === 'parked') putUnit(s.usa, id, { air: 'takeoff', tk: Math.round(s.usa.sim.t) + TAKEOFF });
       if (o.type === 'attack') addHostile(s.usa, effSide(u), effSide(target));
       n++;
     });
-    if (!n) return err('None of those units can take that order.');
+    if (!n) return err(refused || 'None of those units can take that order.');
     return ok({ count: n });
+  } },
+  // Scramble: every aircraft parked at a base lifts off and flies a combat air patrol over it. Recall: every one in the air returns.
+  usaScramble: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const units = getUnits(s.usa), b = units[a.base];
+    if (!b || b.type !== 'airbase') return err('Pick an air base.');
+    const mine = Object.values(units).filter(x => x.base === b.id && !x.destroyed && !x.hidden);
+    if (a.recall) {
+      const flying = mine.filter(x => x.air === 'flying');
+      if (!flying.length) return err('No aircraft from this base are in the air.');
+      return usaActions.usaOrder.run(s, { ids: flying.map(x => x.id), order: { type: 'rtb' } });
+    }
+    if (!baseWorks(b)) return err('The base is too damaged to launch aircraft.');
+    const parked = mine.filter(x => x.air === 'parked');
+    if (!parked.length) return err('Nothing is parked at this base.');
+    return usaActions.usaOrder.run(s, { ids: parked.map(x => x.id), order: { type: 'cap', to: [b.lon, b.lat] }, formation: 'none' });
   } },
   // The computer-run government: switch it on or off, and edit an office (who holds it, delegate or AI).
   usaGov: { perm: 'zeus', run(s, a) {
@@ -382,8 +430,9 @@ export const usaActions = {
   usaFederalize: { perm: 'zeus', run(s, a) {
     migrateUsa(s);
     const codes = a.state === 'all' ? Object.values(CATALOG).filter(x => x.kind === 'guard').map(x => x.owner) : [String(a.state || '').toUpperCase()];
-    const ids = codes.map(c => `ng-${c}`);
-    if (!ids.every(id => CATALOG[id])) return err('No such Guard.');
+    // The state's Air National Guard bases and aircraft go with its Guard.
+    const ids = codes.flatMap(c => [`ng-${c}`, ...Object.values(CATALOG).filter(x => x.ang && x.owner === c).map(x => x.id)]);
+    if (!codes.every(c => CATALOG[`ng-${c}`])) return err('No such Guard.');
     for (const id of ids) (s.usa.mods[id] ||= {}).federal = a.on === undefined ? !getUnits(s.usa)[id].federal : !!a.on;
     return ok();
   } },
@@ -397,8 +446,10 @@ export const usaActions = {
     if (!name) return err('Give the unit a name.');
     let lon = Number(a.lon), lat = Number(a.lat);
     if (a.at === 'capital') { const row = STATES.find(r => r[0] === String(a.state || '').toUpperCase()); if (!row) return err('No such state.'); lon = row[3]; lat = row[4]; }
+    const baseU = a.base ? getUnits(s.usa)[a.base] : null;
+    if (a.base) { if (!baseU || baseU.type !== 'airbase') return err('Pick an air base.'); if (ty?.domain !== 'air') return err('Only aircraft can be based on an air base.'); lon = baseU.lon; lat = baseU.lat; }
     if (!inBox(lon, lat)) return err('Place it on the map.');
-    const side = a.side === undefined ? 'mil' : a.side;
+    const side = a.side === undefined ? (baseU ? effSide(baseU) : 'mil') : a.side;
     if (!validSide(side) || (side.startsWith('st:') && !STATE_INFO[side.slice(3)])) return err('Unknown side.');
     const sil = a.sil === undefined ? ty?.sil || 'infantry' : a.sil;
     if (!SILS.includes(sil)) return err('Unknown picture.');
@@ -407,7 +458,7 @@ export const usaActions = {
     const st = Number(a.strength);
     lon = +lon.toFixed(3); lat = +lat.toFixed(3);
     s.usa.custom[id] = { id, kind: 'custom', type: a.utype || 'militia_sq', side, roe: a.roe in ROES ? a.roe : ty?.group === 'Civilians' ? 'hold' : 'defend', home: [lon, lat], name, short: String(a.short || name).trim().slice(0, 40),
-      owner: side.startsWith('st:') ? side.slice(3) : 'US', lon, lat, sil, img: null, photo: null, desc: String(a.desc ?? ty?.desc ?? '').slice(0, 300), strength: Number.isFinite(st) ? clamp(Math.round(st), 0, 100) : 100, control: a.control === 'delegate' ? 'delegate' : 'ai', hidden: false, order: null };
+      owner: side.startsWith('st:') ? side.slice(3) : 'US', lon, lat, sil, img: null, photo: null, desc: String(a.desc ?? ty?.desc ?? '').slice(0, 300), strength: Number.isFinite(st) ? clamp(Math.round(st), 0, 100) : 100, control: a.control === 'delegate' ? 'delegate' : 'ai', hidden: false, order: null, ...(baseU ? { base: baseU.id, air: 'parked' } : {}) };
     return ok({ id });
   } },
   // Sets off an incident at a state capital, a border crossing or a point on the map: units appear, the state's status may change,

@@ -1,6 +1,7 @@
 // Small drawn side-view silhouettes for units without a seal or flag, and a cache for the seal, flag and photo images.
 // Silhouettes are drawn here as plain shapes, so there is nothing to license. Each is designed in a 48 x 26 box facing right.
 const SIL = {
+  base: 'M2 14 L46 10 V16 L2 20Z M22 2 H26 V9 H22Z M20 22 H28 V25 H20Z',
   tank: 'M4 17 L8 13 H40 L44 17 L40 22 H8Z M16 13 L18 8 H32 L34 13Z M33 9 H47 V11 H33Z',
   infantry: 'M22 2 a3 3 0 1 0 .01 0Z M19 7 H26 L28 17 H18Z M19 17 H22 V25 H19Z M23 17 H26 V25 H23Z M26 10 L41 8 V10 L26 13Z',
   fighter: 'M2 14 L14 12 L36 11 L46 13 L36 15 L14 16Z M8 13 L4 4 L10 4 L15 12Z M20 14 L29 22 L34 22 L30 14Z',

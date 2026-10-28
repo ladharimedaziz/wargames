@@ -35,7 +35,7 @@ export function simClock(seconds) {
 const jitter = (n, a, b) => { let h = (n * 2654435761 + a * 40503 + b * 9973) >>> 0; h ^= h >>> 15; h = Math.imul(h, 2246822519) >>> 0; return 0.8 + 0.4 * ((h >>> 8) % 1000) / 1000; };
 const hash = s => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); };
 export const OFFROAD = 0.6; // share of road speed a vehicle makes across country
-const DYN = ['lon', 'lat', 'strength', 'order', 'mv', 'spd', 'eng', 'routed', 'destroyed', 'hitAt'];
+const DYN = ['lon', 'lat', 'strength', 'order', 'mv', 'spd', 'air', 'tk', 'base', 'eng', 'routed', 'destroyed', 'hitAt'];
 const domainKey = ty => (ty.domain === 'air' ? 'air' : ty.domain === 'sea' ? 'sea' : 'ground');
 
 function log(usa, text, extra = {}) {
@@ -53,7 +53,23 @@ function step(w, tx, ty, km) {
 }
 
 // A unit that has reached the end of a move goes on to the next queued order, or stops.
-function arrive(usa, w, o) {
+// A base that can still launch and recover aircraft.
+export const baseWorks = b => !!b && b.type === 'airbase' && !b.destroyed && (b.strength ?? 100) >= 20;
+// The nearest working base of the aircraft's own side, for when its own is gone.
+export function nearestBase(w, W) {
+  let best = null, bd = 1e9;
+  for (const b of Object.values(W)) { if (!baseWorks(b) || effSide(b) !== effSide(w)) continue; const d = distKm(w, b); if (d < bd) { bd = d; best = b; } }
+  return best;
+}
+export const TAKEOFF = 120, LANDING = 180; // game seconds
+function arrive(usa, w, o, W) {
+  if (o.type === 'rtb') {
+    // Touch down: the aircraft rolls out for a few minutes and is parked again. A wrecked base sends it to the nearest good one.
+    let b = W[w.base]; if (!baseWorks(b)) { b = nearestBase(w, W); if (b) { w.base = b.id; w.lon = b.lon; w.lat = b.lat; } }
+    if (b) { w.air = 'landing'; w.tk = usa.sim.t + LANDING; w.order = null; w.mv = null; w.spd = null; log(usa, `${w.short || w.name} is landing at ${b.short || b.name}.`, { id: w.id }); }
+    else { w.order = null; w.mv = null; w.spd = null; log(usa, `${w.short || w.name} has no base left to land at.`, { id: w.id }); }
+    return;
+  }
   if (o.type === 'return') w.routed = false;
   const next = o.q?.length ? o.q[0] : null;
   w.order = next ? { ...next, q: o.q.slice(1) } : null; w.mv = null; w.spd = null;
@@ -74,9 +90,17 @@ export function usaTick(s, now, getUnits, put, home) {
   const touched = new Set();
   const dirty = id => touched.add(id);
 
+  // Aircraft on the ground: lift off after the take-off run, and park once the landing roll is over.
+  for (const w of Object.values(W)) {
+    if (w.destroyed || !w.air || w.air === 'flying' || w.air === 'parked' || sim.t < (w.tk || 0)) continue;
+    if (w.air === 'takeoff') w.air = 'flying'; else { w.air = 'parked'; log(usa, `${w.short || w.name} is parked and ready.`, { id: w.id }); }
+    w.tk = null; dirty(w.id);
+  }
+
   // Movement
   for (const w of Object.values(W)) {
     if (w.destroyed) continue;
+    if (w.air === 'parked' || w.air === 'takeoff' || w.air === 'landing') { if (w.mv) { w.mv = null; w.spd = null; dirty(w.id); } continue; }
     const ty = typeOf(w), o = w.order;
     if (!o || !ty.speed) { if (w.mv) { w.mv = null; dirty(w.id); } continue; }
     // Wheeled and tracked units are slower off the road, so a road only pays on a longer trip (see usa-route.js).
@@ -94,14 +118,14 @@ export function usaTick(s, now, getUnits, put, home) {
         else { step(w, px, py, rem); rem = 0; }
       }
       dirty(w.id);
-      if (arrived) { arrive(usa, w, o); continue; }
+      if (arrived) { arrive(usa, w, o, W); continue; }
       [tx, tyy] = o.path[o.pi];
       const d = Math.hypot((tx - w.lon) * KM_LON(w.lat), (tyy - w.lat) * KM_LAT) || 1, perReal = km / real;
       w.mv = [+((tx - w.lon) / d * perReal).toFixed(6), +((tyy - w.lat) / d * perReal).toFixed(6)]; w.spd = +perReal.toFixed(5);
       continue;
     }
     if (o.type === 'amove' && w.eng) { if (w.mv) { w.mv = null; w.spd = null; dirty(w.id); } continue; }
-    if (o.type === 'move' || o.type === 'amove' || o.type === 'return') { [tx, tyy] = o.to; finish = 'arrive'; }
+    if (o.type === 'move' || o.type === 'amove' || o.type === 'return' || o.type === 'rtb') { [tx, tyy] = o.to; finish = 'arrive'; }
     else if (o.type === 'patrol') { [tx, tyy] = o.toB ? o.b : o.a; finish = 'turn'; }
     else if (o.type === 'attack' || o.type === 'escort') {
       const t = W[o.target];
@@ -113,7 +137,7 @@ export function usaTick(s, now, getUnits, put, home) {
     const left = step(w, tx, tyy, Math.min(km, before - stopAt));
     dirty(w.id);
     if (finish && left <= 0.001) {
-      if (finish === 'arrive') { arrive(usa, w, o); continue; }
+      if (finish === 'arrive') { arrive(usa, w, o, W); continue; }
       o.toB = !o.toB;
     }
     // Degrees per real second, for clients to glide the dot between ticks.
@@ -127,13 +151,13 @@ export function usaTick(s, now, getUnits, put, home) {
   const firing = new Map(), damage = new Map();
   if (hostile.length) {
     const bySide = new Map();
-    for (const w of Object.values(W)) { if (w.destroyed) continue; const sd = effSide(w); (bySide.get(sd) || bySide.set(sd, []).get(sd)).push(w); }
+    for (const w of Object.values(W)) { if (w.destroyed || w.air === 'parked') continue; const sd = effSide(w); (bySide.get(sd) || bySide.set(sd, []).get(sd)).push(w); }
     const recently = w => w.hitAt != null && sim.t - w.hitAt < 300;
     const canFire = (a, b, d) => {
       const ta = typeOf(a), tb = typeOf(b), atk = ta.atk[domainKey(tb)];
       if (!atk || d > ta.range) return 0;
       const ordered = a.order?.type === 'attack' && a.order.target === b.id;
-      if (!(ordered || a.roe === 'free' || a.order?.type === 'amove' || (a.roe === 'defend' && (recently(a) || d <= Math.min(ta.range, 3))))) return 0;
+      if (!(ordered || a.roe === 'free' || a.order?.type === 'amove' || (a.order?.type === 'patrol' && a.order.cap) || (a.roe === 'defend' && (recently(a) || d <= Math.min(ta.range, 3))))) return 0;
       return atk;
     };
     for (const [sa, sb] of hostile) for (const [x, y] of [[sa, sb], [sb, sa]]) {
@@ -148,12 +172,16 @@ export function usaTick(s, now, getUnits, put, home) {
       }
     }
   }
+  // Bombs on a base also fall on the aircraft parked there.
+  for (const [id, d] of [...damage]) if (W[id]?.type === 'airbase') for (const a of Object.values(W)) if (a.base === id && a.air === 'parked' && !a.destroyed) damage.set(a.id, (damage.get(a.id) || 0) + d * 0.6);
   for (const [id, dmg] of damage) {
     const b = W[id], men = menNow(b);
+    if (b.destroyed) continue;
     b.strength = Math.max(0, +(b.strength - dmg).toFixed(2)); b.hitAt = sim.t; dirty(id);
     if (b.strength <= 0) {
       b.destroyed = true; b.order = null; b.mv = null; b.eng = null;
-      log(usa, `${b.short || b.name} destroyed (${men.toLocaleString('en-US')} lost).`, { id, kind: 'kill' });
+      log(usa, `${b.short || b.name} destroyed${b.air === 'parked' ? ' on the ground' : ''} (${men.toLocaleString('en-US')} lost).`, { id, kind: 'kill' });
+      if (b.type === 'airbase') for (const a of Object.values(W)) if (a.base === id && a.air === 'parked' && !a.destroyed) { a.strength = 0; a.destroyed = true; a.order = null; dirty(a.id); log(usa, `${a.short || a.name} destroyed on the ground.`, { id: a.id, kind: 'kill' }); }
     }
   }
   for (const w of Object.values(W)) {

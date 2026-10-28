@@ -58,6 +58,7 @@ const T = [
   ['hazmat', 'Emergency', 'Hazmat team', 'ground', 80, 20, [0, 0, 0], 6, 0, 'truck', 'Handles chemical spills and contamination.'],
   ['usar', 'Emergency', 'FEMA urban search and rescue', 'ground', 70, 80, [0, 0, 0], 12, 0, 'truck', 'Finds people in collapsed buildings.'],
   // ---- Air Force ----
+  ['airbase', 'Air Force', 'Air base', 'ground', 0, 3000, [0, 40, 0], 220, 8, 'base', 'Runways, hangars and the people who keep aircraft flying. Hit it and the aircraft parked there are lost.'],
   ['f35_sqn', 'Air Force', 'F-35 squadron', 'air', 900, 300, [90, 100, 50], 55, 200, 'fighter', 'Twenty-four stealth fighters.'],
   ['f22_sqn', 'Air Force', 'F-22 squadron', 'air', 950, 300, [60, 130, 20], 80, 200, 'fighter', 'Air superiority fighters.'],
   ['f15_sqn', 'Air Force', 'F-15 or F-16 squadron', 'air', 850, 300, [70, 85, 30], 45, 160, 'fighter', 'Twenty-four fighters.'],

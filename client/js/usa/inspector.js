@@ -46,7 +46,8 @@ export function UnitCard({ unit: x, units, act, close, jump, placing, setPlacing
         <label class=${cls('btn sm', x.control !== 'delegate' && 'disabled')}>Upload photo<input type="file" accept="image/*" disabled=${x.control !== 'delegate'} hidden onChange=${photo} /></label>${x.photo && html`<button class="btn sm ghost" onClick=${() => act({ type: 'usaGovernor', state: code, photo: null })}>Remove photo</button>`}</div>`
       : html`<div class="row wrap"><button class=${cls('btn sm', x.control !== 'delegate' && 'on')} onClick=${() => edit({ control: 'ai' })}>AI plays</button><button class=${cls('btn sm gold', x.control === 'delegate' && 'on')} onClick=${() => edit({ control: 'delegate' })}>Delegate plays</button></div>`}
     <${ForceInfo} x=${x} units=${units} />
-    <${OrderBar} ids=${[x.id]} act=${act} placing=${placing} setPlacing=${setPlacing} roe=${x.roe} fixed=${!typeOf(x).speed} />
+    <${AirInfo} x=${x} units=${units} act=${act} />
+    <${OrderBar} ids=${[x.id]} act=${act} placing=${placing} setPlacing=${setPlacing} roe=${x.roe} fixed=${!typeOf(x).speed} air=${typeOf(x).domain === 'air' && !!x.base} />
     ${(x.destroyed || x.strength < 100) && html`<button class="btn sm" onClick=${() => edit({ revive: true })}>Repair and revive</button>`}
     <label class="field small">Side<select class="input sm" value=${x.side} onChange=${e => edit({ side: e.target.value })}><${SideOptions} /></select></label>
     <div class="sub-h">Any unit: Zeus controls it</div>
@@ -163,13 +164,30 @@ function ForceInfo({ x, units }) {
 }
 
 // RTS orders for one or many units. Move and patrol wait for a click on the map; attack and escort wait for a click on a unit.
-export function OrderBar({ ids, act, placing, setPlacing, roe, fixed }) {
+export function OrderBar({ ids, act, placing, setPlacing, roe, fixed, air }) {
   const arm = (order, pickTarget) => setPlacing(placing?.order === order ? null : { order, pickTarget });
   const btn = (order, label, pick) => html`<button class=${cls('btn sm', placing?.order === order && 'on', order === 'attack' && 'danger')} disabled=${fixed} onClick=${() => arm(order, pick)}>${placing?.order === order ? (pick ? 'Click a unit…' : 'Click the map…') : label}</button>`;
   return html`<div class="sub-h">Orders</div>
-    <div class="row wrap">${btn('move', 'Move')}${btn('amove', 'Attack-move')}${btn('patrol', 'Patrol')}${btn('attack', 'Attack', true)}${btn('escort', 'Escort', true)}<button class="btn sm" onClick=${() => { setPlacing(null); act({ type: 'usaOrder', ids, order: { type: 'hold' } }); }}>Hold</button></div>
+    <div class="row wrap">${btn('move', 'Move')}${btn('amove', 'Attack-move')}${btn('patrol', 'Patrol')}${btn('attack', 'Attack', true)}${btn('escort', 'Escort', true)}<button class="btn sm" onClick=${() => { setPlacing(null); act({ type: 'usaOrder', ids, order: { type: 'hold' } }); }}>Hold</button>${air && html`${btn('cap', 'Air patrol')}<button class="btn sm" onClick=${() => { setPlacing(null); act({ type: 'usaOrder', ids, order: { type: 'rtb' } }); }}>Return to base</button>`}</div>
     <div class="row wrap">${Object.entries(ROES).map(([k, l]) => html`<button class=${cls('btn xs', roe === k && 'on')} onClick=${() => act({ type: 'usaRoe', ids, roe: k })}>${l}</button>`)}</div>
     <div class="dim small">Right-click the map to send the picked units there; right-click an enemy to attack, a friend to escort. Shift-click or Shift-drag picks more units; Shift+right-click queues a waypoint. Keys: M move, A attack-move, P patrol, S stop, F centre, Ctrl+1-9 save a group, 1-9 recall it, double-click picks all of a kind.</div>`;
+}
+
+const AIR_STATE = { parked: 'Parked', takeoff: 'Taking off', flying: 'In the air', landing: 'Landing' };
+// An air base shows what it holds and can launch or recall it; an aircraft shows where it is based.
+function AirInfo({ x, units, act }) {
+  const [add, setAdd] = useState('f35_sqn');
+  if (x.type === 'airbase') {
+    const mine = Object.values(units).filter(a => a.base === x.id && !a.destroyed), parked = mine.filter(a => a.air === 'parked').length;
+    return html`<div class="us-force"><div class="sub-h">Air base</div>
+      <div class="dim small">${parked} parked · ${mine.length - parked} in the air or on the runway${x.strength < 20 ? ' · too damaged to launch' : ''}</div>
+      <div class="row wrap"><button class="btn sm" onClick=${() => act({ type: 'usaScramble', base: x.id })}>Scramble all</button><button class="btn sm" onClick=${() => act({ type: 'usaScramble', base: x.id, recall: true })}>Recall all</button></div>
+      <div class="us-unitlist">${mine.map(a => html`<div class="row between small"><span>${a.name}</span><em>${AIR_STATE[a.air] || 'In the air'} · ${a.strength}%</em></div>`)}</div>
+      <div class="row wrap"><select class="input sm grow" value=${add} onChange=${e => setAdd(e.target.value)}>${Object.values(UNIT_TYPES).filter(t => t.domain === 'air').map(t => html`<option value=${t.id}>${t.name}</option>`)}</select><button class="btn sm gold" onClick=${() => act({ type: 'usaSpawn', utype: add, base: x.id })}>Base one here</button></div></div>`;
+  }
+  if (!x.base) return null;
+  const b = units[x.base];
+  return html`<div class="us-force"><div class="dim small">Based at <b>${b?.short || x.base}</b> · ${AIR_STATE[x.air] || 'In the air'}${b && b.strength < 20 ? ' · base out of action' : ''}. It may be sent as far as its combat radius from the base.</div></div>`;
 }
 
 // Several units picked together.
@@ -180,7 +198,7 @@ export function GroupCard({ ids, units, act, placing, setPlacing, close, setSelI
   return html`<div class="pane inspector">
     <div class="insp-head"><div class="grow"><div class="insp-name">${list.length} units picked</div><div class="dim small">${men.toLocaleString('en-US')} people · average strength ${avg}%</div></div><button class="btn xs ghost" onClick=${close}>✕</button></div>
     <div class="row wrap" style="gap:4px">${Object.entries(byType).map(([n, c]) => html`<span class="chip">${c} × ${n}</span>`)}</div>
-    <${OrderBar} ids=${ids} act=${act} placing=${placing} setPlacing=${setPlacing} />
+    <${OrderBar} ids=${ids} act=${act} placing=${placing} setPlacing=${setPlacing} air=${list.length > 0 && list.every(x => typeOf(x).domain === 'air' && x.base)} />
     <div class="us-unitlist">${list.map(x => html`<button class="us-urow" onClick=${() => setSelIds([x.id])}><i class="us-sw" style=${`background:${sideColor(effSide(x))}`}></i><span>${x.name}</span><em>${x.strength}%</em></button>`)}</div>
   </div>`;
 }
