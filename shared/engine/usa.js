@@ -1,10 +1,11 @@
 // The continental US committee. Step one is the map: a layered view of the lower 48 that the Zeus steers and the stage shows.
 import { clamp } from './core.js';
 import { STATES, FEDERAL, STATE_INFO } from '../data/usa-units.js';
+import { CROSSINGS } from '../data/usa-border.js';
 
 const err = error => ({ ok: false, error });
 const ok = (r = {}) => ({ ok: true, ...r });
-export const USA_LAYERS = ['states', 'cities', 'highways', 'labels', 'neighbors', 'uGov', 'uFed', 'uAgency', 'uGuard', 'uState', 'uCustom'];
+export const USA_LAYERS = ['states', 'cities', 'highways', 'labels', 'neighbors', 'border', 'uGov', 'uFed', 'uAgency', 'uGuard', 'uState', 'uCustom'];
 
 // ---- Emergency lightbars ----
 export const LIGHT_SERVICES = { police: 'Police', fire: 'Fire', ambulance: 'EMS' };
@@ -42,6 +43,24 @@ export function getState(usa, code) {
   const row = STATES.find(r => r[0] === code); if (!row) return null;
   const [pop, ev] = STATE_INFO[code] || [0, 0];
   return { code, name: row[1], capital: row[2], pop, ev, ...STATE_DEFAULT, ...(usa.states?.[code] || {}) };
+}
+
+// ---- The border: two postures (one per neighbour) and each crossing's own status and traffic ----
+export const BORDER_SIDES = { CAN: 'Canada', MEX: 'Mexico' };
+export const BORDER_POSTURE = { open: 'Open', heightened: 'Heightened checks', closed: 'Closed' };
+export const CROSSING_STATUS = { open: 'Open', slow: 'Slow', closed: 'Closed' };
+export const CROSSING_LIST = CROSSINGS.map(([id, name, side, lon, lat, bearing, size]) => ({ id, name, side, lon, lat, bearing, size }));
+const CROSSING_BY_ID = Object.fromEntries(CROSSING_LIST.map(c => [c.id, c]));
+// What a crossing is doing now: its own setting, tightened by the posture of its side (a closed border closes every crossing on it,
+// heightened checks slow the open ones). Traffic is 0 to 100; the wait is a rough estimate in minutes.
+export function crossingState(usa, id) {
+  const c = CROSSING_BY_ID[id]; if (!c) return null;
+  const own = usa.crossings?.[id] || {}, posture = usa.border?.[c.side] || 'open';
+  let status = own.status || 'open';
+  if (posture === 'closed') status = 'closed'; else if (posture === 'heightened' && status === 'open') status = 'slow';
+  const traffic = own.traffic ?? 50;
+  const wait = status === 'closed' ? null : Math.round((8 + traffic * 0.5 + c.size * 6) * (status === 'slow' ? 3 : 1));
+  return { ...c, status, own: own.status || 'open', traffic, wait };
 }
 
 export const USA_VIEW = { lon: -96.5, lat: 38.5, k: 1 }; // k = zoom, 1 shows the whole lower 48
@@ -88,12 +107,12 @@ export function getUnits(usa) {
 export function migrateUsa(s) {
   const u = s.usa; if (!u) return s;
   u.layers = { ...DEFAULT_LAYERS, ...Object.fromEntries(Object.entries(u.layers || {}).filter(([k]) => USA_LAYERS.includes(k))) };
-  u.mods ||= {}; u.custom ||= {}; u.states ||= {};
+  u.mods ||= {}; u.custom ||= {}; u.states ||= {}; u.border ||= { CAN: 'open', MEX: 'open' }; u.crossings ||= {};
   u.lightbars ||= { police: false, fire: false, ambulance: false }; u.lightPattern ||= 'mixed'; u.lightColors ||= {};
   return s;
 }
 
-const DEFAULT_LAYERS = { states: true, cities: true, highways: true, labels: true, neighbors: true, uGov: true, uFed: true, uAgency: true, uGuard: true, uState: true, uCustom: true };
+const DEFAULT_LAYERS = { states: true, cities: true, highways: true, labels: true, neighbors: true, border: true, uGov: true, uFed: true, uAgency: true, uGuard: true, uState: true, uCustom: true };
 
 export function createUsaFields(s) {
   s.display.scene = 'usa';
@@ -102,7 +121,7 @@ export function createUsaFields(s) {
     accent: '#4aa8ff',
     view: { ...USA_VIEW },
     layers: { ...DEFAULT_LAYERS },
-    mods: {}, custom: {}, states: {},
+    mods: {}, custom: {}, states: {}, border: { CAN: 'open', MEX: 'open' }, crossings: {},
     lightbars: { police: false, fire: false, ambulance: false }, lightPattern: 'mixed', lightColors: {},
     highlight: [], // state postal codes marked on the stage
     note: '',
@@ -233,6 +252,22 @@ export const usaActions = {
     for (const k of Object.keys(STATE_METRICS)) if (a[k] !== undefined) { const v = Number(a[k]); if (!Number.isFinite(v)) return err(`${STATE_METRICS[k]} is 0 to 100.`); g[k] = Math.round(clamp(v, 0, 100)); }
     if (a.status !== undefined) { if (!(a.status in STATE_STATUS)) return err('Unknown status.'); g.status = a.status; }
     if (a.note !== undefined) g.note = String(a.note).slice(0, 200);
+    return ok();
+  } },
+  usaBorder: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const sides = a.side === 'all' ? Object.keys(BORDER_SIDES) : [a.side];
+    if (!sides.every(x => x in BORDER_SIDES)) return err('Name Canada (CAN) or Mexico (MEX).');
+    if (!(a.status in BORDER_POSTURE)) return err('Unknown border posture.');
+    for (const x of sides) s.usa.border[x] = a.status;
+    return ok();
+  } },
+  usaCrossing: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    if (!CROSSING_BY_ID[a.id]) return err('No such crossing.');
+    const g = (s.usa.crossings[a.id] ||= {});
+    if (a.status !== undefined) { if (!(a.status in CROSSING_STATUS)) return err('Unknown status.'); g.status = a.status; }
+    if (a.traffic !== undefined) { const v = Number(a.traffic); if (!Number.isFinite(v)) return err('Traffic is 0 to 100.'); g.traffic = Math.round(clamp(v, 0, 100)); }
     return ok();
   } },
   usaHighlight: { perm: 'zeus', run(s, a) {

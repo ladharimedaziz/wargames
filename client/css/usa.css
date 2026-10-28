@@ -36,3 +36,4 @@
 .us-meter { width: 100%; accent-color: #4aa8ff; }
 .us-meter.low { accent-color: #ff5a4a; } .us-meter.mid { accent-color: #ffd166; } .us-meter.hi { accent-color: #5fd08a; }
 @media (max-width: 1100px) { .us-body { grid-template-columns: 280px 1fr; } .us-right { grid-column: 1 / -1; max-height: 40vh; } }
+.us-bside { padding: 6px 8px; border-radius: 10px; background: #0e1a30; border: 1px solid #1d2c4a; display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }

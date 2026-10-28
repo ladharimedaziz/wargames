@@ -16,13 +16,13 @@ const src = await open(join(dir, 'ne_10m_admin_1_states_provinces.shp'), join(di
 const area = ring => { let a = 0; for (let i = 0; i < ring.length - 1; i++) a += ring[i][0] * ring[i + 1][1] - ring[i + 1][0] * ring[i][1]; return Math.abs(a / 2); };
 const features = [];
 for (let r = await src.read(); !r.done; r = await src.read()) {
-  const f = r.value, c = f.properties.adm0_a3;
+  const f = r.value, c = f.properties.adm0_a3, nm = String(f.properties.name).replace(/\0+$/, '').trim();
   if (c !== 'CAN' && c !== 'MEX') continue;
   const polys = (f.geometry.type === 'MultiPolygon' ? f.geometry.coordinates : [f.geometry.coordinates])
     // Drop islands and anything wholly outside the box; keep each polygon whole so borders still meet.
     .filter(p => { const xs = p[0].map(q => q[0]), ys = p[0].map(q => q[1]); return Math.max(...xs) > BOX.x0 && Math.min(...xs) < BOX.x1 && Math.max(...ys) > BOX.y0 && Math.min(...ys) < BOX.y1 && area(p[0]) > 0.6; });
   if (!polys.length) continue;
-  features.push({ type: 'Feature', id: `${c}-${f.properties.name}`, properties: { c, n: f.properties.name }, geometry: { type: 'MultiPolygon', coordinates: polys } });
+  features.push({ type: 'Feature', id: `${c}-${nm}`, properties: { c, n: nm }, geometry: { type: 'MultiPolygon', coordinates: polys } });
 }
 const topo = topology({ regions: { type: 'FeatureCollection', features } }, 1e6);
 const pre = presimplify(topo), simple = simplify(pre, quantile(pre, 0.55));

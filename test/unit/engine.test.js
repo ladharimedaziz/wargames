@@ -615,6 +615,16 @@ test('a US committee steers its map and refuses world actions', async () => {
   assert.ok(z({ type: 'usaUnit', id: sp.id, name: 'Militia', lon: -98, lat: 30 }).ok && getUnits(s.usa)[sp.id].name === 'Militia');
   assert.ok(z({ type: 'usaDeleteUnit', id: sp.id }).ok && !getUnits(s.usa)[sp.id]);
   assert.equal(z({ type: 'usaDeleteUnit', id: 'f-fbi' }).ok, false);
+  // Border
+  const { crossingState } = await import('../../shared/engine/usa.js');
+  assert.equal(crossingState(s.usa, 'bx-detroit').status, 'open');
+  assert.ok(z({ type: 'usaCrossing', id: 'bx-detroit', status: 'closed', traffic: 90 }).ok && crossingState(s.usa, 'bx-detroit').status === 'closed' && crossingState(s.usa, 'bx-detroit').wait === null);
+  assert.ok(z({ type: 'usaBorder', side: 'MEX', status: 'heightened' }).ok && crossingState(s.usa, 'bx-laredo').status === 'slow');
+  assert.ok(z({ type: 'usaBorder', side: 'CAN', status: 'closed' }).ok && crossingState(s.usa, 'bx-blaine').status === 'closed', 'a closed border closes every crossing');
+  assert.equal(crossingState(s.usa, 'bx-blaine').own, 'open');
+  assert.equal(z({ type: 'usaBorder', side: 'USA', status: 'closed' }).ok, false);
+  assert.equal(z({ type: 'usaCrossing', id: 'bx-nope', status: 'open' }).ok, false);
+  assert.ok(z({ type: 'usaBorder', side: 'all', status: 'open' }).ok);
   // State cards
   const { getState } = await import('../../shared/engine/usa.js');
   assert.equal(getState(s.usa, 'TX').status, 'normal');

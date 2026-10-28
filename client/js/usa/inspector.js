@@ -3,7 +3,7 @@
 import { html, useState, useEffect, useMemo, cls, run, toast } from '../lib.js';
 import { geoContains } from 'd3-geo';
 import { unitLabel, viewFor } from './map.js';
-import { USA_UNIT_KINDS, SILS, STATE_STATUS, STATE_METRICS, getState, getUnits } from '/shared/engine/usa.js';
+import { USA_UNIT_KINDS, SILS, STATE_STATUS, STATE_METRICS, BORDER_SIDES, BORDER_POSTURE, CROSSING_STATUS, CROSSING_LIST, getState, getUnits, crossingState } from '/shared/engine/usa.js';
 
 const Bar = ({ label, value, onChange }) => html`<label class="stat"><div class="row between"><span class="dim small">${label}</span><b>${value}</b></div>
   <input type="range" min="0" max="100" value=${value} onChange=${e => onChange(Number(e.target.value))} class=${cls('us-meter', value < 30 ? 'low' : value < 55 ? 'mid' : 'hi')} /></label>`;
@@ -89,7 +89,7 @@ export function StateInspector({ u, units, code, data, act, setSel, close, jump 
 }
 
 // Nothing picked: the nation at a glance.
-export function NationOverview({ u, units, act, setSel, setState }) {
+export function NationOverview({ u, units, act, setSel, setState, setCrossing }) {
   const govs = Object.values(units).filter(x => x.kind === 'governor');
   const parties = {}; for (const g of govs) parties[g.party || '?'] = (parties[g.party || '?'] || 0) + 1;
   const delegates = govs.filter(g => g.control === 'delegate');
@@ -102,8 +102,27 @@ export function NationOverview({ u, units, act, setSel, setState }) {
     ${delegates.length > 0 && html`<div class="us-unitlist">${delegates.map(g => html`<button class="us-urow" onClick=${() => { setState(g.owner); setSel(null); }}><i class="us-sw" style="background:#ffd166"></i><span>${g.owner} · ${g.person}</span></button>`)}</div>`}
     <div class="sub-h">States not at normal</div>
     ${hot.length ? html`<div class="us-unitlist">${hot.map(x => html`<button class="us-urow" onClick=${() => { setState(x.code); setSel(null); }}><i class="us-sw" style=${`background:${x.status === 'martial' ? '#ff4a4a' : x.status === 'emergency' ? '#ff9a4a' : '#ffd166'}`}></i><span>${x.name}</span><em>${STATE_STATUS[x.status]}</em></button>`)}</div>` : html`<p class="pane-hint">Every state is at normal.</p>`}
+    <div class="sub-h">The border</div>
+    ${Object.entries(BORDER_SIDES).map(([side, name]) => html`<div class="us-bside"><div class="row between"><b>${name}</b><span class="dim small">${CROSSING_LIST.filter(c => c.side === side).length} crossings</span></div>
+      <div class="row wrap">${Object.entries(BORDER_POSTURE).map(([k, l]) => html`<button class=${cls('btn xs', (u.border?.[side] || 'open') === k && 'on', k === 'closed' && 'danger')} onClick=${() => act({ type: 'usaBorder', side, status: k })}>${l}</button>`)}</div></div>`)}
+    <div class="us-unitlist">${CROSSING_LIST.map(c => ({ c, cs: crossingState(u, c.id) })).filter(x => x.cs.status !== 'open').map(({ c, cs }) => html`<button class="us-urow" onClick=${() => setCrossing(c.id)}><i class="us-sw" style=${`background:${cs.status === 'closed' ? '#f87171' : '#fbbf24'}`}></i><span>${c.name}</span><em>${CROSSING_STATUS[cs.status]}</em></button>`)}</div>
     <div class="sub-h">Federal forces</div>
     <div class="dim small">${fed} unit${fed === 1 ? '' : 's'} federalized.</div>
     <div class="row wrap"><button class="btn sm" onClick=${() => act({ type: 'usaFederalize', state: 'all', on: true })}>Federalize every Guard</button><button class="btn sm ghost" onClick=${() => act({ type: 'usaFederalize', state: 'all', on: false })}>Release them</button></div>
+  </div>`;
+}
+
+// A border crossing: open it, slow it or close it, and set how much traffic uses it.
+export function CrossingCard({ u, id, act, close }) {
+  const cs = crossingState(u, id);
+  if (!cs) return null;
+  return html`<div class="pane inspector">
+    <div class="insp-head"><div class="grow"><div class="insp-name">${cs.name}</div><div class="dim small">${BORDER_SIDES[cs.side]} border · ${cs.size === 3 ? 'major' : cs.size === 2 ? 'busy' : 'smaller'} crossing</div></div><button class="btn xs ghost" onClick=${close}>✕</button></div>
+    <div class="sub-h">Status</div>
+    <div class="row wrap">${Object.entries(CROSSING_STATUS).map(([k, l]) => html`<button class=${cls('btn sm', cs.own === k && 'on', k === 'closed' && 'danger')} onClick=${() => act({ type: 'usaCrossing', id, status: k })}>${l}</button>`)}</div>
+    ${cs.status !== cs.own && html`<div class="dim small">The ${BORDER_SIDES[cs.side]} border is set to “${BORDER_POSTURE[u.border?.[cs.side] || 'open']}”, so this crossing is running as ${CROSSING_STATUS[cs.status].toLowerCase()}.</div>`}
+    <label class="stat"><div class="row between"><span class="dim small">Traffic</span><b>${cs.traffic}</b></div><input type="range" min="0" max="100" value=${cs.traffic} onChange=${e => act({ type: 'usaCrossing', id, traffic: Number(e.target.value) })} class="us-meter hi" /></label>
+    <div class="dim small">${cs.wait == null ? 'Closed: nothing crosses.' : `About ${cs.wait} minutes to cross.`}</div>
+    <div class="dim small">Cars and trucks drive through and fade out after crossing; those arriving fade in. White vehicles are entering the US, amber ones leaving.</div>
   </div>`;
 }
