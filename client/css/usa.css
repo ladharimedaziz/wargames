@@ -1,4 +1,6 @@
 /* The continental US committee: map canvas, stage screen and Zeus controls. */
+.us-wrap { position: relative; width: 100%; height: 100%; }
+.us-canvas.us-over { position: absolute; inset: 0; pointer-events: none; background: transparent; }
 .us-canvas { width: 100%; height: 100%; display: block; background: #06101f; touch-action: none; }
 .us-canvas.interactive { cursor: grab; }
 .us-canvas.interactive:active { cursor: grabbing; }

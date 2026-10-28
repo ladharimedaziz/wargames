@@ -43,6 +43,11 @@ off for a session, start with `NO_UPDATE=1`.
 
 ## Your computer and the GPU
 
+The start window also opens Kronos in its own app window (Chrome or Edge, no tabs) with your graphics card forced on for the map.
+Sign in there as Kronos. To skip it, start with `NO_APP=1`. If you open the site in a normal browser tab instead, make sure
+"Use graphics acceleration when available" is on in its settings.
+
+
 The server itself is light: it holds the committees and sends updates. The heavy part, drawing the map, runs in
 each browser, so the stage display on your computer uses your graphics card. Committees save to `data/` on your
 disk and survive restarts, which Render free does not do.

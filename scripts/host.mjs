@@ -3,9 +3,10 @@
 // It starts the server, opens a public link with Cloudflare's free tunnel when `cloudflared` is installed (so
 // Zeus on other networks can join), and keeps itself up to date: every minute it checks GitHub for new code
 // and, once no Zeus panel is connected, installs it and restarts. Open pages reload themselves onto the new code.
-// Settings (all optional): PORT, KRONOS_PASSWORD, SESSION_SECRET, DATA_DIR, NO_TUNNEL=1, NO_UPDATE=1, UPDATE_ANYTIME=1.
+// Kronos opens in its own app window (Chrome or Edge, with the graphics card forced on) unless NO_APP=1.
+// Settings (all optional): PORT, NO_APP=1, KRONOS_PASSWORD, SESSION_SECRET, DATA_DIR, NO_TUNNEL=1, NO_UPDATE=1, UPDATE_ANYTIME=1.
 import { spawn, execFileSync } from 'node:child_process';
-import { writeFileSync, mkdirSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { networkInterfaces } from 'node:os';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -81,6 +82,21 @@ async function checkForUpdate() {
   }
 }
 
+// --- the app window ---
+// Opens the site in a Chrome or Edge "app" window (no tabs or address bar) with GPU drawing forced on, so the map uses this
+// computer's graphics card even if the browser would have switched it off. Falls back to doing nothing if neither is installed.
+function openApp() {
+  const url = `http://localhost:${PORT}`;
+  const flags = [`--app=${url}`, '--enable-gpu-rasterization', '--ignore-gpu-blocklist', '--enable-zero-copy', '--disable-frame-rate-limit', `--user-data-dir=${join(DATA_DIR, 'app-profile')}`];
+  const exes = WIN
+    ? ['ProgramFiles', 'ProgramFiles(x86)', 'LocalAppData'].flatMap(v => process.env[v] ? [join(process.env[v], 'Google/Chrome/Application/chrome.exe'), join(process.env[v], 'Microsoft/Edge/Application/msedge.exe')] : [])
+    : process.platform === 'darwin' ? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge'] : ['/usr/bin/google-chrome', '/usr/bin/chromium', '/usr/bin/microsoft-edge'];
+  const exe = exes.find(existsSync);
+  if (!exe) return log('No Chrome or Edge found, so open http://localhost:' + PORT + ' in your browser (and turn on hardware acceleration in its settings).');
+  spawn(exe, flags, { detached: true, stdio: 'ignore' }).unref();
+  log('Opened the World Engine app window.');
+}
+
 // --- go ---
 log('Starting The World Engine on this computer…');
 startServer();
@@ -88,6 +104,7 @@ for (let i = 0; i < 60 && !(await health())?.ready; i++) await sleep(500);
 const lan = Object.values(networkInterfaces()).flat().find(n => n && n.family === 'IPv4' && !n.internal)?.address;
 log(`\n\n  On this computer:     http://localhost:${PORT}\n  On the same Wi-Fi:    ${lan ? `http://${lan}:${PORT}` : '(no network found)'}\n`);
 startTunnel();
+if (!process.env.NO_APP) openApp();
 if (!process.env.NO_UPDATE) setInterval(checkForUpdate, (Number(process.env.UPDATE_SECONDS) || 60) * 1000);
 
 const quit = async () => { log('Shutting down…'); await stopServer(); process.exit(0); };
