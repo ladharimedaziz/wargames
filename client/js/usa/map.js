@@ -109,7 +109,7 @@ const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', neighbor: '#0f2038
 export const unitLabel = u => (u.kind === 'governor' ? `${u.owner === 'DC' ? 'Mayor' : 'Gov.'} ${u.person}${u.party ? ` (${u.party})` : ''}` : u.federal ? `${u.short} · federal` : u.short);
 const roundRect = (ctx, x, y, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); };
 
-export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder, onBox, selectedUnit = null, selectedUnits = null, selectedState = null, selectedCrossing = null, interactive = false, className = '' }) {
+export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder, onBox, selectedUnit = null, selectedUnits = null, selectedState = null, selectedCrossing = null, interactive = false, className = '', onMapClick = null }) {
   const cv = useRef(), ov = useRef(), st = useRef({ data: null, w: 0, h: 0, cur: { ...USA_VIEW }, want: { ...USA_VIEW }, hover: null, raf: 0, onView, onPick, usa });
   st.current.onView = onView; st.current.onPick = onPick; st.current.onPickUnit = onPickUnit; st.current.onPlace = onPlace; st.current.usa = usa; st.current.selUnit = selectedUnit; st.current.selSet = new Set(selectedUnits || (selectedUnit ? [selectedUnit] : [])); st.current.onOrder = onOrder; st.current.onBox = onBox;
   if (st.current.usaPrev !== usa) { st.current.usaPrev = usa; st.current.recvAt = performance.now(); } st.current.selState = selectedState; st.current.selX = selectedCrossing;
@@ -380,8 +380,17 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
 
   // Pointer handling for the Zeus panel: drag to pan, wheel to zoom around the cursor, click to pick a state.
   useEffect(() => {
-    if (!interactive) return;
     const c = cv.current;
+    // A small overview map has no dragging of its own: a click on it sends the main view there.
+    if (!interactive) {
+      if (!onMapClick) return;
+      const click = e => {
+        const S = st.current; if (!S.data) return;
+        const r = c.getBoundingClientRect(), g = viewProjection(baseProjection(S.data, S.w, S.h), S.want, S.w, S.h).invert([e.clientX - r.left, e.clientY - r.top]);
+        if (g) onMapClick({ lon: g[0], lat: g[1] });
+      };
+      c.addEventListener('pointerdown', click); return () => c.removeEventListener('pointerdown', click);
+    }
     const setup = () => { const S = st.current, base = baseProjection(S.data, S.w, S.h); return { S, base, t0: base.translate() }; };
     // Moves the view so the geographic point `g` sits under screen position `m` at zoom `k`.
     const anchor = (g, m, k) => {
@@ -404,7 +413,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
     const ctxMenu = e => {
       e.preventDefault();
       const o = st.current.onOrder; if (!o || !st.current.data) return;
-      const g = geoAt(pos(e)); if (g) o({ lon: g[0], lat: g[1], target: st.current.hoverUnit && st.current.units[st.current.hoverUnit] ? st.current.hoverUnit : null });
+      const g = geoAt(pos(e)); if (g) o({ queue: e.shiftKey, lon: g[0], lat: g[1], target: st.current.hoverUnit && st.current.units[st.current.hoverUnit] ? st.current.hoverUnit : null });
     };
     const move = e => {
       if (!st.current.data) return;
@@ -436,7 +445,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
     };
     c.addEventListener('pointerdown', down); c.addEventListener('pointermove', move); c.addEventListener('pointerup', up); c.addEventListener('wheel', wheel, { passive: false }); c.addEventListener('contextmenu', ctxMenu);
     return () => { c.removeEventListener('contextmenu', ctxMenu); c.removeEventListener('pointerdown', down); c.removeEventListener('pointermove', move); c.removeEventListener('pointerup', up); c.removeEventListener('wheel', wheel); };
-  }, [interactive]);
+  }, [interactive, !!onMapClick]);
 
   return html`<div class="us-wrap"><canvas ref=${cv} class=${cls('us-canvas', className, interactive && 'interactive')}></canvas><canvas ref=${ov} class="us-canvas us-over"></canvas></div>`;
 }

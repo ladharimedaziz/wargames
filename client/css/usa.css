@@ -46,3 +46,6 @@
 .us-urow.fight span:last-child { color: #ff9a8a; }
 .us-urow:disabled { opacity: 1; cursor: default; }
 .us-clock { position: absolute; left: 50%; top: 2vh; transform: translateX(-50%); font: 600 2.2vh "IBM Plex Mono", monospace; letter-spacing: .08em; padding: .6vh 1.2vw; border-radius: 8px; background: rgba(6,16,31,.8); border: 1px solid #1d2c4a; }
+.us-mapbox { position: relative; }
+.us-mini { position: absolute; right: 10px; bottom: 10px; width: 220px; height: 128px; border: 1px solid #2a3d63; border-radius: 8px; overflow: hidden; background: #06101f; box-shadow: 0 4px 14px rgba(0,0,0,.5); cursor: crosshair; z-index: 4; }
+.us-mini .us-wrap, .us-mini canvas { width: 100%; height: 100%; }
