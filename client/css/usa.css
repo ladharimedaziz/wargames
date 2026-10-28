@@ -45,3 +45,4 @@
 .us-urow.war span:last-child { color: #ffd166; }
 .us-urow.fight span:last-child { color: #ff9a8a; }
 .us-urow:disabled { opacity: 1; cursor: default; }
+.us-clock { position: absolute; left: 50%; top: 2vh; transform: translateX(-50%); font: 600 2.2vh "IBM Plex Mono", monospace; letter-spacing: .08em; padding: .6vh 1.2vw; border-radius: 8px; background: rgba(6,16,31,.8); border: 1px solid #1d2c4a; }
