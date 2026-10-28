@@ -3,8 +3,9 @@ import { clamp } from './core.js';
 import { STATES, FEDERAL, STATE_INFO } from '../data/usa-units.js';
 import { CROSSINGS } from '../data/usa-border.js';
 import { UNIT_TYPES } from '../data/usa-types.js';
+import { INCIDENTS } from '../data/usa-incidents.js';
 import { getGov, govTick, govLog, queue, applyEffect, officeState, OFFICE_BY_ID, GOV_EFFECTS } from './usa-gov.js';
-import { usaTick, SIM_SPEEDS, ROES, validSide, effSide, typeOf, inBox, isHostile, hostileKeyOf, sideName } from './usa-sim.js';
+import { distKm, usaTick, SIM_SPEEDS, ROES, validSide, effSide, typeOf, inBox, isHostile, hostileKeyOf, sideName } from './usa-sim.js';
 
 const err = error => ({ ok: false, error });
 const ok = (r = {}) => ({ ok: true, ...r });
@@ -366,6 +367,42 @@ export const usaActions = {
     s.usa.custom[id] = { id, kind: 'custom', type: a.utype || 'militia_sq', side, roe: a.roe in ROES ? a.roe : ty?.group === 'Civilians' ? 'hold' : 'defend', home: [lon, lat], name, short: String(a.short || name).trim().slice(0, 40),
       owner: side.startsWith('st:') ? side.slice(3) : 'US', lon, lat, sil, img: null, photo: null, desc: String(a.desc ?? ty?.desc ?? '').slice(0, 300), strength: Number.isFinite(st) ? clamp(Math.round(st), 0, 100) : 100, control: a.control === 'delegate' ? 'delegate' : 'ai', hidden: false, order: null };
     return ok({ id });
+  } },
+  // Sets off an incident at a state capital, a border crossing or a point on the map: units appear, the state's status may change,
+  // and the government answers it.
+  usaIncident: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const inc = INCIDENTS[a.kind]; if (!inc) return err('Pick an incident.');
+    let lon, lat, code = String(a.state || '').toUpperCase(), cross = null;
+    if (a.crossing) { cross = CROSSING_LIST.find(c => c.id === a.crossing); if (!cross) return err('No such crossing.'); lon = cross.lon; lat = cross.lat; }
+    else if (code) { const row = STATES.find(r => r[0] === code); if (!row) return err('No such state.'); lon = row[3]; lat = row[4]; }
+    else { lon = Number(a.lon); lat = Number(a.lat); if (!inBox(lon, lat)) return err('Pick a place on the map.'); }
+    if (!code) { let best = 1e9; for (const r of STATES) { const d = distKm({ lon, lat }, { lon: r[3], lat: r[4] }); if (d < best) { best = d; code = r[0]; } } }
+    const total = inc.units.reduce((n, u) => n + u[3], 0);
+    if (Object.keys(s.usa.custom).length + total > 300) return err('That would be more than 300 custom units. Delete some first.');
+    const where = cross ? cross.name : STATES.find(r => r[0] === code)?.[1] || code;
+    let k = 0; const ids = [];
+    for (const [utype, name, sideKey, n, how] of inc.units) for (let i = 0; i < n; i++, k++) {
+      const ang = k * 2.4, r = how === 'spread' ? 0.05 + 0.04 * (k % 4) : 0.02 * (k % 3);
+      let x = lon + Math.cos(ang) * r, y = lat + Math.sin(ang) * r;
+      if (how === 'line') { x = lon + 0.06 * (i - n / 2); y = lat; }
+      const side = sideKey === 'st' ? `st:${code}` : sideKey;
+      if (how === 'inward' && cross) y = lat + (cross.side === 'CAN' ? -0.05 : 0.05) * (1 + k % 3); // just on the far side, then they drive in
+      const res = usaActions.usaSpawn.run(s, { utype, name: `${name} (${where})`, short: name, side, lon: x, lat: y });
+      if (!res.ok) return res;
+      ids.push(res.id);
+      if (how === 'inward' && cross) {
+        const to = [+(lon + (k - 2) * 0.05).toFixed(3), +(lat + (cross.side === 'CAN' ? -0.5 : 0.4)).toFixed(3)];
+        putUnit(s.usa, res.id, { order: { type: 'move', to } });
+      }
+    }
+    if (inc.status && STATE_INFO[code]) (s.usa.states[code] ||= {}).status = inc.status;
+    if (cross && (inc.group === 'border' || inc.group === 'war')) (s.usa.crossings[cross.id] ||= {}).status = 'closed';
+    if (inc.group === 'war' && a.kind === 'incursion') addHostile(s.usa, 'fed', 'foreign');
+    if (a.kind === 'uprising') addHostile(s.usa, `st:${code}`, 'mil');
+    s.usa.events.push({ t: Math.round(s.usa.sim.t), text: `${inc.text} at ${where}.`, kind: 'incident', grp: inc.group, id: ids[0], state: code });
+    if (s.usa.events.length > 100) s.usa.events.shift();
+    return ok({ ids });
   } },
   usaDeleteUnit: { perm: 'zeus', run(s, a) {
     migrateUsa(s);

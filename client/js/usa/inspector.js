@@ -5,7 +5,7 @@ import { geoContains } from 'd3-geo';
 import { unitLabel, viewFor } from './map.js';
 import { effSide, typeOf, menNow, sideName, ROES, SIDE_NAMES, sideColor, simClock, isHostile, hostileKeyOf } from '/shared/engine/usa-sim.js';
 import { UNIT_TYPES, TYPE_GROUPS } from '/shared/data/usa-types.js';
-import { GovPanel } from './gov.js';
+import { GovPanel, IncidentCard } from './gov.js';
 import { STATES } from '/shared/data/usa-units.js';
 import { USA_UNIT_KINDS, SILS, STATE_STATUS, STATE_METRICS, BORDER_SIDES, BORDER_POSTURE, CROSSING_STATUS, CROSSING_LIST, getState, getUnits, crossingState } from '/shared/engine/usa.js';
 
@@ -116,6 +116,8 @@ export function NationOverview({ u, units, act, setSel, setState, setCrossing })
     <div class="us-unitlist">${CROSSING_LIST.map(c => ({ c, cs: crossingState(u, c.id) })).filter(x => x.cs.status !== 'open').map(({ c, cs }) => html`<button class="us-urow" onClick=${() => setCrossing(c.id)}><i class="us-sw" style=${`background:${cs.status === 'closed' ? '#f87171' : '#fbbf24'}`}></i><span>${c.name}</span><em>${CROSSING_STATUS[cs.status]}</em></button>`)}</div>
     <div class="sub-h">Conflicts</div>
     <${ConflictCard} u=${u} act=${act} />
+    <div class="sub-h">Incidents</div>
+    <${IncidentCard} act=${act} />
     <div class="sub-h">Federal government</div>
     <${GovPanel} u=${u} act=${act} />
     <div class="sub-h">Latest events</div>
