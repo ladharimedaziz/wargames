@@ -81,6 +81,15 @@ export function viewFor(data, id, w = 1600, h = 900) {
   return { lon: c[0], lat: c[1], k: Math.round(k * 100) / 100 };
 }
 
+// A view that frames a box of longitudes and latitudes [west, south, east, north], with room around it.
+export function viewForBox(data, [w0, s0, e0, n0], w = 1600, h = 900) {
+  const base = baseProjection(data, w, h), pts = [[w0, s0], [e0, s0], [w0, n0], [e0, n0]].map(g => base(g));
+  const x0 = Math.min(...pts.map(p => p[0])), x1 = Math.max(...pts.map(p => p[0])), y0 = Math.min(...pts.map(p => p[1])), y1 = Math.max(...pts.map(p => p[1]));
+  const k = Math.max(1, Math.min(14, 0.7 * Math.min(w / Math.max(40, x1 - x0), h / Math.max(40, y1 - y0))));
+  const c = base.invert([(x0 + x1) / 2, (y0 + y1) / 2]);
+  return { lon: c[0], lat: c[1], k: Math.round(k * 100) / 100 };
+}
+
 // City outlines (places of 12 km² and up), loaded the first time the layer is shown. Largest first, so their names win clashes.
 let cityData = null, cityLoading = null;
 export function loadCities() {

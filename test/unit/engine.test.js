@@ -814,3 +814,13 @@ test('wheeled units follow roads when the road map is loaded', async () => {
   assert.equal(u.order, null, 'it arrives');
   assert.ok(Math.abs(u.lon + 84.39) < 0.01 && Math.abs(u.lat - 33.75) < 0.01);
 });
+
+test('the US stage camera is separate from the Zeus map', async () => {
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const { applyAction } = await import('../../shared/engine/reducer.js');
+  const s = createUsaState({ id: 'u', name: 'US', seed: 8 });
+  const z = a => applyAction(s, a, { role: 'zeus', user: 'z', now: 1_000_000 });
+  assert.equal(s.usa.stageAuto, true, 'the stage frames the action by default');
+  assert.ok(z({ type: 'usaSetView', lon: -87.6, lat: 41.9, k: 8 }).ok && s.usa.stageAuto === false, 'showing a view holds it on the stage');
+  assert.ok(z({ type: 'usaStageAuto', on: true }).ok && s.usa.stageAuto === true);
+});

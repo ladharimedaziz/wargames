@@ -20,17 +20,12 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
   const [data, setData] = useState(null);
   useEffect(() => { loadUsa().then(setData); }, []);
 
-  // The Zeus drags the map locally; with "Live to stage" on, the view is sent on (at most ten times a second).
+  // The Zeus's map is their own: dragging or zooming it never moves the stage. "Show on stage" sends the view across, or the stage
+  // frames the action by itself.
   const [view, setView] = useState(u.view);
-  const [live, setLive] = useState(true);
-  const sent = useRef(0), timer = useRef();
-  const send = v => {
-    clearTimeout(timer.current);
-    const wait = Math.max(0, 100 - (Date.now() - sent.current));
-    timer.current = setTimeout(() => { sent.current = Date.now(); conn.act({ type: 'usaSetView', ...v }); }, wait);
-  };
-  const onView = v => { setView(v); if (live) send(v); };
-  const jump = v => { setView(v); if (live) send(v); };
+  const send = v => conn.act({ type: 'usaSetView', ...v });
+  const onView = v => setView(v);
+  const jump = v => setView(v);
   const [marking, setMarking] = useState(false);
   const [tab, setTab] = useState('map'), [selState, setSelState] = useState(null), [selX, setSelX] = useState(null);
   const [selIds, setSelIds] = useState([]), [placing, setPlacing] = useState(null); // placing: {id} teleports a unit, {incident} sets one off where you click, {spawn} makes one, {order} gives the picked units an order
@@ -91,10 +86,10 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
           ${tab === 'map' && html`<div class="card"><div class="card-h"><h3>Map</h3></div><div class="card-b col">
             ${LAYERS.map(([k, l]) => html`<label class="row"><input type="checkbox" checked=${u.layers[k]} onChange=${() => act({ type: 'usaLayer', layer: k })} /> ${l}</label>`)}
             <hr class="sep" />
-            <label class="row"><input type="checkbox" checked=${live} onChange=${e => { setLive(e.target.checked); if (e.target.checked) send(view); }} /> Live to stage</label>
-            <div class="dim small">Drag to move, scroll to zoom, click a state for its card.</div>
+            <div class="dim small">Drag to move, scroll to zoom, click a state for its card. This map is yours: the stage does not follow it.</div>
             <select class="input sm" value="" onChange=${e => e.target.value && jump(viewFor(data, e.target.value, 1600, 900))}><option value="">Zoom to a state…</option>${states.map(s => html`<option value=${s.id}>${s.name}</option>`)}</select>
-            <div class="row wrap"><button class="btn sm" onClick=${() => jump({ ...USA_VIEW })}>Whole country</button>${!live && html`<button class="btn sm gold" onClick=${() => send(view)}>Show on stage</button>`}</div>
+            <div class="row wrap"><button class="btn sm" onClick=${() => jump({ ...USA_VIEW })}>Whole country</button><button class="btn sm gold" onClick=${() => send(view)}>Show this on stage</button></div>
+            <div class="row wrap"><button class="btn sm" onClick=${() => send({ ...USA_VIEW })}>Whole country on stage</button><button class=${cls('btn sm', u.stageAuto && 'on')} onClick=${() => act({ type: 'usaStageAuto' })}>${u.stageAuto ? 'Stage frames the action' : 'Frame the action'}</button></div>
           </div></div>
           <${Lightbars} u=${u} states=${states} act=${act} />
           <div class="card"><div class="card-h"><h3>Mark states</h3></div><div class="card-b col">

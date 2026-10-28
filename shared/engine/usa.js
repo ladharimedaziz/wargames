@@ -121,7 +121,7 @@ export function migrateUsa(s) {
   u.mods ||= {}; u.custom ||= {}; u.states ||= {}; u.border ||= { CAN: 'open', MEX: 'open' }; u.crossings ||= {};
   u.sim ||= { running: false, speed: 60, t: 0, at: 0 }; u.hostile ||= []; u.events ||= [];
   for (const c of Object.values(u.custom)) { c.type ||= 'militia_sq'; c.side ||= 'mil'; c.roe ||= 'defend'; c.home ||= [c.lon, c.lat]; }
-  getGov(u);
+  getGov(u); u.stageAuto ??= true;
   u.lightbars ||= { police: false, fire: false, ambulance: false }; u.lightPattern ||= 'mixed'; u.lightColors ||= {};
   return s;
 }
@@ -137,6 +137,7 @@ export function createUsaFields(s) {
     layers: { ...DEFAULT_LAYERS },
     mods: {}, custom: {}, states: {}, border: { CAN: 'open', MEX: 'open' }, crossings: {}, sim: { running: false, speed: 60, t: 0, at: 0 }, hostile: [], events: [],
     lightbars: { police: false, fire: false, ambulance: false }, lightPattern: 'mixed', lightColors: {},
+    stageAuto: true, // the stage frames the action by itself until the Zeus shows a view on it
     highlight: [], // state postal codes marked on the stage
     note: '',
   };
@@ -270,8 +271,11 @@ export const usaActions = {
     const lon = Number(a.lon), lat = Number(a.lat), k = Number(a.k);
     if (![lon, lat, k].every(Number.isFinite)) return err('That view is not valid.');
     s.usa.view = { lon: clamp(lon, -126, -65), lat: clamp(lat, 23, 50.5), k: clamp(k, 1, USA_MAX_ZOOM) };
+    s.usa.stageAuto = false; // a view the Zeus chose stays on the stage
     return ok();
   } },
+  // The stage frames the fighting and incidents by itself, or holds the view the Zeus last showed on it.
+  usaStageAuto: { perm: 'zeus', run(s, a) { migrateUsa(s); s.usa.stageAuto = a.on === undefined ? !s.usa.stageAuto : !!a.on; return ok(); } },
   usaLayer: { perm: 'zeus', run(s, a) {
     migrateUsa(s);
     if (!USA_LAYERS.includes(a.layer)) return err('Unknown layer.');
