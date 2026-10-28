@@ -163,9 +163,10 @@ export function createHub(server, store, geo) {
         const id = m.committee || c.committee;
         if (!id || !canAccess(user, id)) return ack(false, { error: 'No access.' });
         const st = m.state;
-        if (!st || typeof st !== 'object' || !st.meta || !['world', 'court', 'council'].includes(st.mode) || !st.kronos) return ack(false, { error: 'That file is not a World Engine save.' });
+        if (!st || typeof st !== 'object' || !st.meta || !['world', 'court', 'council', 'usa'].includes(st.mode) || !st.kronos) return ack(false, { error: 'That file is not a World Engine save.' });
         if (st.mode === 'world' && (!st.countries || !st.units)) return ack(false, { error: 'That save is incomplete.' });
         if (st.mode === 'court' && !st.court) return ack(false, { error: 'That save is incomplete.' });
+        if (st.mode === 'usa' && !st.usa) return ack(false, { error: 'That save is incomplete.' });
         if (st.mode === 'council' && !st.council) return ack(false, { error: 'That save is incomplete.' });
         store.replace(id, st, user.username);
         broadcastState(id, { rewound: true });

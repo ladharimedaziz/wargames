@@ -1,0 +1,16 @@
+/* The continental US committee: map canvas, stage screen and Zeus controls. */
+.us-canvas { width: 100%; height: 100%; display: block; background: #06101f; touch-action: none; }
+.us-canvas.interactive { cursor: grab; }
+.us-canvas.interactive:active { cursor: grabbing; }
+.us-stage { position: absolute; inset: 0; background: #06101f; color: #eef2fa; font-family: var(--font); overflow: hidden; }
+.us-head { position: absolute; left: 2.2vw; top: 2vh; pointer-events: none; text-shadow: 0 2px 12px #000; }
+.us-title { font-size: 3.2vh; font-weight: 600; letter-spacing: .02em; }
+.us-sub { font-size: 1.9vh; opacity: .75; margin-top: .4vh; }
+.us-note { position: absolute; left: 2.2vw; bottom: 3vh; max-width: 40vw; font-size: 2vh; padding: 1vh 1.4vw; background: rgba(6,16,31,.82); border: 1px solid #1d2c4a; border-radius: 10px; }
+.us-key { position: absolute; right: 2vw; bottom: 3vh; display: flex; gap: 1.2vw; font-size: 1.5vh; opacity: .8; }
+.us-key i { display: inline-block; width: 2.4vh; height: 3px; margin-right: .5vw; vertical-align: middle; }
+.us-body { display: grid; grid-template-columns: 300px 1fr; gap: 12px; padding: 12px; flex: 1; min-height: 0; }
+.us-side { display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+.us-mapbox { position: relative; border-radius: 14px; overflow: hidden; border: 1px solid #1d2c4a; min-height: 0; }
+.us-readout { position: absolute; left: 10px; bottom: 8px; font-size: 12px; opacity: .8; pointer-events: none; }
+@media (max-width: 800px) { .us-body { grid-template-columns: 1fr; grid-auto-rows: minmax(300px, auto); } }

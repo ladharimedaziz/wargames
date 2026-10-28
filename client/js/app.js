@@ -1,5 +1,6 @@
 // Panel entry point: sign-in, then the Zeus panel for a committee account or the Kronos command centre.
 import { CouncilPanel } from './council/panel.js';
+import { UsaPanel } from './usa/panel.js';
 import { html, render, useState, useEffect, Connection, Toasts, toast, useConnState, fmt } from './lib.js';
 import { Login } from './views/login.js';
 import { KronosHome } from './views/kronos.js';
@@ -49,7 +50,7 @@ function ZeusHome({ conn, user, logout }) {
 export function CommitteePanel({ conn, user, state, committee, logout, onBack }) {
   const props = { conn, user, state, committee, logout, onBack };
   return html`
-    ${state.mode === 'court' ? html`<${CourtPanel} ...${props} />` : state.mode === 'council' ? html`<${CouncilPanel} ...${props} />` : html`<${WorldPanel} ...${props} />`}
+    ${state.mode === 'court' ? html`<${CourtPanel} ...${props} />` : state.mode === 'usa' ? html`<${UsaPanel} ...${props} />` : state.mode === 'council' ? html`<${CouncilPanel} ...${props} />` : html`<${WorldPanel} ...${props} />`}
     ${user.role !== 'kronos' && html`<${KronosEye} on=${state.kronos.eye} />`}`;
 }
 

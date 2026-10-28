@@ -77,7 +77,7 @@ function CommitteeCard({ conn, c, enter, dm }) {
         <div class="grow">
           ${renaming ? html`<form onSubmit=${e => { e.preventDefault(); act({ type: 'rename', name }); setRenaming(false); }}><input class="input sm" value=${name} onInput=${e => setName(e.target.value)} autofocus onBlur=${() => setRenaming(false)} /></form>`
             : html`<div class="kc-name" onDblClick=${() => setRenaming(true)} title="Double-click to rename">${c.name}</div>`}
-          <div class="dim small">${c.mode === 'court' ? 'Court' : c.mode === 'council' ? 'Council' : c.preset === 'cold85' ? 'Cold War 1985' : c.preset === 'latam' ? 'Americas' : 'World'} · ${c.id}${c.mode === 'world' ? ` · turn ${c.turn} · ${c.clock}` : c.court ? ` · ${c.court.phase}` : c.council?.vote ? ` · vote ${c.council.vote}` : ''}</div>
+          <div class="dim small">${c.mode === 'court' ? 'Court' : c.mode === 'usa' ? 'United States' : c.mode === 'council' ? 'Council' : c.preset === 'cold85' ? 'Cold War 1985' : c.preset === 'latam' ? 'Americas' : 'World'} · ${c.id}${c.mode === 'world' ? ` · turn ${c.turn} · ${c.clock}` : c.court ? ` · ${c.court.phase}` : c.council?.vote ? ` · vote ${c.council.vote}` : ''}</div>
         </div>
         ${c.mode === 'world' && html`<div class="kc-ring" style=${`--p:${t * 10};--c:${t >= 8 ? '#e2574a' : t >= 6 ? '#ff7a45' : t >= 4 ? '#d9a441' : '#7fbf9a'}`}><b>${t}</b><span>${c.tensionName}</span></div>`}
       </div>
@@ -105,7 +105,7 @@ function CommitteeCard({ conn, c, enter, dm }) {
     </div>`;
 }
 
-const PRESETS = [['modern', 'World crisis · today'], ['cold85', 'World crisis · Cold War 1985'], ['latam', 'World crisis · Americas detail'], ['court', 'Court of justice'], ['who', 'WHO · Human genetic editing'], ['disec', 'DISEC · Chemical weapons'], ['unhcr', 'UNHCR · Sea-level statelessness'], ['gotham', 'Gotham · Arkham has fallen']];
+const PRESETS = [['modern', 'World crisis · today'], ['cold85', 'World crisis · Cold War 1985'], ['latam', 'World crisis · Americas detail'], ['usa', 'United States · governors'], ['court', 'Court of justice'], ['who', 'WHO · Human genetic editing'], ['disec', 'DISEC · Chemical weapons'], ['unhcr', 'UNHCR · Sea-level statelessness'], ['gotham', 'Gotham · Arkham has fallen']];
 
 function GlobalControls({ conn }) {
   const [g, setG] = useState(conn.global);

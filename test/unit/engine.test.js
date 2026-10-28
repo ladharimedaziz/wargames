@@ -570,6 +570,20 @@ test('a council committee runs a floor, a draft vote and a crisis alert', async 
   assert.equal(z({ type: 'forceWar', a: '643', b: '804' }).ok, false, 'world actions are not available here');
 });
 
+test('a US committee steers its map and refuses world actions', async () => {
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const s = createUsaState({ id: 'u', name: 'US', seed: 4 });
+  const z = a => applyAction(s, a, { role: 'stage', user: 'x', now: 5_000_000, geo });
+  assert.equal(s.mode, 'usa');
+  assert.ok(z({ type: 'usaSetView', lon: -87.6, lat: 41.9, k: 12 }).ok && s.usa.view.k === 12);
+  assert.ok(z({ type: 'usaSetView', lon: -999, lat: 90, k: 500 }).ok && s.usa.view.k === 60 && s.usa.view.lon === -126 && s.usa.view.lat === 50.5, 'the view stays over the lower 48');
+  assert.equal(z({ type: 'usaSetView', lon: 'x', lat: 1, k: 1 }).ok, false);
+  assert.ok(z({ type: 'usaLayer', layer: 'counties', on: false }).ok && s.usa.layers.counties === false);
+  assert.equal(z({ type: 'usaLayer', layer: 'nope' }).ok, false);
+  assert.ok(z({ type: 'usaHighlight', states: ['tx', 'CA', 'texas', 'TX'] }).ok && s.usa.highlight.join() === 'TX,CA');
+  assert.equal(z({ type: 'forceWar', a: '643', b: '804' }).ok, false, 'world actions are not available here');
+});
+
 test('a cold war committee starts in 1985 without drones or stealth', async () => {
   const { applyScenario } = await import('../../shared/engine/scenarios.js');
   const s = createWorldState({ id: 'cw', name: 'Cold', seed: 9 }, gi);

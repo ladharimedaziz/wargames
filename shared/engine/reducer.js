@@ -11,10 +11,11 @@ import { OP_KINDS, resolveTurn, resolveNow, declareWar, applyStrikeDamage, pushF
 import { bindGeo, hasGeo, controller, paintCells, advance, cellsOf, releaseCells, holdings, cellAt, cellCenter, heldCenter, mainland } from './control.js';
 import { courtActions } from './court.js';
 import { councilActions } from './council.js';
+import { usaActions } from './usa.js';
 import { joinText } from './ai.js';
 import { endingDetail } from './endings.js';
 
-const SCENES = ['map', 'disguise', 'intro', 'reveal', 'ending', 'report', 'blank', 'pause', 'vote', 'treaty', 'polls', 'web', 'court', 'council'];
+const SCENES = ['map', 'disguise', 'intro', 'reveal', 'ending', 'report', 'blank', 'pause', 'vote', 'treaty', 'polls', 'web', 'court', 'council', 'usa'];
 const STAT_FIELDS = { gdp: [0.5, 1e6], treasury: [-1e5, 1e5], support: [0, 100], stability: [0, 100], industry: [0.05, 1.2], energy: [0.05, 1.2], damage: [0, 1], inflation: [-2, 80], airDefense: [0, 12], influence: [0, 100] };
 const DISASTERS = {
   earthquake: { en: 'A major earthquake strikes', ar: 'زلزال قوي يضرب', gdp: 0.04, industry: 0.12, support: 3 },
@@ -857,6 +858,7 @@ const COMMON = {
 
 const SHARED_STAGE = ['setScene', 'setBanner', 'setSetting', 'timerSet', 'timerStart', 'timerPause', 'timerReset', 'timerAdd', 'timerHide', 'noteAdd', 'kronosBanner', 'setKronosNote'];
 export function actionsFor(state) {
+  if (state.mode === 'usa') return { ...COMMON, ...usaActions, ...pick(WORLD, SHARED_STAGE) };
   if (state.mode === 'council') return { ...COMMON, ...councilActions, ...pick(WORLD, SHARED_STAGE) };
   return { ...COMMON, ...(state.mode === 'court' ? { ...courtActions, ...pick(WORLD, ['setScene', 'setBanner', 'setSetting', 'timerSet', 'timerStart', 'timerPause', 'timerReset', 'timerAdd', 'timerHide', 'noteAdd', 'kronosBanner', 'setKronosNote', 'playEnding']) } : WORLD) };
 }
