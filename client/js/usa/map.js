@@ -73,13 +73,15 @@ const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', county: 'rgba(120,
 
 // `view` is the view to show, `onView` is called as the viewer drags or zooms, `onPick` with a state code on click.
 // What a unit's badge says.
-export const unitLabel = u => (u.kind === 'governor' ? `${u.owner === 'DC' ? 'Mayor' : 'Gov.'} ${u.person}${u.party ? ` (${u.party})` : ''}` : u.short);
+export const unitLabel = u => (u.kind === 'governor' ? `${u.owner === 'DC' ? 'Mayor' : 'Gov.'} ${u.person}${u.party ? ` (${u.party})` : ''}` : u.federal ? `${u.short} · federal` : u.short);
 const roundRect = (ctx, x, y, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); };
 
-export function UsMap({ usa, view, onView, onPick, onPickUnit, selectedUnit = null, interactive = false, className = '' }) {
+export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selectedUnit = null, interactive = false, className = '' }) {
   const cv = useRef(), ov = useRef(), st = useRef({ data: null, w: 0, h: 0, cur: { ...USA_VIEW }, want: { ...USA_VIEW }, hover: null, raf: 0, onView, onPick, usa });
-  st.current.onView = onView; st.current.onPick = onPick; st.current.onPickUnit = onPickUnit; st.current.usa = usa; st.current.selUnit = selectedUnit;
+  st.current.onView = onView; st.current.onPick = onPick; st.current.onPickUnit = onPickUnit; st.current.onPlace = onPlace; st.current.usa = usa; st.current.selUnit = selectedUnit;
   st.current.units = useMemo(() => getUnits(usa), [usa.mods, usa.custom]);
+  st.current.unitSig = useMemo(() => { let h = 0; for (const ch of JSON.stringify([usa.mods, usa.custom])) h = (h * 31 + ch.charCodeAt(0)) | 0; return h; }, [usa.mods, usa.custom]); // changes whenever a unit is edited, so badges re-lay out
+
 
   // The terrain, roads, borders and names are painted into an off-screen canvas that is reused while the view and layers stay the
   // same, so flashing lightbars only repaint the dots on top.
@@ -168,7 +170,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, selectedUnit = nu
     const [x0, x1] = [Math.min(lo[0], hi[0]) - 0.2, Math.max(lo[0], hi[0]) + 0.2], [y0, y1] = [Math.min(lo[1], hi[1]) - 0.2, Math.max(lo[1], hi[1]) + 0.2];
     const sig = JSON.stringify(S.usa.lightColors || {});
     if (S.lbSig !== sig) { S.lbSig = sig; S.lbCache = new Map(); }
-    const layout = `${pts.size}|${S.baseKey}|${Object.entries(L).join()}|${Object.entries(LB).join()}|${JSON.stringify(S.usa.mods)}|${Object.keys(S.usa.custom || {}).length}|${S.selUnit}`;
+    const layout = `${pts.size}|${S.baseKey}|${Object.entries(L).join()}|${Object.entries(LB).join()}|${S.unitSig}|${S.selUnit}`;
     const wantLabels = S.labelKey !== layout, labels = [];
     let flashing = false;
     for (const [kind, d] of Object.entries(USA_DOTS)) {
@@ -227,7 +229,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, selectedUnit = nu
       const p = proj([u.lon, u.lat]); if (!p) continue;
       const r = Math.min(8, 3.5 + k * 0.1), chosen = u.id === S.selUnit;
       if (chosen) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p[0], p[1], r + 6, 0, 6.2832); ctx.stroke(); }
-      ctx.fillStyle = kd.color; ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 6.2832); ctx.fill();
+      ctx.fillStyle = u.federal ? '#ff6b5a' : kd.color; ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 6.2832); ctx.fill();
       ctx.lineWidth = 2; ctx.strokeStyle = u.control === 'delegate' ? '#ffd166' : 'rgba(0,0,0,.75)'; ctx.stroke();
       S.hits.push([p[0], p[1], u.id]);
       if (k >= kd.label || chosen) ulabels.push([p[0], p[1] - r - 4, unitLabel(u), u]);
@@ -315,7 +317,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, selectedUnit = nu
       if (g) for (const s of st.current.data.states) if (geoContains(s.f, g)) { hit = s.id; break; }
       if (hit !== st.current.hover) { st.current.hover = hit; c.title = hit ? st.current.data.byState.get(hit).name : ''; redraw(); }
     };
-    const up = e => { if (drag && moved < 4) { if (st.current.hoverUnit) st.current.onPickUnit?.(st.current.hoverUnit); else if (st.current.hover) st.current.onPick?.(st.current.hover); } drag = null; try { c.releasePointerCapture(e.pointerId); } catch {} };
+    const up = e => { if (drag && moved < 4) { if (st.current.onPlace) { const g = geoAt(pos(e)); if (g) st.current.onPlace(g[0], g[1]); } else if (st.current.hoverUnit) st.current.onPickUnit?.(st.current.hoverUnit); else if (st.current.hover) st.current.onPick?.(st.current.hover); } drag = null; try { c.releasePointerCapture(e.pointerId); } catch {} };
     const wheel = e => {
       e.preventDefault();
       if (!st.current.data) return;
