@@ -3,7 +3,7 @@
 import { feature, mesh } from 'topojson-client';
 import { geoAlbers, geoPath, geoCentroid, geoContains } from 'd3-geo';
 import { html, useRef, useEffect, cls } from '../lib.js';
-import { USA_VIEW, USA_MAX_ZOOM } from '/shared/engine/usa.js';
+import { USA_VIEW, USA_MAX_ZOOM, USA_DOTS, MIL_COLORS } from '/shared/engine/usa.js';
 
 let loading = null;
 // Loads and indexes the two map files once.
@@ -49,6 +49,14 @@ export function viewFor(data, id, w = 1600, h = 900) {
   return { lon: c[0], lat: c[1], k: Math.round(k * 100) / 100 };
 }
 
+// One file per dot layer, fetched the first time a layer is shown. Rows: [lon, lat, name, city, county index, extra].
+const pts = new Map(), ptsLoading = new Map();
+export function loadPoints(kind) {
+  if (pts.has(kind)) return Promise.resolve(pts.get(kind));
+  if (!ptsLoading.has(kind)) ptsLoading.set(kind, fetch(`/client/data/us-points-${kind}.json`).then(r => r.json()).then(list => { pts.set(kind, list); return list; }));
+  return ptsLoading.get(kind);
+}
+
 const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', county: 'rgba(120,160,215,.16)', state: 'rgba(190,215,255,.7)', coast: 'rgba(190,215,255,.85)', i: '#f3b24a', u: 'rgba(200,170,120,.7)', label: '#dfe9fb', hover: 'rgba(255,255,255,.14)' };
 
 // `view` is the view to show, `onView` is called as the viewer drags or zooms, `onPick` with a state code on click.
@@ -86,6 +94,7 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
     }
     if (L.states) { ctx.beginPath(); path(S.data.stateMesh); ctx.strokeStyle = COL.state; ctx.lineWidth = k < 4 ? 1.1 : 1.8; ctx.stroke(); }
     ctx.beginPath(); path(S.data.outline); ctx.strokeStyle = COL.coast; ctx.lineWidth = 1.2; ctx.stroke();
+    drawDots(ctx, S, proj, k);
     if (L.labels) {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = COL.label;
       if (k < 9) {
@@ -96,6 +105,43 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
         ctx.font = `500 ${Math.round(Math.min(15, 9 + k * 0.12))}px "IBM Plex Sans", sans-serif`; ctx.fillStyle = 'rgba(223,233,251,.82)';
         for (const co of S.data.counties) { const p = proj(co.centroid); if (p && p[0] > 20 && p[0] < S.w - 20 && p[1] > 10 && p[1] < S.h - 10) ctx.fillText(co.name, p[0], p[1]); }
       }
+    }
+  };
+  // Dots for every shown layer, with a small label above each once zoomed in far enough. Labels never overlap.
+  const drawDots = (ctx, S, proj, k) => {
+    const L = S.usa.layers;
+    const lo = proj.invert([-30, S.h + 30]), hi = proj.invert([S.w + 30, -30]);
+    const [x0, x1] = [Math.min(lo[0], hi[0]) - 0.2, Math.max(lo[0], hi[0]) + 0.2], [y0, y1] = [Math.min(lo[1], hi[1]) - 0.2, Math.max(lo[1], hi[1]) + 0.2];
+    const labels = [];
+    for (const [kind, d] of Object.entries(USA_DOTS)) {
+      if (!L[kind] || k < d.dot) continue;
+      const list = pts.get(kind);
+      if (!list) { loadPoints(kind).then(redraw); continue; }
+      const r = Math.min(7, 2 + k * 0.12), withLabel = k >= d.label;
+      for (const row of list) {
+        const lon = row[0], lat = row[1];
+        if (lon < x0 || lon > x1 || lat < y0 || lat > y1) continue;
+        const p = proj([lon, lat]); if (!p) continue;
+        ctx.fillStyle = kind === 'military' ? MIL_COLORS[row[5]] || d.color : d.color;
+        ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 6.2832); ctx.fill();
+        ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.stroke();
+        if (withLabel && row[2]) labels.push([p[0], p[1] - r - 3, row[2]]);
+      }
+    }
+    // Labels go in priority order (the order of the layers); one that would overlap a placed label is dropped.
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.font = '500 11px "IBM Plex Sans", sans-serif';
+    const grid = new Map(), G = 64;
+    for (const [x, y, text] of labels) {
+      const w = ctx.measureText(text).width + 6, rx = x - w / 2, ry = y - 13;
+      let clash = false;
+      for (let gx = Math.floor(rx / G); gx <= Math.floor((rx + w) / G) && !clash; gx++) for (let gy = Math.floor(ry / G); gy <= Math.floor((ry + 14) / G) && !clash; gy++) {
+        for (const r of grid.get(`${gx},${gy}`) || []) if (rx < r[0] + r[2] && rx + w > r[0] && ry < r[1] + r[3] && ry + 14 > r[1]) { clash = true; break; }
+      }
+      if (clash) continue;
+      const rect = [rx, ry, w, 14];
+      for (let gx = Math.floor(rx / G); gx <= Math.floor((rx + w) / G); gx++) for (let gy = Math.floor(ry / G); gy <= Math.floor((ry + 14) / G); gy++) { const k2 = `${gx},${gy}`; (grid.get(k2) || grid.set(k2, []).get(k2)).push(rect); }
+      ctx.fillStyle = 'rgba(6,16,31,.78)'; ctx.fillRect(rx, ry, w, 14);
+      ctx.fillStyle = '#eef2fa'; ctx.fillText(text, x, y);
     }
   };
   const redraw = () => { if (!st.current.raf) st.current.raf = requestAnimationFrame(draw); };
@@ -111,7 +157,7 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
     return () => { dead = true; ro.disconnect(); cancelAnimationFrame(st.current.raf); };
   }, []);
   useEffect(() => { st.current.want = { ...USA_VIEW, ...view }; if (!st.current.data) return; redraw(); }, [view?.lon, view?.lat, view?.k]);
-  useEffect(redraw, [usa.layers.counties, usa.layers.states, usa.layers.highways, usa.layers.labels, (usa.highlight || []).join(',')]);
+  useEffect(redraw, [Object.entries(usa.layers).join(), (usa.highlight || []).join(',')]);
 
   // Pointer handling for the Zeus panel: drag to pan, wheel to zoom around the cursor, click to pick a state.
   useEffect(() => {

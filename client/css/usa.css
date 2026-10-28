@@ -14,3 +14,6 @@
 .us-mapbox { position: relative; border-radius: 14px; overflow: hidden; border: 1px solid #1d2c4a; min-height: 0; }
 .us-readout { position: absolute; left: 10px; bottom: 8px; font-size: 12px; opacity: .8; pointer-events: none; }
 @media (max-width: 800px) { .us-body { grid-template-columns: 1fr; grid-auto-rows: minmax(300px, auto); } }
+.us-sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,.6); }
+.us-key i.us-dot { width: 1.3vh; height: 1.3vh; border-radius: 50%; margin-bottom: .2vh; }
+.us-key { flex-wrap: wrap; justify-content: flex-end; max-width: 55vw; }

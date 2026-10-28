@@ -3,7 +3,20 @@ import { clamp } from './core.js';
 
 const err = error => ({ ok: false, error });
 const ok = (r = {}) => ({ ok: true, ...r });
-export const USA_LAYERS = ['states', 'counties', 'highways', 'labels'];
+export const USA_LAYERS = ['states', 'counties', 'highways', 'labels', 'military', 'hospital', 'police', 'fire', 'ambulance', 'prison', 'power'];
+// The dot layers: what each one shows, its colour, the zoom at which its dots appear and the zoom at which they carry a label.
+export const USA_DOTS = {
+  military: { name: 'Military sites', color: '#7fbf6a', dot: 1, label: 3.5 },
+  power: { name: 'Power plants', color: '#f5d34a', dot: 2, label: 7 },
+  hospital: { name: 'Hospitals', color: '#ffffff', dot: 4, label: 12 },
+  prison: { name: 'Prisons', color: '#a9a9b8', dot: 6, label: 12 },
+  police: { name: 'Police stations', color: '#4f9bff', dot: 8, label: 22 },
+  fire: { name: 'Fire stations', color: '#ff5a4a', dot: 10, label: 26 },
+  ambulance: { name: 'Ambulance services', color: '#ffb347', dot: 12, label: 26 },
+};
+// Military dots take the colour of their service.
+export const MIL_COLORS = { usa: '#7fbf6a', usar: '#7fbf6a', armyNationalGuard: '#b9a66a', airNationalGuard: '#8fc6ff', usaf: '#6aa8ff', afr: '#6aa8ff', usn: '#4a78e0', usnr: '#4a78e0', usmc: '#ff6a5a', usmcr: '#ff6a5a', whs: '#d0d0d8', other: '#d0d0d8' };
+export const MIL_NAMES = { usa: 'Army', usar: 'Army Reserve', armyNationalGuard: 'Army National Guard', airNationalGuard: 'Air National Guard', usaf: 'Air Force', afr: 'Air Force Reserve', usn: 'Navy', usnr: 'Navy Reserve', usmc: 'Marine Corps', usmcr: 'Marine Corps Reserve', whs: 'Washington HQ Services', other: 'Other' };
 export const USA_VIEW = { lon: -96.5, lat: 38.5, k: 1 }; // k = zoom, 1 shows the whole lower 48
 export const USA_MAX_ZOOM = 60;
 
@@ -13,7 +26,7 @@ export function createUsaFields(s) {
     title: 'The United States', subtitle: 'Governors in session',
     accent: '#4aa8ff',
     view: { ...USA_VIEW },
-    layers: { states: true, counties: true, highways: true, labels: true },
+    layers: { states: true, counties: true, highways: true, labels: true, military: true, hospital: true, police: false, fire: false, ambulance: false, prison: false, power: false },
     highlight: [], // state postal codes marked on the stage
     note: '',
   };
