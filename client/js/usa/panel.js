@@ -1,9 +1,9 @@
 // Zeus control for the continental US committee: steer the map the stage shows and switch its layers.
-import { html, useState, useEffect, useRef, run, useMemo, cls } from '../lib.js';
+import { html, useState, useEffect, useRef, run, useMemo, cls, toast } from '../lib.js';
 import { TimerControls } from '../world/display-tab.js';
 import { DMDrawer, useUnread } from '../views/dm.js';
-import { UsMap, loadUsa, viewFor } from './map.js';
-import { USA_VIEW, USA_DOTS, LIGHT_SERVICES, LIGHT_PALETTE, LIGHT_PATTERNS, lightColors } from '/shared/engine/usa.js';
+import { UsMap, loadUsa, viewFor, unitLabel } from './map.js';
+import { USA_VIEW, USA_DOTS, USA_UNIT_KINDS, UNIT_LAYERS, LIGHT_SERVICES, LIGHT_PALETTE, LIGHT_PATTERNS, lightColors, getUnits } from '/shared/engine/usa.js';
 
 const LAYERS = [['states', 'State borders'], ['counties', 'County borders'], ['cities', 'City borders'], ['highways', 'Highways'], ['labels', 'Names']];
 
@@ -29,6 +29,9 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
   const onView = v => { setView(v); if (live) send(v); };
   const jump = v => { setView(v); if (live) send(v); };
   const [marking, setMarking] = useState(false);
+  const [sel, setSel] = useState(null);
+  const units = useMemo(() => getUnits(u), [u.mods, u.custom]);
+  const pickUnit = id => { setSel(id); const x = units[id]; if (x && live) { /* keep the map where it is */ } };
   const onPick = id => {
     if (!marking) { if (data) jump(viewFor(data, id, 1600, 900)); return; }
     act({ type: 'usaHighlight', states: u.highlight.includes(id) ? u.highlight.filter(x => x !== id) : [...u.highlight, id] });
@@ -62,6 +65,12 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
             <select class="input sm" value="" onChange=${e => e.target.value && jump(viewFor(data, e.target.value, 1600, 900))}><option value="">Zoom to a state…</option>${states.map(s => html`<option value=${s.id}>${s.name}</option>`)}</select>
             <div class="row wrap"><button class="btn sm" onClick=${() => jump({ ...USA_VIEW })}>Whole country</button>${!live && html`<button class="btn sm gold" onClick=${() => send(view)}>Show on stage</button>`}</div>
           </div></div>
+          ${sel && units[sel] && html`<${UnitCard} unit=${units[sel]} act=${act} close=${() => setSel(null)} jump=${v => jump(v)} />`}
+          <div class="card"><div class="card-h"><h3>Units</h3></div><div class="card-b col">
+            ${Object.entries(UNIT_LAYERS).map(([k, l]) => html`<label class="row"><input type="checkbox" checked=${!!u.layers[k]} onChange=${() => act({ type: 'usaLayer', layer: k })} /> ${l}</label>`)}
+            <div class="dim small">Every unit is a dot with a badge above it. Click one to see it; click a governor to edit their seat.</div>
+            <select class="input sm" value="" onChange=${e => e.target.value && setSel(e.target.value)}><option value="">Find a governor…</option>${Object.values(units).filter(x => x.kind === 'governor').sort((a, b) => a.owner.localeCompare(b.owner)).map(x => html`<option value=${x.id}>${x.owner} · ${x.person}${x.control === 'delegate' ? ' (delegate)' : ''}</option>`)}</select>
+          </div></div>
           <${Lightbars} u=${u} data=${data} states=${states} act=${act} />
           <div class="card"><div class="card-h"><h3>Mark states</h3></div><div class="card-b col">
             <button class=${cls('btn sm', marking && 'on')} onClick=${() => setMarking(!marking)}>${marking ? 'Clicking marks states' : 'Click to mark states'}</button>
@@ -77,7 +86,7 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
           </div></div>
           <${TimerControls} conn=${conn} state=${state} />
         </aside>
-        <div class="us-mapbox"><${UsMap} usa=${u} view=${view} interactive=${true} onView=${onView} onPick=${onPick} /><div class="us-readout mono">zoom ${view.k.toFixed(1)}×</div></div>
+        <div class="us-mapbox"><${UsMap} usa=${u} view=${view} interactive=${true} onView=${onView} onPick=${onPick} onPickUnit=${pickUnit} selectedUnit=${sel} /><div class="us-readout mono">zoom ${view.k.toFixed(1)}×</div></div>
       </div>
       <${DMDrawer} conn=${conn} committee=${committee} open=${dmOpen} onClose=${() => setDmOpen(false)} kronos=${kronos} name=${state.name} />
     </div>`;
@@ -113,4 +122,36 @@ function ColorPick({ onSet }) {
   return html`<div class="col"><div class="row wrap">${Object.entries(LIGHT_PALETTE).map(([k, c]) => html`<button class="btn sm" disabled=${picked.length >= 3} onClick=${() => setPicked([...picked, c])}><i class="us-sw" style=${`background:${c}`}></i> ${k}</button>`)}</div>
     <div class="row">${picked.map(c => html`<i class="us-sw big" style=${`background:${c}`}></i>`)}<span class="dim small">${picked.length ? '' : 'nothing picked'}</span></div>
     <div class="row wrap"><button class="btn sm gold" disabled=${!picked.length} onClick=${() => { onSet(picked); setPicked([]); }}>Set colours</button><button class="btn sm ghost" disabled=${!picked.length} onClick=${() => setPicked([])}>Reset pick</button></div></div>`;
+}
+
+// A unit's card. Governors can be edited: the AI plays them, or a delegate does under their own name and photo.
+function UnitCard({ unit: x, act, close, jump }) {
+  const gov = x.kind === 'governor', code = x.owner;
+  const [name, setName] = useState(x.person || ''), [party, setParty] = useState(x.party || '');
+  useEffect(() => { setName(x.person || ''); setParty(x.party || ''); }, [x.id, x.person, x.party]);
+  const photo = e => {
+    const f = e.target.files?.[0]; e.target.value = '';
+    if (!f) return;
+    const img = new Image(), url = URL.createObjectURL(f);
+    img.onload = () => {
+      // Crop to a centred square and shrink to 96 px so the photo is a few kilobytes.
+      const s = Math.min(img.width, img.height), cv = document.createElement('canvas'); cv.width = cv.height = 96;
+      cv.getContext('2d').drawImage(img, (img.width - s) / 2, (img.height - s) / 2, s, s, 0, 0, 96, 96);
+      URL.revokeObjectURL(url);
+      act({ type: 'usaGovernor', state: code, photo: cv.toDataURL('image/jpeg', 0.82) });
+    };
+    img.onerror = () => toast('That file is not an image.', 'error');
+    img.src = url;
+  };
+  return html`<div class="card"><div class="card-h"><h3>${gov ? (code === 'DC' ? 'Mayor' : 'Governor') : 'Selected'}</h3><button class="btn xs ghost" onClick=${close}>✕</button></div><div class="card-b col">
+    <div class="row">${x.photo ? html`<img class="us-photo" src=${x.photo} alt="" />` : x.img ? html`<img class="us-photo flag" src=${`/client/img/us/${x.img}.png`} alt="" onError=${e => { e.target.style.display = 'none'; }} />` : ''}<div><b>${gov ? unitLabel(x) : x.name}</b><div class="dim small">${x.name}</div></div></div>
+    <div class="dim small">${x.desc}</div>
+    ${gov ? html`
+      <div class="row wrap"><button class=${cls('btn sm', x.control !== 'delegate' && 'on')} onClick=${() => act({ type: 'usaGovernor', state: code, control: 'ai' })}>AI plays</button><button class=${cls('btn sm gold', x.control === 'delegate' && 'on')} onClick=${() => act({ type: 'usaGovernor', state: code, control: 'delegate' })}>Delegate plays</button></div>
+      <input class="input sm" placeholder="Name" value=${name} onInput=${e => setName(e.target.value)} />
+      <input class="input sm" placeholder="Party (R, D, I…)" value=${party} onInput=${e => setParty(e.target.value)} />
+      <div class="row wrap"><button class="btn sm gold" onClick=${() => act({ type: 'usaGovernor', state: code, name, party })}>Save name</button>
+        <label class="btn sm">Upload photo<input type="file" accept="image/*" hidden onChange=${photo} /></label>${x.photo && html`<button class="btn sm ghost" onClick=${() => act({ type: 'usaGovernor', state: code, photo: null })}>Remove photo</button>`}</div>`
+      : html`<div class="dim small">Strength ${x.strength}% · ${x.control === 'delegate' ? 'delegate' : 'AI'}</div>`}
+  </div></div>`;
 }

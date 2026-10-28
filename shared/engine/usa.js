@@ -1,9 +1,10 @@
 // The continental US committee. Step one is the map: a layered view of the lower 48 that the Zeus steers and the stage shows.
 import { clamp } from './core.js';
+import { STATES, FEDERAL } from '../data/usa-units.js';
 
 const err = error => ({ ok: false, error });
 const ok = (r = {}) => ({ ok: true, ...r });
-export const USA_LAYERS = ['states', 'counties', 'cities', 'highways', 'labels', 'military', 'hospital', 'police', 'fire', 'ambulance', 'prison', 'power'];
+export const USA_LAYERS = ['states', 'counties', 'cities', 'highways', 'labels', 'military', 'hospital', 'police', 'fire', 'ambulance', 'prison', 'power', 'uGov', 'uFed', 'uAgency', 'uGuard', 'uState', 'uCustom'];
 // The dot layers: what each one shows, its colour, the zoom at which its dots appear and the zoom at which they carry a label.
 export const USA_DOTS = {
   military: { name: 'Military sites', color: '#7fbf6a', dot: 1, label: 3.5 },
@@ -48,13 +49,51 @@ export function lightColors(usa, service, state, geoid) {
 export const USA_VIEW = { lon: -96.5, lat: 38.5, k: 1 }; // k = zoom, 1 shows the whole lower 48
 export const USA_MAX_ZOOM = 60;
 
+// ---- Units: governors, state forces and federal formations. Every one is a dot with a small badge above it. ----
+// kind -> the layer that shows it, what it is called, and the zoom at which its dot and its badge appear.
+export const USA_UNIT_KINDS = {
+  governor: { layer: 'uGov', name: 'Governors', color: '#ffd166', dot: 1.2, label: 3 },
+  military: { layer: 'uFed', name: 'Federal forces', color: '#7fbf6a', dot: 1, label: 3.5 },
+  agency: { layer: 'uAgency', name: 'Federal agencies', color: '#b79cff', dot: 1.4, label: 4 },
+  guard: { layer: 'uGuard', name: 'National Guard', color: '#b9a66a', dot: 2.5, label: 5 },
+  police: { layer: 'uState', name: 'State police', color: '#4f9bff', dot: 4.5, label: 7 },
+  custom: { layer: 'uCustom', name: 'Zeus-made units', color: '#ff8a5a', dot: 1, label: 3 },
+};
+export const UNIT_LAYERS = Object.fromEntries(Object.values(USA_UNIT_KINDS).map(k => [k.layer, k.name]));
+const AGENCIES = new Set(['fbi', 'dhs', 'fema', 'cdc', 'ice', 'cbp', 'usss', 'dea', 'atf', 'usms']);
+
+function makeUnits() {
+  const u = {};
+  for (const [code, name, cap, lon, lat, gov, party, police] of STATES) {
+    u[`gov-${code}`] = { id: `gov-${code}`, kind: 'governor', name: code === 'DC' ? 'Mayor of Washington' : `Governor of ${name}`, person: gov, party, short: gov, owner: code, lon, lat, sil: 'person', img: `flag-${code}`, photo: null, desc: `${code === 'DC' ? 'Mayor' : 'Governor'} of ${name}, seated in ${cap}.`, strength: 100, control: 'ai', hidden: false };
+    if (code === 'DC') continue; // the District has a mayor, but its Guard answers to the President
+    u[`ng-${code}`] = { id: `ng-${code}`, kind: 'guard', name: `${name} National Guard`, short: `${code} Guard`, owner: code, lon: lon + 0.1, lat: lat + 0.07, sil: 'guard', img: 'ngb', desc: `The ${name} Army and Air National Guard, commanded by the governor until the President federalizes it.`, strength: 100, control: 'ai', hidden: false };
+    u[`sp-${code}`] = { id: `sp-${code}`, kind: 'police', name: police, short: police, owner: code, lon: lon - 0.1, lat: lat - 0.07, sil: 'police', img: null, desc: `${police}, the state's highway and state police force.`, strength: 100, control: 'ai', hidden: false };
+  }
+  for (const [id, name, short, lon, lat, sil, img, desc] of FEDERAL) {
+    u[`f-${id}`] = { id: `f-${id}`, kind: AGENCIES.has(id) || id.startsWith('bp-') ? 'agency' : 'military', name, short, owner: 'US', lon, lat, sil, img, desc, strength: 100, control: 'ai', hidden: false };
+  }
+  return u;
+}
+// The starting roster is fixed data; a save only stores what the Zeus has changed (`mods`) and the units the Zeus has made (`custom`).
+export const CATALOG = makeUnits();
+export function getUnits(usa) {
+  const out = {};
+  for (const id in CATALOG) out[id] = usa.mods?.[id] ? { ...CATALOG[id], ...usa.mods[id] } : CATALOG[id];
+  for (const id in usa.custom || {}) out[id] = usa.custom[id];
+  return out;
+}
+
 // Fills in anything a save made by an older version lacks.
 export function migrateUsa(s) {
   const u = s.usa; if (!u) return s;
-  u.layers = { ...createUsaFields({ display: {} }).usa.layers, ...u.layers };
+  u.layers = { ...DEFAULT_LAYERS, ...u.layers };
+  u.mods ||= {}; u.custom ||= {};
   u.lightbars ||= { police: false, fire: false, ambulance: false }; u.lightPattern ||= 'mixed'; u.lightColors ||= {};
   return s;
 }
+
+const DEFAULT_LAYERS = { states: true, counties: true, cities: true, highways: true, labels: true, military: true, hospital: true, police: false, fire: false, ambulance: false, prison: false, power: false, uGov: true, uFed: true, uAgency: true, uGuard: true, uState: true, uCustom: true };
 
 export function createUsaFields(s) {
   s.display.scene = 'usa';
@@ -62,7 +101,8 @@ export function createUsaFields(s) {
     title: 'The United States', subtitle: 'Governors in session',
     accent: '#4aa8ff',
     view: { ...USA_VIEW },
-    layers: { states: true, counties: true, cities: true, highways: true, labels: true, military: true, hospital: true, police: false, fire: false, ambulance: false, prison: false, power: false },
+    layers: { ...DEFAULT_LAYERS },
+    mods: {}, custom: {},
     lightbars: { police: false, fire: false, ambulance: false }, lightPattern: 'mixed', lightColors: {},
     highlight: [], // state postal codes marked on the stage
     note: '',
@@ -107,6 +147,23 @@ export const usaActions = {
     if (a.colors == null) delete s.usa.lightColors[key];
     else if (isColors(a.colors)) s.usa.lightColors[key] = a.colors.map(c => c.toLowerCase());
     else return err('Give one to three colours.');
+    return ok();
+  } },
+  // A governor's seat: rename them, set the party, give the seat to a delegate or back to the AI, and set their photo (a small
+  // image as a data URL; send photo: null to remove it).
+  usaGovernor: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const id = `gov-${String(a.state || '').toUpperCase()}`;
+    if (!CATALOG[id]) return err('No such state.');
+    const g = (s.usa.mods[id] ||= {});
+    if (a.name !== undefined) { const n = String(a.name).trim().slice(0, 60); if (!n) return err('Give them a name.'); g.person = n; g.short = n; }
+    if (a.party !== undefined) g.party = String(a.party).slice(0, 12);
+    if (a.control !== undefined) { if (!['ai', 'delegate'].includes(a.control)) return err('Control is ai or delegate.'); g.control = a.control; }
+    if (a.photo !== undefined) {
+      if (a.photo === null) g.photo = null;
+      else if (typeof a.photo === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(a.photo) && a.photo.length <= 40000) g.photo = a.photo;
+      else return err('That photo is not a small JPEG, PNG or WebP.');
+    }
     return ok();
   } },
   usaHighlight: { perm: 'zeus', run(s, a) {
