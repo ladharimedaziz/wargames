@@ -41,8 +41,10 @@ function nearest(lon, lat, maxKm) {
 
 // Waypoints [[lon, lat], ...] from a to b along roads, or null when the roads do not help (no graph, no road near either end, or no
 // connection between them). The first leg from a to the road, and the last from the road to b, are straight.
-export function route(a, b, { near = 60, spacing = 6 } = {}) {
+export function route(a, b, { near = 60, spacing = 6, offroad = 0.6 } = {}) {
   if (!nodes) return null;
+  const flat = (p, q) => Math.hypot((p[0] - q[0]) * KL((p[1] + q[1]) / 2), (p[1] - q[1]) * KLAT), straight = flat(a, b);
+  if (straight < 25) return null; // a short hop is cross-country: nobody drives to a road to come back for a spot beside them
   const from = nearest(a[0], a[1], near), to = nearest(b[0], b[1], near);
   if (from < 0 || to < 0) return null;
   const h = id => Math.hypot((nodes[id][0] - nodes[to][0]) * KL(nodes[id][1]), (nodes[id][1] - nodes[to][1]) * KLAT);
@@ -65,6 +67,8 @@ export function route(a, b, { near = 60, spacing = 6 } = {}) {
     }
   }
   if (!found) return null;
+  // A road is only taken when it is quicker: the legs to and from it are off-road, at `offroad` of road speed.
+  if (g.get(to) + (flat(a, nodes[from]) + flat(nodes[to], b)) / offroad >= straight / offroad) return null;
   const ids = []; for (let c = to; c !== undefined; c = came.get(c)) ids.push(c);
   ids.reverse();
   const out = [], push = p => out.push([+p[0].toFixed(3), +p[1].toFixed(3)]);

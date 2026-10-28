@@ -5,7 +5,7 @@ import { geoAlbers, geoPath, geoCentroid } from 'd3-geo';
 import { html, useRef, useEffect, useMemo, cls } from '../lib.js';
 import { drawSil, getImage, sealUrl } from './art.js';
 import { USA_VIEW, USA_MAX_ZOOM, USA_UNIT_KINDS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors, getUnits, CROSSING_LIST, crossingState } from '/shared/engine/usa.js';
-import { sideColor, effSide } from '/shared/engine/usa-sim.js';
+import { sideColor, effSide, glidePos } from '/shared/engine/usa-sim.js';
 
 let loading = null;
 // Loads and indexes the map files once: the states, the roads, and the Canadian and Mexican regions beside them.
@@ -273,7 +273,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
     for (const u of Object.values(S.units || {})) {
       const kd = USA_UNIT_KINDS[u.kind];
       if (!kd || u.hidden || !L[kd.layer] || k < kd.dot) continue;
-      const lon = u.mv && glide ? u.lon + u.mv[0] * glide : u.lon, lat = u.mv && glide ? u.lat + u.mv[1] * glide : u.lat;
+      const gp = u.mv && glide ? glidePos(u, S.units, glide) : null, lon = gp ? gp[0] : u.lon, lat = gp ? gp[1] : u.lat;
       if (u.mv && glide) anyMv = true;
       posOf.set(u.id, [lon, lat]);
       if (lon < x0 || lon > x1 || lat < y0 || lat > y1) continue;

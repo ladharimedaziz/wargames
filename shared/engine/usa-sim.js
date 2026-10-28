@@ -34,7 +34,8 @@ export function simClock(seconds) {
 // A repeatable pseudo-random number in [0.8, 1.2] so a fight does not play out as a perfectly flat curve, and tests stay deterministic.
 const jitter = (n, a, b) => { let h = (n * 2654435761 + a * 40503 + b * 9973) >>> 0; h ^= h >>> 15; h = Math.imul(h, 2246822519) >>> 0; return 0.8 + 0.4 * ((h >>> 8) % 1000) / 1000; };
 const hash = s => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); };
-const DYN = ['lon', 'lat', 'strength', 'order', 'mv', 'eng', 'routed', 'destroyed', 'hitAt'];
+export const OFFROAD = 0.6; // share of road speed a vehicle makes across country
+const DYN = ['lon', 'lat', 'strength', 'order', 'mv', 'spd', 'eng', 'routed', 'destroyed', 'hitAt'];
 const domainKey = ty => (ty.domain === 'air' ? 'air' : ty.domain === 'sea' ? 'sea' : 'ground');
 
 function log(usa, text, extra = {}) {
@@ -70,7 +71,9 @@ export function usaTick(s, now, getUnits, put, home) {
     if (w.destroyed) continue;
     const ty = typeOf(w), o = w.order;
     if (!o || !ty.speed) { if (w.mv) { w.mv = null; dirty(w.id); } continue; }
-    const km = ty.speed * (w.strength < 30 ? 0.6 : 1) * dt / 3600;
+    // Wheeled and tracked units are slower off the road, so a road only pays on a longer trip (see usa-route.js).
+    const onRoad = !!(o.path?.length && o.pi > 0 && o.pi < o.path.length - 1);
+    const km = ty.speed * (w.strength < 30 ? 0.6 : 1) * (ty.domain === 'ground' && ty.speed >= 30 && !onRoad ? OFFROAD : 1) * dt / 3600;
     let tx = null, tyy = null, stopAt = 0, finish = null;
     // Along a road route the unit runs through its waypoints, carrying the rest of the tick's distance from one to the next.
     if ((o.type === 'move' || o.type === 'return') && o.path?.length) {
@@ -83,8 +86,8 @@ export function usaTick(s, now, getUnits, put, home) {
       dirty(w.id);
       if (arrived) { if (o.type === 'return') w.routed = false; w.order = null; w.mv = null; log(usa, `${w.short || w.name} arrived.`, { id: w.id }); continue; }
       [tx, tyy] = o.path[o.pi];
-      const d = Math.hypot((tx - w.lon) * KM_LON(w.lat), (tyy - w.lat) * KM_LAT) || 1, perReal = ty.speed * sim.speed / 3600;
-      w.mv = [+((tx - w.lon) / d * perReal).toFixed(6), +((tyy - w.lat) / d * perReal).toFixed(6)];
+      const d = Math.hypot((tx - w.lon) * KM_LON(w.lat), (tyy - w.lat) * KM_LAT) || 1, perReal = km / real;
+      w.mv = [+((tx - w.lon) / d * perReal).toFixed(6), +((tyy - w.lat) / d * perReal).toFixed(6)]; w.spd = +perReal.toFixed(5);
       continue;
     }
     if (o.type === 'move' || o.type === 'return') { [tx, tyy] = o.to; finish = 'arrive'; }
@@ -103,8 +106,8 @@ export function usaTick(s, now, getUnits, put, home) {
       o.toB = !o.toB;
     }
     // Degrees per real second, for clients to glide the dot between ticks.
-    const d = Math.hypot((tx - w.lon) * KM_LON(w.lat), (tyy - w.lat) * KM_LAT) || 1, perReal = ty.speed * sim.speed / 3600;
-    w.mv = [+((tx - w.lon) * KM_LON(w.lat) / d * perReal / KM_LON(w.lat)).toFixed(6), +((tyy - w.lat) * KM_LAT / d * perReal / KM_LAT).toFixed(6)];
+    const d = Math.hypot((tx - w.lon) * KM_LON(w.lat), (tyy - w.lat) * KM_LAT) || 1, perReal = km / real;
+    w.mv = [+((tx - w.lon) * KM_LON(w.lat) / d * perReal / KM_LON(w.lat)).toFixed(6), +((tyy - w.lat) * KM_LAT / d * perReal / KM_LAT).toFixed(6)]; w.spd = +perReal.toFixed(5);
   }
 
   // Engagement: every unit that may fire at a hostile unit in range does so at the same moment.
@@ -157,4 +160,25 @@ export function usaTick(s, now, getUnits, put, home) {
   }
   for (const id of touched) { const w = W[id], patch = {}; for (const k of DYN) patch[k] = w[k] ?? null; put(usa, id, patch); }
   return touched.size > 0 || damage.size > 0;
+}
+
+// Where a moving unit is `secs` real seconds after the server last placed it, walking its own route at its own speed and stopping
+// where the server will stop it, so the screen never carries a unit past its goal or round a corner. Used by every screen.
+export function glidePos(u, units, secs) {
+  if (!u.spd || !u.order || secs <= 0) return [u.lon, u.lat];
+  const o = u.order; let pts, stop = 0;
+  if ((o.type === 'move' || o.type === 'return') && o.path?.length) pts = o.path.slice(o.pi || 0);
+  else if (o.type === 'move' || o.type === 'return') pts = [o.to];
+  else if (o.type === 'patrol') pts = [o.toB ? o.b : o.a];
+  else if (o.type === 'attack' || o.type === 'escort') {
+    const t = units[o.target]; if (!t) return [u.lon, u.lat];
+    pts = [[t.lon, t.lat]]; stop = o.type === 'attack' ? Math.max(0.3, typeOf(u).range * 0.8) : 1.5;
+  } else return [u.lon, u.lat];
+  const w = { lon: u.lon, lat: u.lat }; let rem = u.spd * secs;
+  for (let i = 0; i < pts.length && rem > 0; i++) {
+    const [tx, ty] = pts[i], d = distKm(w, { lon: tx, lat: ty }), last = i === pts.length - 1, room = last ? Math.max(0, d - stop) : d;
+    if (room <= rem) { if (last) { const f = d ? (d - stop) / d : 0; w.lon += (tx - w.lon) * f; w.lat += (ty - w.lat) * f; return [w.lon, w.lat]; } w.lon = tx; w.lat = ty; rem -= d; }
+    else { const f = rem / d; w.lon += (tx - w.lon) * f; w.lat += (ty - w.lat) * f; return [w.lon, w.lat]; }
+  }
+  return [w.lon, w.lat];
 }
