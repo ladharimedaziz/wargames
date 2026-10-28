@@ -3,7 +3,7 @@ import { migrateGrid } from '../shared/engine/control.js';
 import { gzipSync, gunzipSync } from 'node:zlib';
 import { readJSON, writeJSON } from './files.js';
 import { COMMITTEE_IDS } from './auth.js';
-import { createWorldState, createCourtState, createCouncilState } from '../shared/engine/state.js';
+import { createWorldState, createCourtState, createCouncilState, createUsaState } from '../shared/engine/state.js';
 import { applyScenario } from '../shared/engine/scenarios.js';
 import { COUNCIL_PRESETS } from '../shared/data/councils.js';
 import * as geo from './geo-index.js';
@@ -20,8 +20,8 @@ const DEFAULTS = {
   delta: { name: 'Committee Delta', mode: 'world' },
 };
 const MAX_SNAPSHOTS = 40;
-const PRESET_MODE = { modern: 'world', cold85: 'world', latam: 'world', court: 'court', ...Object.fromEntries(Object.keys(COUNCIL_PRESETS).map(k => [k, 'council'])) };
-const PRESET_LABEL = { cold85: 'Cold War 1985', latam: 'The Americas South of the Border', ...Object.fromEntries(Object.entries(COUNCIL_PRESETS).map(([k, p]) => [k, p.name])) };
+const PRESET_MODE = { modern: 'world', cold85: 'world', latam: 'world', usa: 'usa', court: 'court', ...Object.fromEntries(Object.keys(COUNCIL_PRESETS).map(k => [k, 'council'])) };
+const PRESET_LABEL = { cold85: 'Cold War 1985', latam: 'The Americas South of the Border', usa: 'The United States', ...Object.fromEntries(Object.entries(COUNCIL_PRESETS).map(([k, p]) => [k, p.name])) };
 
 // The map a committee is played on (the Cold War one has East and West Germany).
 export const geoFor = state => (stateSplit(state) ? geo.coldIndex().geo : geo);
@@ -50,6 +50,7 @@ export class Store {
     const nm = keepName && name ? name : label || name || d.name;
     const seed = (Date.now() ^ (Math.random() * 1e9)) >>> 0;
     const s = m === 'court' ? createCourtState({ id, name: nm, seed })
+      : m === 'usa' ? createUsaState({ id, name: nm, seed })
       : m === 'council' ? createCouncilState({ id, name: nm, seed }, preset || 'who')
       : createWorldState({ id, name: nm, seed }, infoFor(preset));
     s.meta.createdAt = Date.now(); s.meta.preset = preset || (m === 'world' ? 'modern' : m); migrateGrid(s);

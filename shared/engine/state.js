@@ -7,6 +7,7 @@ import { SEA_ZONES } from '../data/places.js';
 import { zonesTouching } from '../geo.js';
 import { COURT_PHASES, newId, isOOB } from './core.js';
 import { createCouncilFields } from './council.js';
+import { createUsaFields } from './usa.js';
 
 function baseState({ id, name, mode, seed }) {
   return {
@@ -131,4 +132,8 @@ export function createCourtState(opts) {
 
 export function createCouncilState(opts, preset) {
   return createCouncilFields(baseState({ ...opts, mode: 'council' }), preset);
+}
+
+export function createUsaState(opts) {
+  return createUsaFields(baseState({ ...opts, mode: 'usa' }));
 }
