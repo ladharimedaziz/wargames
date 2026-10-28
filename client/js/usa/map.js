@@ -49,6 +49,17 @@ export function viewFor(data, id, w = 1600, h = 900) {
   return { lon: c[0], lat: c[1], k: Math.round(k * 100) / 100 };
 }
 
+// City outlines (places of 12 km² and up), loaded the first time the layer is shown. Largest first, so their names win clashes.
+let cityData = null, cityLoading = null;
+export function loadCities() {
+  cityLoading ||= fetch('/client/data/us-cities.json').then(r => r.json()).then(topo => {
+    const fs = feature(topo, topo.objects.cities).features.sort((a, b) => b.properties.a - a.properties.a);
+    cityData = { fs, all: { type: 'FeatureCollection', features: fs }, centroids: fs.map(f => geoCentroid(f)) };
+    return cityData;
+  });
+  return cityLoading;
+}
+
 // One file per dot layer, fetched the first time a layer is shown. Rows: [lon, lat, name, city, county index, extra].
 const pts = new Map(), ptsLoading = new Map();
 export function loadPoints(kind) {
@@ -61,7 +72,7 @@ const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', county: 'rgba(120,
 
 // `view` is the view to show, `onView` is called as the viewer drags or zooms, `onPick` with a state code on click.
 export function UsMap({ usa, view, onView, onPick, interactive = false, className = '' }) {
-  const cv = useRef(), st = useRef({ data: null, w: 0, h: 0, cur: { ...USA_VIEW }, want: { ...USA_VIEW }, hover: null, raf: 0, onView, onPick, usa });
+  const cv = useRef(), ov = useRef(), st = useRef({ data: null, w: 0, h: 0, cur: { ...USA_VIEW }, want: { ...USA_VIEW }, hover: null, raf: 0, onView, onPick, usa });
   st.current.onView = onView; st.current.onPick = onPick; st.current.usa = usa;
 
   // The terrain, roads, borders and names are painted into an off-screen canvas that is reused while the view and layers stay the
@@ -74,6 +85,24 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
     if (hi.size) { ctx.beginPath(); for (const s of S.data.states) if (hi.has(s.id)) path(s.f); ctx.fillStyle = COL.hi; ctx.fill(); }
     if (S.hover) { const s = S.data.byState.get(S.hover); if (s) { ctx.beginPath(); path(s.f); ctx.fillStyle = COL.hover; ctx.fill(); } }
     if (L.counties) { ctx.beginPath(); path(S.data.countyMesh); ctx.strokeStyle = COL.county; ctx.lineWidth = k < 2 ? 0.4 : k < 8 ? 0.6 : 0.9; ctx.stroke(); }
+    if (L.cities && k >= 2) {
+      if (!cityData) loadCities().then(() => { S.baseKey = null; redraw(); });
+      else {
+        ctx.beginPath(); path(cityData.all); ctx.fillStyle = 'rgba(255,196,120,.10)'; ctx.fill();
+        ctx.strokeStyle = 'rgba(255,196,120,.7)'; ctx.lineWidth = k < 6 ? 0.6 : 1.1; ctx.stroke();
+        if (L.labels && k >= 5) {
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `500 ${Math.round(Math.min(14, 9 + k * 0.1))}px "IBM Plex Sans", sans-serif`;
+          const placed = [];
+          cityData.fs.forEach((f, i) => {
+            const p = proj(cityData.centroids[i]); if (!p || p[0] < 10 || p[0] > S.w - 10 || p[1] < 10 || p[1] > S.h - 10) return;
+            const name = f.properties.name, w = ctx.measureText(name).width + 4;
+            if (placed.some(q => Math.abs(q[0] - p[0]) < (q[2] + w) / 2 && Math.abs(q[1] - p[1]) < 13)) return;
+            placed.push([p[0], p[1], w]);
+            ctx.fillStyle = 'rgba(255,214,160,.95)'; ctx.fillText(name, p[0], p[1]);
+          });
+        }
+      }
+    }
     if (L.highways) {
       ctx.lineJoin = 'round'; ctx.lineCap = 'round';
       const road = (list, color, wd) => { ctx.beginPath(); for (const l of list) path({ type: 'LineString', coordinates: l.coordinates }); ctx.strokeStyle = color; ctx.lineWidth = wd; ctx.stroke(); };
@@ -99,7 +128,7 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
     const S = st.current, c = cv.current;
     S.raf = 0;
     if (!c || !S.data || !S.w) return;
-    const dpr = window.devicePixelRatio || 1, ctx = c.getContext('2d');
+    const dpr = window.devicePixelRatio || 1, ctx = c.getContext('2d', { alpha: false });
     // Glide towards the wanted view on the stage; the Zeus panel jumps straight there.
     const w = S.want, v = S.cur;
     let moving = false;
@@ -111,71 +140,97 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
     }
     if (!S.bp || S.bp.w !== S.w || S.bp.h !== S.h) S.bp = { w: S.w, h: S.h, p: baseProjection(S.data, S.w, S.h) };
     const proj = viewProjection(S.bp.p, v, S.w, S.h), k = v.k, L = S.usa.layers;
-    const key = [v.lon.toFixed(5), v.lat.toFixed(5), k.toFixed(4), S.w, S.h, dpr, L.states, L.counties, L.highways, L.labels, (S.usa.highlight || []).join(), S.hover].join('|');
-    if (S.baseKey !== key) {
-      if (!S.baseCv || S.baseCv.width !== c.width || S.baseCv.height !== c.height) { S.baseCv = document.createElement('canvas'); S.baseCv.width = c.width; S.baseCv.height = c.height; }
-      const bctx = S.baseCv.getContext('2d'); bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      paintBase(bctx, S, proj, k); S.baseKey = key;
-    }
-    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(S.baseCv, 0, 0); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const flashing = drawDots(ctx, S, proj, k, performance.now());
-    if ((moving || flashing) && !S.raf) S.raf = requestAnimationFrame(draw);
+    const key = [v.lon.toFixed(5), v.lat.toFixed(5), k.toFixed(4), S.w, S.h, dpr, L.states, L.counties, L.cities, L.highways, L.labels, (S.usa.highlight || []).join(), S.hover].join('|');
+    // The map itself lives on the bottom canvas and is repainted only when the view or layers change; the dots live on a canvas
+    // above it, cleared and redrawn every frame, so flashing never repaints the map.
+    if (S.baseKey !== key) { ctx.setTransform(dpr, 0, 0, dpr, 0, 0); paintBase(ctx, S, proj, k); S.baseKey = key; }
+    const octx = ov.current.getContext('2d');
+    octx.setTransform(1, 0, 0, 1, 0, 0); octx.clearRect(0, 0, ov.current.width, ov.current.height); octx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const flashing = drawDots(octx, S, proj, k, performance.now());
+    if (moving && !S.raf) S.raf = requestAnimationFrame(draw);
+    else if (flashing && !S.raf) S.raf = setTimeout(() => { S.raf = 0; requestAnimationFrame(draw); }, 33); // about 25 flashes a second is plenty
   };
 
   // Dots for every shown layer, with a small label above each once zoomed in far enough. Labels never overlap.
   // Police, fire and EMS dots flash like lightbars when theirs are on. Returns true while something is flashing.
+  // Kept cheap on purpose: dots are batched into one path per colour, at most MAX_BAR flashing dots are drawn (thinned evenly when
+  // more are in view), the glow is dropped when crowded, and the label layout is reused until the view or layers change.
+  const MAX_BAR = 1000;
   const drawDots = (ctx, S, proj, k, now) => {
     const L = S.usa.layers, LB = S.usa.lightbars || {}, pat = S.usa.lightPattern || 'mixed';
     const lo = proj.invert([-30, S.h + 30]), hi = proj.invert([S.w + 30, -30]);
     const [x0, x1] = [Math.min(lo[0], hi[0]) - 0.2, Math.max(lo[0], hi[0]) + 0.2], [y0, y1] = [Math.min(lo[1], hi[1]) - 0.2, Math.max(lo[1], hi[1]) + 0.2];
-    const labels = [];
-    let flashing = false;
     const sig = JSON.stringify(S.usa.lightColors || {});
     if (S.lbSig !== sig) { S.lbSig = sig; S.lbCache = new Map(); }
+    const layout = `${pts.size}|${S.baseKey}|${Object.entries(L).join()}|${Object.entries(LB).join()}`;
+    const wantLabels = S.labelKey !== layout, labels = [];
+    let flashing = false;
     for (const [kind, d] of Object.entries(USA_DOTS)) {
       const bar = !!LB[kind];
       if (!(L[kind] || bar) || k < (bar ? Math.min(d.dot, 3) : d.dot)) continue;
       const list = pts.get(kind);
       if (!list) { loadPoints(kind).then(redraw); continue; }
       const r = Math.min(7, 2 + k * 0.12) + (bar ? 1 : 0), withLabel = k >= d.label;
+      let stride = 1;
+      if (bar) {
+        let n = 0; for (const row of list) if (row[0] >= x0 && row[0] <= x1 && row[1] >= y0 && row[1] <= y1) n++;
+        stride = Math.max(1, Math.ceil(n / MAX_BAR));
+      }
+      const groups = new Map(); // colour -> screen points
       for (const row of list) {
         const lon = row[0], lat = row[1];
         if (lon < x0 || lon > x1 || lat < y0 || lat > y1) continue;
+        const h = ((Math.round(lon * 1e4) * 31 + Math.round(lat * 1e4)) >>> 0) % 9973;
+        if (bar && h % stride) continue;
         const p = proj([lon, lat]); if (!p) continue;
         let fill = kind === 'military' ? MIL_COLORS[row[5]] || d.color : d.color;
         if (bar) {
           flashing = true;
-          const h = ((Math.round(lon * 1e4) * 31 + Math.round(lat * 1e4)) >>> 0) % 9973;
           const cc = S.data.counties[row[4]], ck = `${kind}|${row[4]}`;
           let cols = S.lbCache.get(ck);
           if (!cols) S.lbCache.set(ck, cols = lightColors(S.usa, kind, cc.state, cc.id));
           const def = LIGHT_PATTERNS[pat] || LIGHT_PATTERNS[LIGHT_PATTERN_IDS[h % LIGHT_PATTERN_IDS.length]];
-          let total = 0; for (const s of def.steps) total += s[1];
+          let total = 0; for (const st of def.steps) total += st[1];
           let t = (now + h * 37) % total, ci = -1;
-          for (const s of def.steps) { if (t < s[1]) { ci = s[0]; break; } t -= s[1]; }
-          if (ci >= 0) {
-            fill = cols[ci % cols.length];
-            ctx.globalAlpha = 0.3; ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(p[0], p[1], r * 2.6, 0, 6.2832); ctx.fill(); ctx.globalAlpha = 1;
-          } else fill = '#2a3144';
+          for (const st of def.steps) { if (t < st[1]) { ci = st[0]; break; } t -= st[1]; }
+          fill = ci >= 0 ? cols[ci % cols.length] : '#2a3144';
         }
-        ctx.fillStyle = fill;
-        ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 6.2832); ctx.fill();
-        ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.stroke();
-        if (withLabel && row[2]) labels.push([p[0], p[1] - r - 3, row[2]]);
+        (groups.get(fill) || groups.set(fill, []).get(fill)).push(p);
+        if (wantLabels && withLabel && row[2]) labels.push([p[0], p[1] - r - 3, row[2]]);
+      }
+      const crowded = bar && stride > 1 || [...groups.values()].reduce((n, g) => n + g.length, 0) > 400;
+      for (const [fill, g] of groups) {
+        if (bar && !crowded && fill !== '#2a3144') { // glow
+          ctx.globalAlpha = 0.28; ctx.fillStyle = fill; ctx.beginPath();
+          for (const p of g) { ctx.moveTo(p[0] + r * 2.4, p[1]); ctx.arc(p[0], p[1], r * 2.4, 0, 6.2832); }
+          ctx.fill(); ctx.globalAlpha = 1;
+        }
+        ctx.fillStyle = fill; ctx.beginPath();
+        for (const p of g) { ctx.moveTo(p[0] + r, p[1]); ctx.arc(p[0], p[1], r, 0, 6.2832); }
+        ctx.fill();
+        if (!crowded) { ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.stroke(); }
       }
     }
     // Labels go in priority order (the order of the layers); one that would overlap a placed label is dropped.
-    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.font = '500 11px "IBM Plex Sans", sans-serif';
-    const grid = new Map(), G = 64;
-    for (const [x, y, text] of labels) {
-      const w = ctx.measureText(text).width + 6, rx = x - w / 2, ry = y - 13;
-      let clash = false;
-      for (let gx = Math.floor(rx / G); gx <= Math.floor((rx + w) / G) && !clash; gx++) for (let gy = Math.floor(ry / G); gy <= Math.floor((ry + 14) / G) && !clash; gy++) {
-        for (const r of grid.get(`${gx},${gy}`) || []) if (rx < r[0] + r[2] && rx + w > r[0] && ry < r[1] + r[3] && ry + 14 > r[1]) { clash = true; break; }
+    if (wantLabels) {
+      const placed = [], grid = new Map(), G = 64;
+      ctx.font = '500 11px "IBM Plex Sans", sans-serif';
+      for (const [x, y, text] of labels) {
+        if (placed.length >= 600) break;
+        const w = ctx.measureText(text).width + 6, rx = x - w / 2, ry = y - 13;
+        let clash = false;
+        for (let gx = Math.floor(rx / G); gx <= Math.floor((rx + w) / G) && !clash; gx++) for (let gy = Math.floor(ry / G); gy <= Math.floor((ry + 14) / G) && !clash; gy++) {
+          for (const q of grid.get(`${gx},${gy}`) || []) if (rx < q[0] + q[2] && rx + w > q[0] && ry < q[1] + q[3] && ry + 14 > q[1]) { clash = true; break; }
+        }
+        if (clash) continue;
+        const rect = [rx, ry, w, 14];
+        for (let gx = Math.floor(rx / G); gx <= Math.floor((rx + w) / G); gx++) for (let gy = Math.floor(ry / G); gy <= Math.floor((ry + 14) / G); gy++) { const k2 = `${gx},${gy}`; (grid.get(k2) || grid.set(k2, []).get(k2)).push(rect); }
+        placed.push([rx, ry, w, x, y, text]);
       }
-      if (clash) continue;
-      const rect = [rx, ry, w, 14];
-      for (let gx = Math.floor(rx / G); gx <= Math.floor((rx + w) / G); gx++) for (let gy = Math.floor(ry / G); gy <= Math.floor((ry + 14) / G); gy++) { const k2 = `${gx},${gy}`; (grid.get(k2) || grid.set(k2, []).get(k2)).push(rect); }
+      S.labelKey = layout; S.labelDraw = placed;
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.font = '500 11px "IBM Plex Sans", sans-serif';
+    for (const [rx, ry, w, x, y, text] of S.labelDraw || []) {
       ctx.fillStyle = 'rgba(6,16,31,.78)'; ctx.fillRect(rx, ry, w, 14);
       ctx.fillStyle = '#eef2fa'; ctx.fillText(text, x, y);
     }
@@ -188,10 +243,12 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
     loadUsa().then(d => { if (dead) return; st.current.data = d; redraw(); });
     const c = cv.current, ro = new ResizeObserver(() => {
       const r = c.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
-      st.current.w = r.width; st.current.h = r.height; c.width = Math.round(r.width * dpr); c.height = Math.round(r.height * dpr); redraw();
+      st.current.w = r.width; st.current.h = r.height; st.current.baseKey = null;
+      for (const el of [c, ov.current]) { el.width = Math.round(r.width * dpr); el.height = Math.round(r.height * dpr); }
+      redraw();
     });
     ro.observe(c);
-    return () => { dead = true; ro.disconnect(); cancelAnimationFrame(st.current.raf); };
+    return () => { dead = true; ro.disconnect(); cancelAnimationFrame(st.current.raf); clearTimeout(st.current.raf); };
   }, []);
   useEffect(() => { st.current.want = { ...USA_VIEW, ...view }; if (!st.current.data) return; redraw(); }, [view?.lon, view?.lat, view?.k]);
   useEffect(redraw, [Object.entries(usa.layers).join(), Object.entries(usa.lightbars || {}).join(), usa.lightPattern, JSON.stringify(usa.lightColors || {}), (usa.highlight || []).join(',')]);
@@ -235,5 +292,5 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
     return () => { c.removeEventListener('pointerdown', down); c.removeEventListener('pointermove', move); c.removeEventListener('pointerup', up); c.removeEventListener('wheel', wheel); };
   }, [interactive]);
 
-  return html`<canvas ref=${cv} class=${cls('us-canvas', className, interactive && 'interactive')}></canvas>`;
+  return html`<div class="us-wrap"><canvas ref=${cv} class=${cls('us-canvas', className, interactive && 'interactive')}></canvas><canvas ref=${ov} class="us-canvas us-over"></canvas></div>`;
 }

@@ -3,7 +3,7 @@ import { clamp } from './core.js';
 
 const err = error => ({ ok: false, error });
 const ok = (r = {}) => ({ ok: true, ...r });
-export const USA_LAYERS = ['states', 'counties', 'highways', 'labels', 'military', 'hospital', 'police', 'fire', 'ambulance', 'prison', 'power'];
+export const USA_LAYERS = ['states', 'counties', 'cities', 'highways', 'labels', 'military', 'hospital', 'police', 'fire', 'ambulance', 'prison', 'power'];
 // The dot layers: what each one shows, its colour, the zoom at which its dots appear and the zoom at which they carry a label.
 export const USA_DOTS = {
   military: { name: 'Military sites', color: '#7fbf6a', dot: 1, label: 3.5 },
@@ -62,7 +62,7 @@ export function createUsaFields(s) {
     title: 'The United States', subtitle: 'Governors in session',
     accent: '#4aa8ff',
     view: { ...USA_VIEW },
-    layers: { states: true, counties: true, highways: true, labels: true, military: true, hospital: true, police: false, fire: false, ambulance: false, prison: false, power: false },
+    layers: { states: true, counties: true, cities: true, highways: true, labels: true, military: true, hospital: true, police: false, fire: false, ambulance: false, prison: false, power: false },
     lightbars: { police: false, fire: false, ambulance: false }, lightPattern: 'mixed', lightColors: {},
     highlight: [], // state postal codes marked on the stage
     note: '',

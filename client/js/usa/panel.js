@@ -5,7 +5,7 @@ import { DMDrawer, useUnread } from '../views/dm.js';
 import { UsMap, loadUsa, viewFor } from './map.js';
 import { USA_VIEW, USA_DOTS, LIGHT_SERVICES, LIGHT_PALETTE, LIGHT_PATTERNS, lightColors } from '/shared/engine/usa.js';
 
-const LAYERS = [['states', 'State borders'], ['counties', 'County borders'], ['highways', 'Highways'], ['labels', 'Names']];
+const LAYERS = [['states', 'State borders'], ['counties', 'County borders'], ['cities', 'City borders'], ['highways', 'Highways'], ['labels', 'Names']];
 
 export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
   const u = state.usa, kronos = user.role === 'kronos';
