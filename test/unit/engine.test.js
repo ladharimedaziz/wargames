@@ -824,3 +824,20 @@ test('the US stage camera is separate from the Zeus map', async () => {
   assert.ok(z({ type: 'usaSetView', lon: -87.6, lat: 41.9, k: 8 }).ok && s.usa.stageAuto === false, 'showing a view holds it on the stage');
   assert.ok(z({ type: 'usaStageAuto', on: true }).ok && s.usa.stageAuto === true);
 });
+
+test('vehicles use a road only when it pays, and never overshoot a stop', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { loadRoads, route } = await import('../../shared/engine/usa-route.js');
+  const { glidePos } = await import('../../shared/engine/usa-sim.js');
+  loadRoads(JSON.parse(readFileSync(new URL('../../client/data/us-roads.json', import.meta.url), 'utf8')));
+  assert.equal(route([-100, 35.0], [-100, 35.05]), null, 'a short hop goes straight');
+  assert.equal(route([-100, 35.0], [-100.2, 35.1]), null, 'so does a trip a road would not shorten');
+  assert.ok(route([-87.63, 41.88], [-84.39, 33.75]).length > 20, 'a long trip takes the interstate');
+  // Gliding past the goal is capped at the goal.
+  const u = { lon: -100, lat: 35, spd: 1, order: { type: 'move', to: [-100, 35.009] } };
+  const [x, y] = glidePos(u, {}, 60);
+  assert.ok(Math.abs(y - 35.009) < 1e-9 && x === -100, 'stops at the target');
+  const p = { lon: -100, lat: 35, spd: 1, order: { type: 'move', to: [-99, 35], path: [[-100, 35.01], [-100, 35.02]], pi: 0 } };
+  const [, py] = glidePos(p, {}, 5);
+  assert.ok(py > 35.03 === false && py > 35.01, 'turns a corner along its path, not past it');
+});
