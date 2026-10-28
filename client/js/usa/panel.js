@@ -3,7 +3,7 @@ import { html, useState, useEffect, useRef, run, useMemo, cls } from '../lib.js'
 import { TimerControls } from '../world/display-tab.js';
 import { DMDrawer, useUnread } from '../views/dm.js';
 import { UsMap, loadUsa, viewFor } from './map.js';
-import { USA_VIEW } from '/shared/engine/usa.js';
+import { USA_VIEW, USA_DOTS } from '/shared/engine/usa.js';
 
 const LAYERS = [['states', 'State borders'], ['counties', 'County borders'], ['highways', 'Highways'], ['labels', 'Names']];
 
@@ -53,6 +53,9 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
         <aside class="us-side">
           <div class="card"><div class="card-h"><h3>Map</h3></div><div class="card-b col">
             ${LAYERS.map(([k, l]) => html`<label class="row"><input type="checkbox" checked=${u.layers[k]} onChange=${() => act({ type: 'usaLayer', layer: k })} /> ${l}</label>`)}
+            <hr class="sep" />
+            <div class="sub-h">Dots</div>
+            ${Object.entries(USA_DOTS).map(([k, d]) => html`<label class="row"><input type="checkbox" checked=${!!u.layers[k]} onChange=${() => act({ type: 'usaLayer', layer: k })} /><i class="us-sw" style=${`background:${d.color}`}></i> ${d.name}</label>`)}
             <hr class="sep" />
             <label class="row"><input type="checkbox" checked=${live} onChange=${e => { setLive(e.target.checked); if (e.target.checked) send(view); }} /> Live to stage</label>
             <div class="dim small">Drag to move, scroll to zoom, click a state to zoom to it.</div>

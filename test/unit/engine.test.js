@@ -580,6 +580,7 @@ test('a US committee steers its map and refuses world actions', async () => {
   assert.equal(z({ type: 'usaSetView', lon: 'x', lat: 1, k: 1 }).ok, false);
   assert.ok(z({ type: 'usaLayer', layer: 'counties', on: false }).ok && s.usa.layers.counties === false);
   assert.equal(z({ type: 'usaLayer', layer: 'nope' }).ok, false);
+  assert.ok(z({ type: 'usaLayer', layer: 'police', on: true }).ok && s.usa.layers.police === true);
   assert.ok(z({ type: 'usaHighlight', states: ['tx', 'CA', 'texas', 'TX'] }).ok && s.usa.highlight.join() === 'TX,CA');
   assert.equal(z({ type: 'forceWar', a: '643', b: '804' }).ok, false, 'world actions are not available here');
 });
