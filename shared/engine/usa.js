@@ -4,10 +4,11 @@ import { STATES, FEDERAL, STATE_INFO } from '../data/usa-units.js';
 import { CROSSINGS } from '../data/usa-border.js';
 import { UNIT_TYPES } from '../data/usa-types.js';
 import { route as roadRoute } from './usa-route.js';
+import { ABILITIES } from '../data/usa-abilities.js';
 import { AIRBASES, AIR_RADIUS } from '../data/usa-airbases.js';
 import { INCIDENTS } from '../data/usa-incidents.js';
 import { getGov, govTick, govLog, queue, applyEffect, officeState, OFFICE_BY_ID, GOV_EFFECTS } from './usa-gov.js';
-import { distKm, baseWorks, nearestBase, TAKEOFF, usaTick, SIM_SPEEDS, ROES, validSide, effSide, typeOf, inBox, isHostile, hostileKeyOf, sideName } from './usa-sim.js';
+import { distKm, baseWorks, nearestBase, TAKEOFF, usaTick, SIM_SPEEDS, ROES, validSide, effSide, typeOf, menNow, inBox, isHostile, hostileKeyOf, sideName } from './usa-sim.js';
 
 const err = error => ({ ok: false, error });
 const ok = (r = {}) => ({ ok: true, ...r });
@@ -132,7 +133,7 @@ export function migrateUsa(s) {
   const u = s.usa; if (!u) return s;
   u.layers = { ...DEFAULT_LAYERS, ...Object.fromEntries(Object.entries(u.layers || {}).filter(([k]) => USA_LAYERS.includes(k))) };
   u.mods ||= {}; u.custom ||= {}; u.states ||= {}; u.border ||= { CAN: 'open', MEX: 'open' }; u.crossings ||= {};
-  u.sim ||= { running: false, speed: 60, t: 0, at: 0 }; u.hostile ||= []; u.events ||= [];
+  u.sim ||= { running: false, speed: 60, t: 0, at: 0 }; u.hostile ||= []; u.events ||= []; u.fx ||= [];
   for (const c of Object.values(u.custom)) { c.type ||= 'militia_sq'; c.side ||= 'mil'; c.roe ||= 'defend'; c.home ||= [c.lon, c.lat]; }
   getGov(u); u.stageAuto ??= true;
   u.lightbars ||= { police: false, fire: false, ambulance: false }; u.lightPattern ||= 'mixed'; u.lightColors ||= {};
@@ -148,7 +149,7 @@ export function createUsaFields(s) {
     accent: '#4aa8ff',
     view: { ...USA_VIEW },
     layers: { ...DEFAULT_LAYERS },
-    mods: {}, custom: {}, states: {}, border: { CAN: 'open', MEX: 'open' }, crossings: {}, sim: { running: false, speed: 60, t: 0, at: 0 }, hostile: [], events: [],
+    mods: {}, custom: {}, states: {}, border: { CAN: 'open', MEX: 'open' }, crossings: {}, sim: { running: false, speed: 60, t: 0, at: 0 }, hostile: [], events: [], fx: [],
     lightbars: { police: false, fire: false, ambulance: false }, lightPattern: 'mixed', lightColors: {},
     stageAuto: true, // the stage frames the action by itself until the Zeus shows a view on it
     highlight: [], // state postal codes marked on the stage
@@ -252,7 +253,7 @@ export const usaActions = {
       if (a.queue && next && cur && (cur.type === 'move' || cur.type === 'amove') && next.type !== 'attack') {
         if ((cur.q?.length || 0) >= 8) return;
         putUnit(s.usa, id, { order: { ...cur, q: [...(cur.q || []), next] } });
-      } else putUnit(s.usa, id, { order: next, mv: null, spd: null, routed: false });
+      } else putUnit(s.usa, id, { order: next, mv: null, spd: null, routed: false, ...(next ? { fort: false } : {}) });
       // A parked aircraft taxis and lifts off before it starts the order.
       if (next && u.air === 'parked') putUnit(s.usa, id, { air: 'takeoff', tk: Math.round(s.usa.sim.t) + TAKEOFF });
       if (o.type === 'attack') addHostile(s.usa, effSide(u), effSide(target));
@@ -260,6 +261,46 @@ export const usaActions = {
     });
     if (!n) return err(refused || 'None of those units can take that order.');
     return ok({ count: n });
+  } },
+  // A unit's special ability (barrage, air strike, airlift, medevac, dig in, disperse a crowd, forced march). Each has a rest time.
+  usaAbility: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const units = getUnits(s.usa), u = units[a.id], ab = ABILITIES[a.ability];
+    if (!u || u.destroyed || u.hidden || !ab || !ab.types.includes(u.type)) return err('That unit cannot do that.');
+    const ty = typeOf(u), t = Math.round(s.usa.sim.t), wait = (u.cd?.[a.ability] || 0) - t;
+    if (wait > 0) return err(`${ab.name} is not ready for another ${Math.ceil(wait / 60)} minutes of game time.`);
+    if (u.carry) return err('It is being carried.');
+    if (ty.domain === 'air' && u.base && u.air !== 'flying') return err('Launch the aircraft first.');
+    let to = null;
+    if (ab.target === 'point') {
+      to = Array.isArray(a.to) ? [Number(a.to[0]), Number(a.to[1])] : null;
+      if (!(to && inBox(to[0], to[1]))) return err('Pick a place on the map.');
+      const d = distKm(u, { lon: to[0], lat: to[1] });
+      if (ab.reach === 'range' && d > ty.range) return err(`Out of range: it reaches ${ty.range} km.`);
+      if (typeof ab.reach === 'number' && d > ab.reach) return err(`Too far: it reaches ${ab.reach} km.`);
+      const b = u.base && units[u.base];
+      if (ab.reach === 'radius' && b && distKm(b, { lon: to[0], lat: to[1] }) > (AIR_RADIUS[u.type] ?? 1200)) return err('That is beyond the aircraft\'s combat radius from its base.');
+    }
+    const dur = Math.max(20, Math.round(3 * s.usa.sim.speed)), fx = s.usa.fx;
+    const mk = (k, extra) => { fx.push({ k, by: u.id, side: effSide(u), t0: t, at: t + dur, ...extra }); if (fx.length > 60) fx.shift(); };
+    if (a.ability === 'barrage' || a.ability === 'airstrike' || a.ability === 'carpet') mk(a.ability, { from: [u.lon, u.lat], to, r: ab.radius, dmg: ab.dmg });
+    else if (a.ability === 'disperse') mk('disperse', { from: [u.lon, u.lat], to, r: ab.radius });
+    else if (a.ability === 'medevac') mk('medevac', { from: [u.lon, u.lat], to: [u.lon, u.lat], r: ab.radius, heal: ab.heal });
+    else if (a.ability === 'fortify') { putUnit(s.usa, u.id, { fort: !u.fort, order: null, mv: null, spd: null }); s.usa.events.push({ t, text: `${u.short || u.name} ${u.fort ? 'leaves its positions' : 'digs in'}.`, id: u.id }); return ok(); }
+    else if (a.ability === 'forcedmarch') putUnit(s.usa, u.id, { boost: t + ab.dur });
+    else if (a.ability === 'airlift') {
+      const cap = u.type === 'c130' ? 4500 : 800;
+      const cargo = Object.values(units).filter(x => x.id !== u.id && !x.destroyed && !x.hidden && !x.carry && effSide(x) === effSide(u) && typeOf(x).domain !== 'air' && typeOf(x).domain !== 'sea' && typeOf(x).speed > 0 && menNow(x) <= cap && distKm(u, x) <= 12)
+        .sort((p, q) => distKm(u, p) - distKm(u, q))[0];
+      if (!cargo) return err('There is no friendly ground unit within 12 km small enough to lift.');
+      putUnit(s.usa, cargo.id, { carry: u.id, order: null, mv: null, spd: null });
+      putUnit(s.usa, u.id, { order: { type: 'move', to: [+to[0].toFixed(3), +to[1].toFixed(3)], lift: true }, mv: null, spd: null, ...(u.air === 'parked' ? { air: 'takeoff', tk: t + TAKEOFF } : {}) });
+      s.usa.events.push({ t, text: `${u.short || u.name} lifts ${cargo.short || cargo.name}.`, id: u.id });
+    }
+    putUnit(s.usa, u.id, { cd: { ...(u.cd || {}), [a.ability]: t + (a.ability === 'forcedmarch' ? ab.dur + ab.cd : ab.cd) } });
+    if (!['airlift', 'forcedmarch'].includes(a.ability)) s.usa.events.push({ t, text: `${u.short || u.name}: ${ab.name}.`, id: u.id });
+    if (a.ability === 'forcedmarch') s.usa.events.push({ t, text: `${u.short || u.name} begins a forced march.`, id: u.id });
+    return ok();
   } },
   // Scramble: every aircraft parked at a base lifts off and flies a combat air patrol over it. Recall: every one in the air returns.
   usaScramble: { perm: 'zeus', run(s, a) {

@@ -892,3 +892,38 @@ test('aircraft launch from air bases, stay in range, land again and die with a b
   run(200, 300);
   assert.ok(U()['ab-langley'].destroyed || U()['ab-langley'].strength < 5, 'the base was hit');
 });
+
+test('units use special abilities with rest times', async () => {
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const { applyAction } = await import('../../shared/engine/reducer.js');
+  const { tickUsa, getUnits } = await import('../../shared/engine/usa.js');
+  const s = createUsaState({ id: 'u', name: 'US', seed: 11 });
+  const z = a => applyAction(s, a, { role: 'zeus', user: 'z', now: 1_000_000 });
+  const U = () => getUnits(s.usa), run = n => { z({ type: 'usaSim', running: true, speed: 60 }); s.usa.sim.at = s.usa.sim.at || 1_000_000; for (let i = 0; i < n; i++) tickUsa(s, s.usa.sim.at + 1000); };
+  const gun = z({ type: 'usaSpawn', utype: 'art_bn', side: 'fed', name: 'Guns', lon: -100, lat: 35 }).id;
+  const foe = z({ type: 'usaSpawn', utype: 'militia_co', side: 'mil', name: 'Foe', lon: -100, lat: 35.1 }).id;
+  assert.equal(z({ type: 'usaAbility', id: gun, ability: 'airstrike', to: [-100, 35.1] }).ok, false, 'a gun cannot call an air strike');
+  assert.equal(z({ type: 'usaAbility', id: gun, ability: 'barrage', to: [-100, 37] }).ok, false, 'out of range');
+  assert.ok(z({ type: 'usaAbility', id: gun, ability: 'barrage', to: [-100, 35.1] }).ok);
+  assert.equal(z({ type: 'usaAbility', id: gun, ability: 'barrage', to: [-100, 35.1] }).ok, false, 'it must rest');
+  run(6);
+  assert.ok(U()[foe].strength < 100, 'the shells hurt the militia');
+  assert.ok(s.usa.hostile.includes('fed|mil'), 'which puts the sides at war');
+  // medevac heals friends
+  const med = z({ type: 'usaSpawn', utype: 'ems', side: 'fed', name: 'Medics', lon: -100, lat: 35.0 }).id;
+  s.usa.mods[gun] = { ...(s.usa.mods[gun] || {}), strength: 50 };
+  assert.ok(z({ type: 'usaAbility', id: med, ability: 'medevac' }).ok);
+  run(6);
+  assert.ok(U()[gun].strength > 50, 'the artillery was patched up');
+  // dig in and forced march
+  const inf = z({ type: 'usaSpawn', utype: 'inf_bn', side: 'fed', name: 'Inf', lon: -100.5, lat: 35 }).id;
+  assert.ok(z({ type: 'usaAbility', id: inf, ability: 'fortify' }).ok && U()[inf].fort === true);
+  assert.ok(z({ type: 'usaOrder', ids: [inf], order: { type: 'move', to: [-100.4, 35] } }).ok && U()[inf].fort === false, 'any order ends it');
+  assert.ok(z({ type: 'usaAbility', id: inf, ability: 'forcedmarch' }).ok && U()[inf].boost > s.usa.sim.t);
+  // airlift
+  const heli = z({ type: 'usaSpawn', utype: 'uh60', side: 'fed', name: 'Black Hawks', lon: -99.0, lat: 36 }).id, grunt = z({ type: 'usaSpawn', utype: 'inf_co', side: 'fed', name: 'Grunts', lon: -99.0, lat: 36.02 }).id;
+  assert.ok(z({ type: 'usaAbility', id: heli, ability: 'airlift', to: [-98.5, 36.2] }).ok && U()[grunt].carry === heli);
+  run(40);
+  assert.equal(U()[grunt].carry, null, 'set down');
+  assert.ok(Math.abs(U()[grunt].lon + 98.5) < 0.1, 'at the landing point');
+});

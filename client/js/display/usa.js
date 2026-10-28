@@ -3,6 +3,7 @@
 // stage can scroll or drag to look around; Escape returns to the stage's own framing.
 import { html, cls, useState, useEffect, useMemo } from '../lib.js';
 import { UsMap, loadUsa, viewForBox } from '../usa/map.js';
+import { useGameClock } from '../usa/fx.js';
 import { getUnits } from '/shared/engine/usa.js';
 import { simClock } from '/shared/engine/usa-sim.js';
 import { USA_VIEW } from '/shared/engine/usa.js';
@@ -23,7 +24,7 @@ function hotBox(u) {
 }
 
 export function UsaDisplay({ state }) {
-  const u = state.usa, [data, setData] = useState(null), [local, setLocal] = useState(null), [auto, setAuto] = useState(null);
+  const u = state.usa, clock = useGameClock(state.usa.sim), [data, setData] = useState(null), [local, setLocal] = useState(null), [auto, setAuto] = useState(null);
   useEffect(() => { loadUsa().then(setData); }, []);
   useEffect(() => { const k = e => { if (e.key === 'Escape') setLocal(null); }; window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k); }, []);
   // The frame is worked out every few seconds, so units drifting a little do not make the camera hunt.
@@ -38,7 +39,7 @@ export function UsaDisplay({ state }) {
   return html`<div class="us-stage">
     <${UsMap} usa=${u} view=${view} interactive=${true} onView=${setLocal} />
     <div class="us-head"><div class="us-title">${u.title}</div><div class="us-sub">${u.subtitle}</div></div>
-    ${u.sim?.t > 0 && html`<div class="us-clock">${simClock(u.sim.t)}</div>`}
+    ${u.sim?.t > 0 && html`<div class="us-clock">${simClock(clock)}</div>`}
     ${u.note && html`<div class="us-note">${u.note}</div>`}
     ${Object.values(u.lightbars || {}).some(Boolean) && html`<div class="us-lights">EMERGENCY LIGHTS ON</div>`}
     ${local && html`<div class="us-note" style="bottom:12px;top:auto">Press Esc to go back to the stage view</div>`}

@@ -35,7 +35,7 @@ export function simClock(seconds) {
 const jitter = (n, a, b) => { let h = (n * 2654435761 + a * 40503 + b * 9973) >>> 0; h ^= h >>> 15; h = Math.imul(h, 2246822519) >>> 0; return 0.8 + 0.4 * ((h >>> 8) % 1000) / 1000; };
 const hash = s => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return Math.abs(h); };
 export const OFFROAD = 0.6; // share of road speed a vehicle makes across country
-const DYN = ['lon', 'lat', 'strength', 'order', 'mv', 'spd', 'air', 'tk', 'base', 'eng', 'routed', 'destroyed', 'hitAt'];
+const DYN = ['lon', 'lat', 'strength', 'order', 'mv', 'spd', 'air', 'tk', 'base', 'cd', 'fort', 'boost', 'carry', 'eng', 'routed', 'destroyed', 'hitAt'];
 const domainKey = ty => (ty.domain === 'air' ? 'air' : ty.domain === 'sea' ? 'sea' : 'ground');
 
 function log(usa, text, extra = {}) {
@@ -53,6 +53,11 @@ function step(w, tx, ty, km) {
 }
 
 // A unit that has reached the end of a move goes on to the next queued order, or stops.
+function addWar(usa, a, b) {
+  if (a === b || isHostile(usa, a, b)) return;
+  usa.hostile.push(hostileKeyOf(a, b));
+  log(usa, `${sideName(a)} and ${sideName(b)} are now at war.`, { kind: 'war' });
+}
 // A base that can still launch and recover aircraft.
 export const baseWorks = b => !!b && b.type === 'airbase' && !b.destroyed && (b.strength ?? 100) >= 20;
 // The nearest working base of the aircraft's own side, for when its own is gone.
@@ -62,7 +67,8 @@ export function nearestBase(w, W) {
   return best;
 }
 export const TAKEOFF = 120, LANDING = 180; // game seconds
-function arrive(usa, w, o, W) {
+function arrive(usa, w, o, W, dirty) {
+  if (o.lift) for (const x of Object.values(W)) if (x.carry === w.id) { x.carry = null; x.lon = w.lon; x.lat = w.lat; dirty(x.id); log(usa, `${x.short || x.name} set down by ${w.short || w.name}.`, { id: x.id }); }
   if (o.type === 'rtb') {
     // Touch down: the aircraft rolls out for a few minutes and is parked again. A wrecked base sends it to the nearest good one.
     let b = W[w.base]; if (!baseWorks(b)) { b = nearestBase(w, W); if (b) { w.base = b.id; w.lon = b.lon; w.lat = b.lat; } }
@@ -100,12 +106,18 @@ export function usaTick(s, now, getUnits, put, home) {
   // Movement
   for (const w of Object.values(W)) {
     if (w.destroyed) continue;
+    if (w.carry) { // carried by a transport: rides along, and is set down if the transport is lost
+      const c = W[w.carry];
+      if (!c || c.destroyed) { w.carry = null; w.strength = Math.max(1, w.strength - 50); dirty(w.id); log(usa, `${w.short || w.name} was lost with its transport.`, { id: w.id, kind: 'kill' }); }
+      else { if (w.lon !== c.lon || w.lat !== c.lat) { w.lon = c.lon; w.lat = c.lat; dirty(w.id); } w.mv = null; w.spd = null; continue; }
+    }
+    if (w.fort) { if (w.order) w.order = null; continue; }
     if (w.air === 'parked' || w.air === 'takeoff' || w.air === 'landing') { if (w.mv) { w.mv = null; w.spd = null; dirty(w.id); } continue; }
     const ty = typeOf(w), o = w.order;
     if (!o || !ty.speed) { if (w.mv) { w.mv = null; dirty(w.id); } continue; }
     // Wheeled and tracked units are slower off the road, so a road only pays on a longer trip (see usa-route.js).
     const onRoad = !!(o.path?.length && o.pi > 0 && o.pi < o.path.length - 1);
-    const km = ty.speed * (w.strength < 30 ? 0.6 : 1) * (ty.domain === 'ground' && ty.speed >= 30 && !onRoad ? OFFROAD : 1) * dt / 3600;
+    const km = ty.speed * (w.strength < 30 ? 0.6 : 1) * (ty.domain === 'ground' && ty.speed >= 30 && !onRoad ? OFFROAD : 1) * (w.boost && sim.t < w.boost ? 1.6 : 1) * dt / 3600;
     let tx = null, tyy = null, stopAt = 0, finish = null;
     // Along a road route the unit runs through its waypoints, carrying the rest of the tick's distance from one to the next.
     if ((o.type === 'move' || o.type === 'amove' || o.type === 'return') && o.path?.length) {
@@ -118,7 +130,7 @@ export function usaTick(s, now, getUnits, put, home) {
         else { step(w, px, py, rem); rem = 0; }
       }
       dirty(w.id);
-      if (arrived) { arrive(usa, w, o, W); continue; }
+      if (arrived) { arrive(usa, w, o, W, dirty); continue; }
       [tx, tyy] = o.path[o.pi];
       const d = Math.hypot((tx - w.lon) * KM_LON(w.lat), (tyy - w.lat) * KM_LAT) || 1, perReal = km / real;
       w.mv = [+((tx - w.lon) / d * perReal).toFixed(6), +((tyy - w.lat) / d * perReal).toFixed(6)]; w.spd = +perReal.toFixed(5);
@@ -137,13 +149,46 @@ export function usaTick(s, now, getUnits, put, home) {
     const left = step(w, tx, tyy, Math.min(km, before - stopAt));
     dirty(w.id);
     if (finish && left <= 0.001) {
-      if (finish === 'arrive') { arrive(usa, w, o, W); continue; }
+      if (finish === 'arrive') { arrive(usa, w, o, W, dirty); continue; }
       o.toB = !o.toB;
     }
     // Degrees per real second, for clients to glide the dot between ticks.
     const d = Math.hypot((tx - w.lon) * KM_LON(w.lat), (tyy - w.lat) * KM_LAT) || 1, perReal = km / real;
     w.mv = [+((tx - w.lon) * KM_LON(w.lat) / d * perReal / KM_LON(w.lat)).toFixed(6), +((tyy - w.lat) * KM_LAT / d * perReal / KM_LAT).toFixed(6)]; w.spd = +perReal.toFixed(5);
   }
+
+  // Special abilities that are in flight land when their time comes.
+  const fxDamage = new Map(); let fxChanged = false;
+  for (const f of usa.fx || []) {
+    if (f.done || sim.t < f.at) continue;
+    f.done = true; fxChanged = true;
+    const here = x => Math.hypot((x.lon - f.to[0]) * KM_LON(f.to[1]), (x.lat - f.to[1]) * KM_LAT);
+    const inRing = Object.values(W).filter(x => !x.destroyed && x.air !== 'parked' && !x.carry && here(x) <= f.r);
+    if (f.k === 'medevac') {
+      let n = 0; for (const x of inRing) if (effSide(x) === f.side && x.strength < 100) { x.strength = Math.min(100, x.strength + f.heal); dirty(x.id); n++; }
+      log(usa, `${W[f.by]?.short || 'A medical unit'} treats ${n} unit${n === 1 ? '' : 's'}.`, { id: f.by });
+    } else if (f.k === 'disperse') {
+      let n = 0;
+      for (const x of inRing) if (x.side === 'civil' || typeOf(x).group === 'Civilians') {
+        x.strength = Math.max(5, x.strength - 40); x.hitAt = sim.t; n++;
+        const dx = x.lon - f.to[0], dy = x.lat - f.to[1], d = Math.hypot(dx, dy) || 1;
+        x.order = { type: 'move', to: [+(x.lon + dx / d * 0.2).toFixed(3), +(x.lat + dy / d * 0.2).toFixed(3)] }; dirty(x.id);
+      }
+      log(usa, `${W[f.by]?.short || 'Police'} disperse ${n} crowd${n === 1 ? '' : 's'}.`, { id: f.by });
+    } else {
+      // Shells and bombs: everything of another side inside the ring takes damage, strongest at the centre. This puts the sides at war.
+      let n = 0;
+      for (const x of inRing) {
+        const ty = typeOf(x), sd = effSide(x);
+        if (sd === f.side || (ty.domain === 'air' && x.air !== 'landing' && x.air !== 'takeoff') || ty.domain === 'sea') continue;
+        addWar(usa, f.side, sd);
+        fxDamage.set(x.id, (fxDamage.get(x.id) || 0) + f.dmg * (1 - 0.5 * here(x) / f.r) * Math.min(1.2, 120 / (ty.def + 20)));
+        x.hitAt = sim.t; n++;
+      }
+      log(usa, `${W[f.by]?.short || 'Artillery'} ${f.k === 'barrage' ? 'shells' : 'strikes'} a target area: ${n} unit${n === 1 ? '' : 's'} hit.`, { id: f.by, kind: n ? 'fight' : undefined });
+    }
+  }
+  if (usa.fx) usa.fx = usa.fx.filter(f => !f.done || sim.t < f.at + 8 * Math.max(1, sim.speed));
 
   // Engagement: every unit that may fire at a hostile unit in range does so at the same moment.
   const hostile = (usa.hostile || []).map(k => k.split('|'));
@@ -166,12 +211,13 @@ export function usaTick(s, now, getUnits, put, home) {
         for (const b of bySide.get(y) || []) { const d = distKm(a, b); if (d < bestD && canFire(a, b, d)) { best = b; bestD = d; } }
         if (!best) continue;
         const ta = typeOf(a), tb = typeOf(best), atk = ta.atk[domainKey(tb)];
-        const dmg = Math.min(50, 0.02 * dt * atk * (a.strength / 100) / Math.max(1, tb.def) * jitter(Math.floor(sim.t / 5), hash(a.id), hash(best.id)));
+        const dmg = Math.min(50, 0.02 * dt * atk * (a.strength / 100) / Math.max(1, tb.def * (best.fort ? 1.8 : 1)) * jitter(Math.floor(sim.t / 5), hash(a.id), hash(best.id)));
         firing.set(a.id, best.id);
         damage.set(best.id, (damage.get(best.id) || 0) + dmg);
       }
     }
   }
+  for (const [id, d] of fxDamage) damage.set(id, (damage.get(id) || 0) + d);
   // Bombs on a base also fall on the aircraft parked there.
   for (const [id, d] of [...damage]) if (W[id]?.type === 'airbase') for (const a of Object.values(W)) if (a.base === id && a.air === 'parked' && !a.destroyed) damage.set(a.id, (damage.get(a.id) || 0) + d * 0.6);
   for (const [id, dmg] of damage) {
@@ -198,7 +244,7 @@ export function usaTick(s, now, getUnits, put, home) {
     }
   }
   for (const id of touched) { const w = W[id], patch = {}; for (const k of DYN) patch[k] = w[k] ?? null; put(usa, id, patch); }
-  return touched.size > 0 || damage.size > 0;
+  return touched.size > 0 || damage.size > 0 || fxChanged;
 }
 
 // Where a moving unit is `secs` real seconds after the server last placed it, walking its own route at its own speed and stopping
