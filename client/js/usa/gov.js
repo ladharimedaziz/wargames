@@ -45,7 +45,7 @@ function OfficeEdit({ o, act }) {
 }
 
 // Sandbox for Zeus and Kronos: set off something at a state or a border crossing and watch the government deal with it.
-export function IncidentCard({ act }) {
+export function IncidentCard({ act, placing, setPlacing }) {
   const [kind, setKind] = useState('riot'), [place, setPlace] = useState('st:TX');
   const go = () => act(place.startsWith('st:') ? { type: 'usaIncident', kind, state: place.slice(3) } : { type: 'usaIncident', kind, crossing: place.slice(3) });
   return html`<div class="us-bside">
@@ -53,7 +53,8 @@ export function IncidentCard({ act }) {
     <select class="input sm" value=${place} onChange=${e => setPlace(e.target.value)}>
       <optgroup label="Border crossings">${CROSSING_LIST.map(c => html`<option value=${`cx:${c.id}`}>${c.name}</option>`)}</optgroup>
       <optgroup label="States">${STATES.map(r => html`<option value=${`st:${r[0]}`}>${r[1]}</option>`)}</optgroup></select>
-    <button class="btn sm danger" onClick=${go}>Set it off</button>
-    <div class="dim small">Drops units on the map, may put the state under alert or emergency, and the government reacts. Units made this way can be ordered, fought or deleted like any other.</div>
+    <div class="row wrap"><button class="btn sm danger" onClick=${go}>Set it off</button>
+      <button class=${cls('btn sm', placing?.incident === kind && 'on')} onClick=${() => setPlacing(placing?.incident === kind ? null : { incident: kind })}>${placing?.incident === kind ? 'Click the map…' : 'Click on the map'}</button></div>
+    <div class="dim small">Pick a place from the list or click anywhere on the map. Drops units on the map, may put the state under alert or emergency, and the government reacts. Units made this way can be ordered, fought or deleted like any other.</div>
   </div>`;
 }

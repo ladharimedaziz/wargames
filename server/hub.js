@@ -7,7 +7,10 @@ import { tensionLevel } from '../shared/engine/core.js';
 import { verifyToken, parseCookies, accounts, passwordFor, rotatePassword, setPassword, signOut, COMMITTEE_IDS } from './auth.js';
 import { readJSON, writeJSON } from './files.js';
 import { readFileSync } from 'node:fs';
+import { loadRoads } from '../shared/engine/usa-route.js';
 import { geoFor } from './store.js';
+// Vehicles in the US committee follow roads, so the server reads the road map once.
+try { loadRoads(JSON.parse(readFileSync(new URL('../client/data/us-roads.json', import.meta.url), 'utf8'))); } catch (e) { console.warn('No road map for routing:', e.message); }
 
 // The code version the browsers are told about: the git commit when there is one. When it changes after an
 // update, every open panel and stage display reloads itself to pick up the new code.

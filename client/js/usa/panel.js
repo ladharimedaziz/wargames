@@ -33,7 +33,7 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
   const jump = v => { setView(v); if (live) send(v); };
   const [marking, setMarking] = useState(false);
   const [tab, setTab] = useState('map'), [selState, setSelState] = useState(null), [selX, setSelX] = useState(null);
-  const [selIds, setSelIds] = useState([]), [placing, setPlacing] = useState(null); // placing: {id} teleports a unit, {spawn} makes one, {order} gives the picked units an order
+  const [selIds, setSelIds] = useState([]), [placing, setPlacing] = useState(null); // placing: {id} teleports a unit, {incident} sets one off where you click, {spawn} makes one, {order} gives the picked units an order
   const sel = selIds.length === 1 ? selIds[0] : null, setSel = id => setSelIds(id ? [id] : []);
   const units = useMemo(() => getUnits(u), [u.mods, u.custom]);
   const pickUnit = (id, add) => {
@@ -51,8 +51,14 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
     if (t && !selIds.includes(target)) act({ type: 'usaOrder', ids: selIds, order: { type: first && effSide(first) !== effSide(t) ? 'attack' : 'escort', target } });
     else if (!t) act({ type: 'usaOrder', ids: selIds, order: { type: 'move', to: [lon, lat] } });
   };
+  // Esc drops whatever is armed (a placement or an order) and clears the pick.
+  useEffect(() => {
+    const k = e => { if (e.key === 'Escape' && !/INPUT|SELECT|TEXTAREA/.test(e.target.tagName)) setPlacing(null); };
+    window.addEventListener('keydown', k); return () => window.removeEventListener('keydown', k);
+  }, []);
   const onPlace = (lon, lat) => {
     const p = placing; if (!p) return;
+    if (p.incident) { setPlacing(null); act({ type: 'usaIncident', kind: p.incident, lon, lat }); return; }
     if (p.order) { setPlacing(null); act({ type: 'usaOrder', ids: selIds, order: { type: p.order, to: [lon, lat] } }); return; }
     if (p.id) { setPlacing(null); act({ type: 'usaUnit', id: p.id, lon, lat }); return; }
     if (!p.keep) setPlacing(null);
@@ -117,7 +123,7 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
             : selIds.length > 1 ? html`<${GroupCard} ids=${selIds} units=${units} act=${act} placing=${placing} setPlacing=${setPlacing} close=${() => setSelIds([])} setSelIds=${setSelIds} />`
             : sel && units[sel] ? html`<${UnitCard} unit=${units[sel]} units=${units} act=${act} placing=${placing} setPlacing=${setPlacing} close=${() => setSel(null)} jump=${v => jump(v)} />`
             : selState ? html`<${StateInspector} u=${u} units=${units} code=${selState} data=${data} act=${act} setSel=${setSel} placing=${placing} close=${() => setSelState(null)} jump=${jump} />`
-            : html`<${NationOverview} u=${u} units=${units} act=${act} setSel=${setSel} setState=${setSelState} setCrossing=${setSelX} />`}
+            : html`<${NationOverview} u=${u} units=${units} act=${act} placing=${placing} setPlacing=${setPlacing} setSel=${setSel} setState=${setSelState} setCrossing=${setSelX} />`}
         </aside>
       </div>
       <${DMDrawer} conn=${conn} committee=${committee} open=${dmOpen} onClose=${() => setDmOpen(false)} kronos=${kronos} name=${state.name} />

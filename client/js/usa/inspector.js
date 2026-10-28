@@ -98,7 +98,7 @@ export function StateInspector({ u, units, code, data, act, setSel, close, jump 
 }
 
 // Nothing picked: the nation at a glance.
-export function NationOverview({ u, units, act, setSel, setState, setCrossing }) {
+export function NationOverview({ u, units, act, setSel, setState, setCrossing, placing, setPlacing }) {
   const govs = Object.values(units).filter(x => x.kind === 'governor');
   const parties = {}; for (const g of govs) parties[g.party || '?'] = (parties[g.party || '?'] || 0) + 1;
   const delegates = govs.filter(g => g.control === 'delegate');
@@ -118,7 +118,7 @@ export function NationOverview({ u, units, act, setSel, setState, setCrossing })
     <div class="sub-h">Conflicts</div>
     <${ConflictCard} u=${u} act=${act} />
     <div class="sub-h">Incidents</div>
-    <${IncidentCard} act=${act} />
+    <${IncidentCard} act=${act} placing=${placing} setPlacing=${setPlacing} />
     <div class="sub-h">Federal government</div>
     <${GovPanel} u=${u} act=${act} />
     <div class="sub-h">Latest events</div>

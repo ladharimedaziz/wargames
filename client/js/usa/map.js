@@ -296,7 +296,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
     for (const id of S.selSet) {
       const u = S.units?.[id], o = u?.order, from = posOf.get(id); if (!o || !from) continue;
       const colr = o.type === 'attack' ? '#ff5a4a' : o.type === 'patrol' ? '#4aa8ff' : o.type === 'escort' ? '#ffd166' : '#5fd08a';
-      const pts = o.type === 'patrol' ? [o.a, o.b] : o.target ? [posOf.get(o.target) || (S.units[o.target] && [S.units[o.target].lon, S.units[o.target].lat])] : [o.to];
+      const pts = o.path?.length ? o.path.slice(o.pi || 0) : o.type === 'patrol' ? [o.a, o.b] : o.target ? [posOf.get(o.target) || (S.units[o.target] && [S.units[o.target].lon, S.units[o.target].lat])] : [o.to];
       ctx.strokeStyle = colr; ctx.fillStyle = colr; ctx.lineWidth = 1.6; ctx.setLineDash([6, 5]); ctx.beginPath();
       const p0 = proj2(from); if (!p0) continue; ctx.moveTo(p0[0], p0[1]);
       for (const g of pts) { const q = g && proj2(g); if (q) ctx.lineTo(q[0], q[1]); }
