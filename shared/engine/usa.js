@@ -1,6 +1,6 @@
 // The continental US committee. Step one is the map: a layered view of the lower 48 that the Zeus steers and the stage shows.
 import { clamp } from './core.js';
-import { STATES, FEDERAL } from '../data/usa-units.js';
+import { STATES, FEDERAL, STATE_INFO } from '../data/usa-units.js';
 
 const err = error => ({ ok: false, error });
 const ok = (r = {}) => ({ ok: true, ...r });
@@ -31,6 +31,17 @@ const isColors = c => Array.isArray(c) && c.length >= 1 && c.length <= 3 && c.ev
 export function lightColors(usa, service, state) {
   const o = usa.lightColors || {};
   return o[`${state}:${service}`] || LIGHT_STATE[`${state}:${service}`] || LIGHT_DEFAULT[service];
+}
+
+// ---- States: the numbers the Zeus steers, like a country card in the world committees ----
+export const STATE_STATUS = { normal: 'Normal', alert: 'On alert', emergency: 'State of emergency', martial: 'Martial law' };
+export const STATE_METRICS = { stability: 'Stability', economy: 'Economy', order: 'Public order', approval: 'Governor approval', federal: 'Relations with Washington' };
+const STATE_DEFAULT = { stability: 80, economy: 70, order: 85, approval: 55, federal: 60, status: 'normal', note: '' };
+// A state's facts: the fixed ones from the table, then the numbers and status the Zeus has changed.
+export function getState(usa, code) {
+  const row = STATES.find(r => r[0] === code); if (!row) return null;
+  const [pop, ev] = STATE_INFO[code] || [0, 0];
+  return { code, name: row[1], capital: row[2], pop, ev, ...STATE_DEFAULT, ...(usa.states?.[code] || {}) };
 }
 
 export const USA_VIEW = { lon: -96.5, lat: 38.5, k: 1 }; // k = zoom, 1 shows the whole lower 48
@@ -77,7 +88,7 @@ export function getUnits(usa) {
 export function migrateUsa(s) {
   const u = s.usa; if (!u) return s;
   u.layers = { ...DEFAULT_LAYERS, ...Object.fromEntries(Object.entries(u.layers || {}).filter(([k]) => USA_LAYERS.includes(k))) };
-  u.mods ||= {}; u.custom ||= {};
+  u.mods ||= {}; u.custom ||= {}; u.states ||= {};
   u.lightbars ||= { police: false, fire: false, ambulance: false }; u.lightPattern ||= 'mixed'; u.lightColors ||= {};
   return s;
 }
@@ -91,7 +102,7 @@ export function createUsaFields(s) {
     accent: '#4aa8ff',
     view: { ...USA_VIEW },
     layers: { ...DEFAULT_LAYERS },
-    mods: {}, custom: {},
+    mods: {}, custom: {}, states: {},
     lightbars: { police: false, fire: false, ambulance: false }, lightPattern: 'mixed', lightColors: {},
     highlight: [], // state postal codes marked on the stage
     note: '',
@@ -211,6 +222,17 @@ export const usaActions = {
     migrateUsa(s);
     if (!s.usa.custom[a.id]) return err('Only units you made can be deleted. Hide the others.');
     delete s.usa.custom[a.id];
+    return ok();
+  } },
+  // A state's numbers (0 to 100), its status and a note; only what is sent changes.
+  usaState: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const code = String(a.state || '').toUpperCase();
+    if (!STATE_INFO[code]) return err('No such state.');
+    const g = (s.usa.states[code] ||= {});
+    for (const k of Object.keys(STATE_METRICS)) if (a[k] !== undefined) { const v = Number(a[k]); if (!Number.isFinite(v)) return err(`${STATE_METRICS[k]} is 0 to 100.`); g[k] = Math.round(clamp(v, 0, 100)); }
+    if (a.status !== undefined) { if (!(a.status in STATE_STATUS)) return err('Unknown status.'); g.status = a.status; }
+    if (a.note !== undefined) g.note = String(a.note).slice(0, 200);
     return ok();
   } },
   usaHighlight: { perm: 'zeus', run(s, a) {

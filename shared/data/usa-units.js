@@ -113,3 +113,13 @@ export const FEDERAL = [
   ['bp-lrt', 'Border Patrol: Laredo Sector', 'BP Laredo', -99.500, 27.500, 'police', 'usbp', 'Border Patrol sector. Texas.'],
   ['bp-rgv', 'Border Patrol: Rio Grande Valley Sector', 'BP Rio Grande Valley', -98.200, 26.200, 'police', 'usbp', 'Border Patrol sector. Texas.'],
 ];
+
+// code -> [population in millions (2024 estimate, rounded), electoral votes (2024 to 2028)]. Alaska and Hawaii are left out of the committee.
+export const STATE_INFO = {
+  AL: [5.16, 9], AZ: [7.58, 11], AR: [3.07, 6], CA: [39.43, 54], CO: [5.96, 10], CT: [3.68, 7], DE: [1.03, 3], DC: [0.69, 3], FL: [23.37, 30],
+  GA: [11.18, 16], ID: [2.0, 4], IL: [12.55, 19], IN: [6.9, 11], IA: [3.2, 6], KS: [2.97, 6], KY: [4.59, 8], LA: [4.6, 8], ME: [1.4, 4],
+  MD: [6.26, 10], MA: [7.15, 11], MI: [10.14, 15], MN: [5.74, 10], MS: [2.94, 6], MO: [6.24, 10], MT: [1.13, 4], NE: [1.98, 5], NV: [3.27, 6],
+  NH: [1.4, 4], NJ: [9.5, 14], NM: [2.12, 5], NY: [19.87, 28], NC: [11.0, 16], ND: [0.8, 3], OH: [11.9, 17], OK: [4.1, 7], OR: [4.27, 8],
+  PA: [13.08, 19], RI: [1.1, 4], SC: [5.48, 9], SD: [0.92, 3], TN: [7.2, 11], TX: [31.29, 40], UT: [3.5, 6], VT: [0.65, 3], VA: [8.77, 13],
+  WA: [7.81, 12], WV: [1.76, 4], WI: [5.94, 10], WY: [0.59, 3],
+};
