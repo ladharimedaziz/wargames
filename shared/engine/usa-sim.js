@@ -3,6 +3,7 @@
 // Nothing here uses fuel or ammunition. A unit fights at the strength it has until it is destroyed or routs.
 import { clamp } from './core.js';
 import { UNIT_TYPES } from '../data/usa-types.js';
+import { isLand } from './usa-water.js';
 
 export const SIM_SPEEDS = [1, 10, 60, 300, 1000]; // game seconds per real second
 export const ROES = { hold: 'Hold fire', defend: 'Return fire', free: 'Fire at will' };
@@ -146,7 +147,10 @@ export function usaTick(s, now, getUnits, put, home) {
     }
     const before = distKm(w, { lon: tx, lat: tyy });
     if (before <= stopAt) { if (w.mv) { w.mv = null; dirty(w.id); } continue; }
+    const wasLand = ty.domain === 'sea' && isLand(w.lon, w.lat), px0 = w.lon, py0 = w.lat;
     const left = step(w, tx, tyy, Math.min(km, before - stopAt));
+    // A ship heading straight for something never runs aground: it stops at the shore.
+    if (ty.domain === 'sea' && !wasLand && isLand(w.lon, w.lat)) { w.lon = px0; w.lat = py0; w.order = null; w.mv = null; w.spd = null; dirty(w.id); continue; }
     dirty(w.id);
     if (finish && left <= 0.001) {
       if (finish === 'arrive') { arrive(usa, w, o, W, dirty); continue; }

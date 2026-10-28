@@ -970,3 +970,31 @@ test('usa sandbox: bulk spawn, designed units, clone, bulk edit, teleport, scena
   // built-in units can be edited in bulk, but not deleted
   assert.ok(z({ type: 'usaBulk', ids: ['f-fbi'], set: { hidden: true } }).ok && getUnits(s.usa)['f-fbi'].hidden);
 });
+
+test('usa ships keep to water: routed around land, snapped off the shore, refused inland', async () => {
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const { getUnits, tickUsa } = await import('../../shared/engine/usa.js');
+  const { loadLand, isLand, seaRoute, hasLand } = await import('../../shared/engine/usa-water.js');
+  const { readFileSync } = await import('node:fs');
+  loadLand(JSON.parse(readFileSync(new URL('../../client/data/us-land.json', import.meta.url), 'utf8')));
+  assert.ok(hasLand());
+  assert.ok(isLand(-98, 38.5) && !isLand(-72, 36) && !isLand(-87, 44), 'Kansas is land; the Atlantic and Lake Michigan are water');
+  // Norfolk to the Gulf goes round Florida, never over it
+  const route = seaRoute([-76.3, 36.95], [-90, 26]);
+  assert.ok(route && route.length > 3 && route.every(([x, y]) => !isLand(x, y)));
+  for (let i = 1; i < route.length; i++) for (let k = 0; k <= 200; k++) assert.ok(!isLand(route[i - 1][0] + (route[i][0] - route[i - 1][0]) * k / 200, route[i - 1][1] + (route[i][1] - route[i - 1][1]) * k / 200), `leg ${i} at ${k}`, 'every leg is over water');
+  assert.equal(seaRoute([-72, 36], [-122.4, 47.8]), null, 'no way from the Atlantic to the Pacific');
+  const s = createUsaState({ id: 'u', name: 'US', seed: 6 });
+  const z = a => applyAction(s, a, { role: 'zeus', user: 'z', now: 1_000_000 });
+  // a ship put down inland lands on the coast; far inland is refused
+  const d = z({ type: 'usaSpawn', utype: 'ddg', side: 'fed', name: 'Test destroyer', lon: -75.5, lat: 36.8 });
+  assert.ok(d.ok && !isLand(getUnits(s.usa)[d.id].lon, getUnits(s.usa)[d.id].lat));
+  assert.equal(z({ type: 'usaSpawn', utype: 'ddg', side: 'fed', name: 'Lost', lon: -98, lat: 38.5 }).ok, false);
+  // a move to Florida's far side sails round it; a move to Kansas is refused
+  assert.ok(z({ type: 'usaOrder', ids: [d.id], order: { type: 'move', to: [-90, 26] } }).ok);
+  assert.ok(getUnits(s.usa)[d.id].order.path.length > 2);
+  assert.equal(z({ type: 'usaOrder', ids: [d.id], order: { type: 'move', to: [-98, 38.5] } }).ok, false);
+  // under way it never touches land
+  z({ type: 'usaSim', running: true, speed: 300 }); s.usa.sim.at = 1_000_000;
+  for (let i = 1; i <= 120; i++) { tickUsa(s, 1_000_000 + i * 1000); const u = getUnits(s.usa)[d.id]; assert.ok(!isLand(u.lon, u.lat), `afloat at tick ${i}`); }
+});

@@ -5,6 +5,7 @@ import { STATES, FEDERAL, STATE_INFO } from '../data/usa-units.js';
 import { CROSSINGS } from '../data/usa-border.js';
 import { UNIT_TYPES } from '../data/usa-types.js';
 import { route as roadRoute } from './usa-route.js';
+import { seaRoute, nearestWater, isLand } from './usa-water.js';
 import { ABILITIES } from '../data/usa-abilities.js';
 import { AIRBASES, AIR_RADIUS } from '../data/usa-airbases.js';
 import { INCIDENTS } from '../data/usa-incidents.js';
@@ -188,8 +189,22 @@ function formation(to, n, kind) {
   }
   return out.map(([x, y]) => [Math.max(-134, Math.min(-51, x)), Math.max(15, Math.min(59, y))]);
 }
+// Ships stay on water: a place on land moves to the nearest water, or is refused (null) when there is none.
+function seaSpot(ty, lon, lat) {
+  if (ty.domain !== 'sea' || !isLand(lon, lat)) return [lon, lat];
+  const w = nearestWater(lon, lat, 150);
+  return w && inBox(w[0], w[1]) ? w : null;
+}
+// Null when a ship has no way there by water.
 function movement(u, to, budget, from) {
   const order = { type: 'move', to };
+  if (typeOf(u).domain === 'sea') {
+    const path = seaRoute(from || [u.lon, u.lat], to);
+    if (!path) return null;
+    order.to = path[path.length - 1];
+    if (path.length > 2 || distKm({ lon: path[0][0], lat: path[0][1] }, u) > 1) { order.path = path; order.pi = 0; }
+    return order;
+  }
   // Routing is a search, so a big group order routes only its first few units; the rest go straight.
   if (typeOf(u).domain === 'ground' && typeOf(u).speed >= 30 && budget.n-- > 0) {
     const path = roadRoute(from || [u.lon, u.lat], to);
@@ -231,6 +246,7 @@ function spawnOne(s, a) {
     const baseU = a.base ? getUnits(s.usa)[a.base] : null;
     if (a.base) { if (!baseU || baseU.type !== 'airbase') return err('Pick an air base.'); if (ty?.domain !== 'air') return err('Only aircraft can be based on an air base.'); lon = baseU.lon; lat = baseU.lat; }
     if (!inBox(lon, lat)) return err('Place it on the map.');
+    if (ty?.domain === 'sea' && isLand(lon, lat)) { const w = nearestWater(lon, lat, 150); if (!w) return err('Ships need water: that is too far inland.'); [lon, lat] = w; }
     const side = a.side === undefined ? (baseU ? effSide(baseU) : 'mil') : a.side;
     if (!validSide(side) || (side.startsWith('st:') && !STATE_INFO[side.slice(3)])) return err('Unknown side.');
     const sil = a.sil === undefined ? ty?.sil || 'infantry' : a.sil;
@@ -285,8 +301,15 @@ export const usaActions = {
       let next;
       if (o.type === 'rtb') { const b = baseWorks(units[u.base]) ? units[u.base] : nearestBase(u, units); if (!b) return; next = { type: 'rtb', to: [b.lon, b.lat] }; }
       else if (o.type === 'cap') next = { type: 'patrol', cap: true, a: [+(dest[0] - 0.3).toFixed(3), +dest[1].toFixed(3)], b: [+(dest[0] + 0.3).toFixed(3), +dest[1].toFixed(3)], toB: true };
-      else next = o.type === 'hold' ? null : o.type === 'move' || o.type === 'amove' ? { ...movement(u, [+dest[0].toFixed(3), +dest[1].toFixed(3)], budget, a.queue ? lastStop(u) : null), type: o.type }
-        : o.type === 'patrol' ? { type: 'patrol', a: a.queue ? lastStop(u) : [+u.lon.toFixed(3), +u.lat.toFixed(3)], b: [+dest[0].toFixed(3), +dest[1].toFixed(3)], toB: true } : { type: o.type, target: o.target };
+      else if (o.type === 'move' || o.type === 'amove') {
+        const mv = movement(u, [+dest[0].toFixed(3), +dest[1].toFixed(3)], budget, a.queue ? lastStop(u) : null);
+        if (!mv) { refused = 'A ship cannot get there by water.'; return; }
+        next = { ...mv, type: o.type };
+      } else if (o.type === 'patrol') {
+        const b = seaSpot(typeOf(u), +dest[0].toFixed(3), +dest[1].toFixed(3));
+        if (!b) { refused = 'A ship cannot patrol there: it is nowhere near water.'; return; }
+        next = { type: 'patrol', a: a.queue ? lastStop(u) : [+u.lon.toFixed(3), +u.lat.toFixed(3)], b, toB: true };
+      } else next = o.type === 'hold' ? null : { type: o.type, target: o.target };
       // Shift-queued orders wait their turn behind a move the unit is already making.
       const cur = u.order;
       if (a.queue && next && cur && (cur.type === 'move' || cur.type === 'amove') && next.type !== 'attack') {
@@ -497,7 +520,8 @@ export const usaActions = {
     if (a.lon !== undefined || a.lat !== undefined) {
       const lon = Number(a.lon ?? base.lon), lat = Number(a.lat ?? base.lat);
       if (!inBox(lon, lat)) return err('That place is not on the map.');
-      g.lon = +lon.toFixed(3); g.lat = +lat.toFixed(3);
+      const at = seaSpot(typeOf(base), lon, lat); if (!at) return err('Ships need water: that is too far inland.');
+      g.lon = +at[0].toFixed(3); g.lat = +at[1].toFixed(3);
     }
     return ok();
   } },
@@ -625,7 +649,8 @@ export const usaActions = {
     pushUndo(s.usa);
     ids.forEach((id, i) => {
       const ang = i * 2.4, d = ids.length > 1 ? 0.03 * Math.sqrt(i + 1) : 0;
-      putUnit(s.usa, id, { lon: +(lon + Math.cos(ang) * d * 1.25).toFixed(3), lat: +(lat + Math.sin(ang) * d).toFixed(3), order: null, mv: null, eng: null });
+      const at = seaSpot(typeOf(all[id]), lon + Math.cos(ang) * d * 1.25, lat + Math.sin(ang) * d); // ships land on the nearest water
+      if (at) putUnit(s.usa, id, { lon: +at[0].toFixed(3), lat: +at[1].toFixed(3), order: null, mv: null, eng: null });
     });
     return ok({ n: ids.length });
   } },
@@ -662,7 +687,7 @@ export const usaActions = {
     const snaps = (s.usa.snaps ||= []);
     if (snaps.length >= 4) return err('Four save points is the most. Delete one first.');
     const name = String(a.name || '').trim().slice(0, 40) || `Save ${snaps.length + 1}`;
-    snaps.push({ id: `sv${Date.now().toString(36)}`, name, at: Math.round(s.usa.sim.t), n: Object.keys(s.usa.custom).length, data: capture(s.usa) });
+    snaps.push({ id: `sv${s.usa.nextSnap = (s.usa.nextSnap || 0) + 1}`, name, at: Math.round(s.usa.sim.t), n: Object.keys(s.usa.custom).length, data: capture(s.usa) });
     return ok();
   } },
   usaSnapLoad: { perm: 'zeus', run(s, a) {
