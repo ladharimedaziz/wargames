@@ -581,6 +581,20 @@ test('a US committee steers its map and refuses world actions', async () => {
   assert.ok(z({ type: 'usaLayer', layer: 'counties', on: false }).ok && s.usa.layers.counties === false);
   assert.equal(z({ type: 'usaLayer', layer: 'nope' }).ok, false);
   assert.ok(z({ type: 'usaLayer', layer: 'police', on: true }).ok && s.usa.layers.police === true);
+  assert.ok(z({ type: 'usaLightbars', service: 'all', on: true }).ok && Object.values(s.usa.lightbars).every(Boolean));
+  assert.equal(z({ type: 'usaLightbars', service: 'tow' }).ok, false);
+  const { lightColors } = await import('../../shared/engine/usa.js');
+  assert.deepEqual(lightColors(s.usa, 'police', 'TX', '48201'), ['#ff2a2a', '#2a5bff']);
+  assert.deepEqual(lightColors(s.usa, 'police', 'ME', '23005'), ['#2a5bff', '#ffffff'], 'Maine police run blue');
+  assert.ok(z({ type: 'usaLightColors', id: 'TX', service: 'fire', colors: ['#FF0000', '#ffb000'] }).ok);
+  assert.ok(z({ type: 'usaLightColors', id: '48201', service: 'fire', colors: ['#22d46a'] }).ok);
+  assert.deepEqual(lightColors(s.usa, 'fire', 'TX', '48113'), ['#ff0000', '#ffb000'], 'a state setting covers its counties');
+  assert.deepEqual(lightColors(s.usa, 'fire', 'TX', '48201'), ['#22d46a'], 'a county setting wins');
+  assert.equal(z({ type: 'usaLightColors', id: 'Texas', service: 'fire', colors: ['#ff0000'] }).ok, false);
+  assert.equal(z({ type: 'usaLightColors', id: 'TX', service: 'fire', colors: ['red'] }).ok, false);
+  assert.ok(z({ type: 'usaLightColors', id: 'TX', service: 'fire', colors: null }).ok);
+  assert.ok(z({ type: 'usaLightPattern', pattern: 'triple' }).ok && s.usa.lightPattern === 'triple');
+  assert.equal(z({ type: 'usaLightPattern', pattern: 'nope' }).ok, false);
   assert.ok(z({ type: 'usaHighlight', states: ['tx', 'CA', 'texas', 'TX'] }).ok && s.usa.highlight.join() === 'TX,CA');
   assert.equal(z({ type: 'forceWar', a: '643', b: '804' }).ok, false, 'world actions are not available here');
 });
@@ -622,4 +636,15 @@ test('a fleet can be sent to a free point at sea, and land is refused', () => {
   assert.ok(r.ok, r.error);
   assert.equal(s.units[ship.id].loc.lat, 38);
   assert.equal(s.units[ship.id].loc.lon, -50);
+});
+
+test('a US save from before lightbars is brought up to date', async () => {
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const { migrateUsa } = await import('../../shared/engine/usa.js');
+  const s = createUsaState({ id: 'u', name: 'US', seed: 4 });
+  delete s.usa.lightbars; delete s.usa.lightColors; delete s.usa.lightPattern; delete s.usa.layers.police; delete s.usa.layers.military;
+  migrateUsa(s);
+  assert.deepEqual(s.usa.lightbars, { police: false, fire: false, ambulance: false });
+  assert.equal(s.usa.layers.military, true);
+  assert.equal(s.usa.layers.police, false);
 });

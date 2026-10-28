@@ -3,7 +3,7 @@
 import { feature, mesh } from 'topojson-client';
 import { geoAlbers, geoPath, geoCentroid, geoContains } from 'd3-geo';
 import { html, useRef, useEffect, cls } from '../lib.js';
-import { USA_VIEW, USA_MAX_ZOOM, USA_DOTS, MIL_COLORS } from '/shared/engine/usa.js';
+import { USA_VIEW, USA_MAX_ZOOM, USA_DOTS, MIL_COLORS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors } from '/shared/engine/usa.js';
 
 let loading = null;
 // Loads and indexes the two map files once.
@@ -64,37 +64,24 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
   const cv = useRef(), st = useRef({ data: null, w: 0, h: 0, cur: { ...USA_VIEW }, want: { ...USA_VIEW }, hover: null, raf: 0, onView, onPick, usa });
   st.current.onView = onView; st.current.onPick = onPick; st.current.usa = usa;
 
-  const draw = () => {
-    const S = st.current, c = cv.current;
-    S.raf = 0;
-    if (!c || !S.data || !S.w) return;
-    const dpr = window.devicePixelRatio || 1, ctx = c.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    // Glide towards the wanted view on the stage; the Zeus panel jumps straight there.
-    const w = S.want, v = S.cur;
-    if (interactive) Object.assign(v, w);
-    else {
-      const a = 0.18;
-      v.lon += (w.lon - v.lon) * a; v.lat += (w.lat - v.lat) * a; v.k += (w.k - v.k) * a;
-      if (Math.abs(w.lon - v.lon) + Math.abs(w.lat - v.lat) + Math.abs(w.k - v.k) < 1e-3 * Math.max(1, v.k)) Object.assign(v, w); else if (!S.raf) S.raf = requestAnimationFrame(draw);
-    }
-    const base = baseProjection(S.data, S.w, S.h), proj = viewProjection(base, v, S.w, S.h), path = geoPath(proj, ctx);
-    const L = S.usa.layers, k = v.k;
+  // The terrain, roads, borders and names are painted into an off-screen canvas that is reused while the view and layers stay the
+  // same, so flashing lightbars only repaint the dots on top.
+  const paintBase = (ctx, S, proj, k) => {
+    const path = geoPath(proj, ctx), L = S.usa.layers;
     ctx.fillStyle = COL.sea; ctx.fillRect(0, 0, S.w, S.h);
     ctx.beginPath(); path(S.data.nation); ctx.fillStyle = COL.land; ctx.fill();
     const hi = new Set(S.usa.highlight || []);
     if (hi.size) { ctx.beginPath(); for (const s of S.data.states) if (hi.has(s.id)) path(s.f); ctx.fillStyle = COL.hi; ctx.fill(); }
-    if (S.hover && S.hover !== null) { const s = S.data.byState.get(S.hover); if (s) { ctx.beginPath(); path(s.f); ctx.fillStyle = COL.hover; ctx.fill(); } }
+    if (S.hover) { const s = S.data.byState.get(S.hover); if (s) { ctx.beginPath(); path(s.f); ctx.fillStyle = COL.hover; ctx.fill(); } }
     if (L.counties) { ctx.beginPath(); path(S.data.countyMesh); ctx.strokeStyle = COL.county; ctx.lineWidth = k < 2 ? 0.4 : k < 8 ? 0.6 : 0.9; ctx.stroke(); }
     if (L.highways) {
       ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-      const draw = (list, color, wd) => { ctx.beginPath(); for (const l of list) path({ type: 'LineString', coordinates: l.coordinates }); ctx.strokeStyle = color; ctx.lineWidth = wd; ctx.stroke(); };
-      if (k >= 1.6) draw(S.data.highways, COL.u, k > 6 ? 1.2 : 0.7);
-      draw(S.data.interstates, COL.i, k > 6 ? 2 : k > 2.5 ? 1.4 : 0.9);
+      const road = (list, color, wd) => { ctx.beginPath(); for (const l of list) path({ type: 'LineString', coordinates: l.coordinates }); ctx.strokeStyle = color; ctx.lineWidth = wd; ctx.stroke(); };
+      if (k >= 1.6) road(S.data.highways, COL.u, k > 6 ? 1.2 : 0.7);
+      road(S.data.interstates, COL.i, k > 6 ? 2 : k > 2.5 ? 1.4 : 0.9);
     }
     if (L.states) { ctx.beginPath(); path(S.data.stateMesh); ctx.strokeStyle = COL.state; ctx.lineWidth = k < 4 ? 1.1 : 1.8; ctx.stroke(); }
     ctx.beginPath(); path(S.data.outline); ctx.strokeStyle = COL.coast; ctx.lineWidth = 1.2; ctx.stroke();
-    drawDots(ctx, S, proj, k);
     if (L.labels) {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = COL.label;
       if (k < 9) {
@@ -107,22 +94,71 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
       }
     }
   };
+
+  const draw = () => {
+    const S = st.current, c = cv.current;
+    S.raf = 0;
+    if (!c || !S.data || !S.w) return;
+    const dpr = window.devicePixelRatio || 1, ctx = c.getContext('2d');
+    // Glide towards the wanted view on the stage; the Zeus panel jumps straight there.
+    const w = S.want, v = S.cur;
+    let moving = false;
+    if (interactive) Object.assign(v, w);
+    else {
+      const a = 0.18;
+      v.lon += (w.lon - v.lon) * a; v.lat += (w.lat - v.lat) * a; v.k += (w.k - v.k) * a;
+      if (Math.abs(w.lon - v.lon) + Math.abs(w.lat - v.lat) + Math.abs(w.k - v.k) < 1e-3 * Math.max(1, v.k)) Object.assign(v, w); else moving = true;
+    }
+    if (!S.bp || S.bp.w !== S.w || S.bp.h !== S.h) S.bp = { w: S.w, h: S.h, p: baseProjection(S.data, S.w, S.h) };
+    const proj = viewProjection(S.bp.p, v, S.w, S.h), k = v.k, L = S.usa.layers;
+    const key = [v.lon.toFixed(5), v.lat.toFixed(5), k.toFixed(4), S.w, S.h, dpr, L.states, L.counties, L.highways, L.labels, (S.usa.highlight || []).join(), S.hover].join('|');
+    if (S.baseKey !== key) {
+      if (!S.baseCv || S.baseCv.width !== c.width || S.baseCv.height !== c.height) { S.baseCv = document.createElement('canvas'); S.baseCv.width = c.width; S.baseCv.height = c.height; }
+      const bctx = S.baseCv.getContext('2d'); bctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      paintBase(bctx, S, proj, k); S.baseKey = key;
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.drawImage(S.baseCv, 0, 0); ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const flashing = drawDots(ctx, S, proj, k, performance.now());
+    if ((moving || flashing) && !S.raf) S.raf = requestAnimationFrame(draw);
+  };
+
   // Dots for every shown layer, with a small label above each once zoomed in far enough. Labels never overlap.
-  const drawDots = (ctx, S, proj, k) => {
-    const L = S.usa.layers;
+  // Police, fire and EMS dots flash like lightbars when theirs are on. Returns true while something is flashing.
+  const drawDots = (ctx, S, proj, k, now) => {
+    const L = S.usa.layers, LB = S.usa.lightbars || {}, pat = S.usa.lightPattern || 'mixed';
     const lo = proj.invert([-30, S.h + 30]), hi = proj.invert([S.w + 30, -30]);
     const [x0, x1] = [Math.min(lo[0], hi[0]) - 0.2, Math.max(lo[0], hi[0]) + 0.2], [y0, y1] = [Math.min(lo[1], hi[1]) - 0.2, Math.max(lo[1], hi[1]) + 0.2];
     const labels = [];
+    let flashing = false;
+    const sig = JSON.stringify(S.usa.lightColors || {});
+    if (S.lbSig !== sig) { S.lbSig = sig; S.lbCache = new Map(); }
     for (const [kind, d] of Object.entries(USA_DOTS)) {
-      if (!L[kind] || k < d.dot) continue;
+      const bar = !!LB[kind];
+      if (!(L[kind] || bar) || k < (bar ? Math.min(d.dot, 3) : d.dot)) continue;
       const list = pts.get(kind);
       if (!list) { loadPoints(kind).then(redraw); continue; }
-      const r = Math.min(7, 2 + k * 0.12), withLabel = k >= d.label;
+      const r = Math.min(7, 2 + k * 0.12) + (bar ? 1 : 0), withLabel = k >= d.label;
       for (const row of list) {
         const lon = row[0], lat = row[1];
         if (lon < x0 || lon > x1 || lat < y0 || lat > y1) continue;
         const p = proj([lon, lat]); if (!p) continue;
-        ctx.fillStyle = kind === 'military' ? MIL_COLORS[row[5]] || d.color : d.color;
+        let fill = kind === 'military' ? MIL_COLORS[row[5]] || d.color : d.color;
+        if (bar) {
+          flashing = true;
+          const h = ((Math.round(lon * 1e4) * 31 + Math.round(lat * 1e4)) >>> 0) % 9973;
+          const cc = S.data.counties[row[4]], ck = `${kind}|${row[4]}`;
+          let cols = S.lbCache.get(ck);
+          if (!cols) S.lbCache.set(ck, cols = lightColors(S.usa, kind, cc.state, cc.id));
+          const def = LIGHT_PATTERNS[pat] || LIGHT_PATTERNS[LIGHT_PATTERN_IDS[h % LIGHT_PATTERN_IDS.length]];
+          let total = 0; for (const s of def.steps) total += s[1];
+          let t = (now + h * 37) % total, ci = -1;
+          for (const s of def.steps) { if (t < s[1]) { ci = s[0]; break; } t -= s[1]; }
+          if (ci >= 0) {
+            fill = cols[ci % cols.length];
+            ctx.globalAlpha = 0.3; ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(p[0], p[1], r * 2.6, 0, 6.2832); ctx.fill(); ctx.globalAlpha = 1;
+          } else fill = '#2a3144';
+        }
+        ctx.fillStyle = fill;
         ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 6.2832); ctx.fill();
         ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.65)'; ctx.stroke();
         if (withLabel && row[2]) labels.push([p[0], p[1] - r - 3, row[2]]);
@@ -143,6 +179,7 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
       ctx.fillStyle = 'rgba(6,16,31,.78)'; ctx.fillRect(rx, ry, w, 14);
       ctx.fillStyle = '#eef2fa'; ctx.fillText(text, x, y);
     }
+    return flashing;
   };
   const redraw = () => { if (!st.current.raf) st.current.raf = requestAnimationFrame(draw); };
 
@@ -157,7 +194,7 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
     return () => { dead = true; ro.disconnect(); cancelAnimationFrame(st.current.raf); };
   }, []);
   useEffect(() => { st.current.want = { ...USA_VIEW, ...view }; if (!st.current.data) return; redraw(); }, [view?.lon, view?.lat, view?.k]);
-  useEffect(redraw, [Object.entries(usa.layers).join(), (usa.highlight || []).join(',')]);
+  useEffect(redraw, [Object.entries(usa.layers).join(), Object.entries(usa.lightbars || {}).join(), usa.lightPattern, JSON.stringify(usa.lightColors || {}), (usa.highlight || []).join(',')]);
 
   // Pointer handling for the Zeus panel: drag to pan, wheel to zoom around the cursor, click to pick a state.
   useEffect(() => {
