@@ -737,3 +737,28 @@ test('US units move on orders, fight hostile sides and fall back', async () => {
   assert.ok(z({ type: 'usaOrder', ids: [a], order: { type: 'attack', target: b } }).ok && s.usa.hostile.includes('fed|mil'));
   assert.equal(z({ type: 'usaOrder', ids: [a], order: { type: 'attack', target: 'x-nope' } }).ok, false);
 });
+
+test('the US government answers a war, and the Zeus can make it act or vote', async () => {
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const { applyAction } = await import('../../shared/engine/reducer.js');
+  const { tickUsa, getUnits } = await import('../../shared/engine/usa.js');
+  const s = createUsaState({ id: 'u', name: 'US', seed: 5 });
+  const z = a => applyAction(s, a, { role: 'zeus', user: 'z', now: 1_000_000 });
+  assert.ok(z({ type: 'usaSim', running: true, speed: 60 }).ok);
+  assert.ok(z({ type: 'usaHostile', a: 'fed', b: 'mil', on: true }).ok);
+  s.usa.sim.at = 1_000_000;
+  for (let i = 1; i <= 60; i++) tickUsa(s, 1_000_000 + i * 1000); // an hour at x60
+  const gov = s.usa.events.filter(e => e.kind === 'gov');
+  assert.ok(gov.some(e => /addresses the nation/.test(e.text)), 'the President speaks');
+  assert.ok(gov.some(e => /Insurrection Act/.test(e.text)) && getUnits(s.usa)['ng-TX'].federal, 'the Guard is federalized');
+  // Peace brings a release, and offices can be edited.
+  assert.ok(z({ type: 'usaGov', office: 'pres', person: 'Pat Delegate', control: 'delegate' }).ok);
+  assert.equal(z({ type: 'usaGov', office: 'nobody', person: 'x' }).ok, false);
+  assert.ok(z({ type: 'usaGovAct', office: 'defense', text: 'Stand down.', effect: 'release_all' }).ok && !getUnits(s.usa)['ng-TX'].federal);
+  assert.equal(z({ type: 'usaGovAct', office: 'defense', text: '', effect: 'none' }).ok, false);
+  assert.ok(z({ type: 'usaBill', title: 'Border Act', effect: 'border_closed', force: 'pass', delay: 5 }).ok);
+  s.usa.sim.at = 2_000_000;
+  for (let i = 1; i <= 20; i++) tickUsa(s, 2_000_000 + i * 1000);
+  assert.equal(s.usa.border.CAN, 'closed', 'a passed bill closes the border');
+  assert.ok(s.usa.events.some(e => /Border Act.*passes/.test(e.text)));
+});
