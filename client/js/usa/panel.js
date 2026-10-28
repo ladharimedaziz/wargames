@@ -2,11 +2,11 @@
 import { html, useState, useEffect, useRef, run, useMemo, cls, toast } from '../lib.js';
 import { TimerControls } from '../world/display-tab.js';
 import { DMDrawer, useUnread } from '../views/dm.js';
-import { UnitCard, StateInspector, NationOverview } from './inspector.js';
+import { UnitCard, StateInspector, NationOverview, CrossingCard } from './inspector.js';
 import { UsMap, loadUsa, viewFor, unitLabel } from './map.js';
 import { USA_VIEW, USA_UNIT_KINDS, UNIT_LAYERS, LIGHT_SERVICES, LIGHT_PALETTE, LIGHT_PATTERNS, lightColors, getUnits, SILS } from '/shared/engine/usa.js';
 
-const LAYERS = [['states', 'State borders'], ['cities', 'City borders'], ['highways', 'Highways'], ['labels', 'Names'], ['neighbors', 'Canada and Mexico']];
+const LAYERS = [['states', 'State borders'], ['cities', 'City borders'], ['highways', 'Highways'], ['labels', 'Names'], ['neighbors', 'Canada and Mexico'], ['border', 'Border crossings']];
 
 export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
   const u = state.usa, kronos = user.role === 'kronos';
@@ -30,10 +30,13 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
   const onView = v => { setView(v); if (live) send(v); };
   const jump = v => { setView(v); if (live) send(v); };
   const [marking, setMarking] = useState(false);
-  const [tab, setTab] = useState('map'), [selState, setSelState] = useState(null);
+  const [tab, setTab] = useState('map'), [selState, setSelState] = useState(null), [selX, setSelX] = useState(null);
   const [sel, setSel] = useState(null), [placing, setPlacing] = useState(null); // placing: {id} to move a unit, or {spawn} to make one
   const units = useMemo(() => getUnits(u), [u.mods, u.custom]);
-  const pickUnit = id => { setSel(id); const x = units[id]; if (x && x.owner?.length === 2) setSelState(x.owner); };
+  const pickUnit = id => {
+    if (id.startsWith('bx-')) { setSelX(id); setSel(null); return; }
+    setSelX(null); setSel(id); const x = units[id]; if (x && x.owner?.length === 2) setSelState(x.owner);
+  };
   const onPlace = (lon, lat) => {
     const p = placing; setPlacing(null);
     if (!p) return;
@@ -41,7 +44,7 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
     else act({ type: 'usaSpawn', ...p.spawn, lon, lat }).then(r => r.result?.id && setSel(r.result.id));
   };
   const onPick = id => {
-    if (!marking) { setSelState(id); setSel(null); return; }
+    if (!marking) { setSelState(id); setSel(null); setSelX(null); return; }
     act({ type: 'usaHighlight', states: u.highlight.includes(id) ? u.highlight.filter(x => x !== id) : [...u.highlight, id] });
   };
   const states = useMemo(() => (data ? [...data.states].sort((a, b) => a.name.localeCompare(b.name)) : []), [data]);
@@ -92,11 +95,12 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
           </div></div>
           <${TimerControls} conn=${conn} state=${state} />`}
         </aside>
-        <div class="us-mapbox"><${UsMap} usa=${u} view=${view} interactive=${true} onView=${onView} onPick=${onPick} onPickUnit=${pickUnit} onPlace=${placing ? onPlace : null} selectedUnit=${sel} selectedState=${selState} /><div class="us-readout mono">zoom ${view.k.toFixed(1)}×</div></div>
+        <div class="us-mapbox"><${UsMap} usa=${u} view=${view} interactive=${true} onView=${onView} onPick=${onPick} onPickUnit=${pickUnit} onPlace=${placing ? onPlace : null} selectedUnit=${sel} selectedState=${selState} selectedCrossing=${selX} /><div class="us-readout mono">zoom ${view.k.toFixed(1)}×</div></div>
         <aside class="us-right">
-          ${sel && units[sel] ? html`<${UnitCard} unit=${units[sel]} act=${act} placing=${placing} setPlacing=${setPlacing} close=${() => setSel(null)} jump=${v => jump(v)} />`
+          ${selX ? html`<${CrossingCard} u=${u} id=${selX} act=${act} close=${() => setSelX(null)} />`
+            : sel && units[sel] ? html`<${UnitCard} unit=${units[sel]} act=${act} placing=${placing} setPlacing=${setPlacing} close=${() => setSel(null)} jump=${v => jump(v)} />`
             : selState ? html`<${StateInspector} u=${u} units=${units} code=${selState} data=${data} act=${act} setSel=${setSel} close=${() => setSelState(null)} jump=${jump} />`
-            : html`<${NationOverview} u=${u} units=${units} act=${act} setSel=${setSel} setState=${setSelState} />`}
+            : html`<${NationOverview} u=${u} units=${units} act=${act} setSel=${setSel} setState=${setSelState} setCrossing=${setSelX} />`}
         </aside>
       </div>
       <${DMDrawer} conn=${conn} committee=${committee} open=${dmOpen} onClose=${() => setDmOpen(false)} kronos=${kronos} name=${state.name} />

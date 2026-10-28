@@ -4,7 +4,7 @@ import { feature, mesh } from 'topojson-client';
 import { geoAlbers, geoPath, geoCentroid } from 'd3-geo';
 import { html, useRef, useEffect, useMemo, cls } from '../lib.js';
 import { drawSil, getImage, sealUrl } from './art.js';
-import { USA_VIEW, USA_MAX_ZOOM, USA_UNIT_KINDS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors, getUnits } from '/shared/engine/usa.js';
+import { USA_VIEW, USA_MAX_ZOOM, USA_UNIT_KINDS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors, getUnits, CROSSING_LIST, crossingState } from '/shared/engine/usa.js';
 
 let loading = null;
 // Loads and indexes the map files once: the states, the roads, and the Canadian and Mexican regions beside them.
@@ -92,16 +92,17 @@ export function loadCities() {
 }
 
 const STATUS_TINT = { alert: 'rgba(255,209,102,.16)', emergency: 'rgba(255,138,74,.28)', martial: 'rgba(255,74,74,.36)' };
-const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', neighbor: '#0d1b31', region: 'rgba(150,180,230,.22)', state: 'rgba(190,215,255,.7)', coast: 'rgba(190,215,255,.85)', i: '#f3b24a', u: 'rgba(200,170,120,.7)', label: '#dfe9fb', hover: 'rgba(255,255,255,.14)' };
+const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', neighbor: '#0f2038', region: 'rgba(150,180,230,.22)', state: 'rgba(190,215,255,.7)', coast: 'rgba(190,215,255,.85)', i: '#f3b24a', u: 'rgba(200,170,120,.7)', label: '#dfe9fb', hover: 'rgba(255,255,255,.14)' };
 
 // `view` is the view to show, `onView` is called as the viewer drags or zooms, `onPick` with a state code on click.
 // What a unit's badge says.
 export const unitLabel = u => (u.kind === 'governor' ? `${u.owner === 'DC' ? 'Mayor' : 'Gov.'} ${u.person}${u.party ? ` (${u.party})` : ''}` : u.federal ? `${u.short} · federal` : u.short);
 const roundRect = (ctx, x, y, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); };
 
-export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selectedUnit = null, selectedState = null, interactive = false, className = '' }) {
+export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selectedUnit = null, selectedState = null, selectedCrossing = null, interactive = false, className = '' }) {
   const cv = useRef(), ov = useRef(), st = useRef({ data: null, w: 0, h: 0, cur: { ...USA_VIEW }, want: { ...USA_VIEW }, hover: null, raf: 0, onView, onPick, usa });
-  st.current.onView = onView; st.current.onPick = onPick; st.current.onPickUnit = onPickUnit; st.current.onPlace = onPlace; st.current.usa = usa; st.current.selUnit = selectedUnit; st.current.selState = selectedState;
+  st.current.onView = onView; st.current.onPick = onPick; st.current.onPickUnit = onPickUnit; st.current.onPlace = onPlace; st.current.usa = usa; st.current.selUnit = selectedUnit; st.current.selState = selectedState; st.current.selX = selectedCrossing;
+  st.current.crossings = useMemo(() => Object.fromEntries(CROSSING_LIST.map(c => [c.id, crossingState(usa, c.id)])), [usa.border, usa.crossings]);
   st.current.units = useMemo(() => getUnits(usa), [usa.mods, usa.custom]);
   st.current.unitSig = useMemo(() => { let h = 0; for (const ch of JSON.stringify([usa.mods, usa.custom])) h = (h * 31 + ch.charCodeAt(0)) | 0; return h; }, [usa.mods, usa.custom]); // changes whenever a unit is edited, so badges re-lay out
 
@@ -223,9 +224,39 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
     const layout = `${S.baseKey}|${Object.entries(L).join()}|${S.unitSig}|${S.selUnit}`;
     const wantLabels = S.labelKey !== layout, labels = [];
     let flashing = false;
+    S.hits = [];
+    // Border crossings: a gate marker coloured by its status, and vehicles driving through. Vehicles fade in as they arrive and fade
+    // out once they have crossed, in both directions. Positions come from the clock alone, so every screen shows the same traffic.
+    if (L.border && k >= 1.6) {
+      const t = now / 1000, len = Math.max(24, Math.min(110, 10 + k * 6)), ring = k >= 2.4;
+      for (const cx of CROSSING_LIST) {
+        if (cx.lon < x0 || cx.lon > x1 || cx.lat < y0 || cx.lat > y1) continue;
+        const cs = S.crossings[cx.id], p = proj([cx.lon, cx.lat]); if (!p || !cs) continue;
+        const b = cx.bearing * Math.PI / 180, dx = Math.sin(b), dy = -Math.cos(b), ang = Math.atan2(dy, dx);
+        if (ring && cs.status !== 'closed' && cs.traffic > 0) {
+          const n = Math.max(1, Math.round(cs.traffic / 100 * (2 + cx.size * 2))), T = cs.status === 'slow' ? 22 : 11, w = Math.min(6.5, 3.2 + k * 0.14);
+          flashing = true;
+          for (let i = 0; i < n; i++) {
+            const into = i % 3 !== 2, u = ((t / T + i / n - cx.lon * 0.37) % 1 + 1) % 1;
+            const pos = into ? -len + 2 * len * u : len - 2 * len * u, a = Math.min(1, u / 0.2, (1 - u) / 0.25), truck = i % 4 === 3;
+            ctx.save(); ctx.translate(p[0] + dx * pos, p[1] + dy * pos); ctx.rotate(into ? ang : ang + Math.PI);
+            ctx.fillStyle = into ? `rgba(232,243,255,${a})` : `rgba(255,207,106,${a})`;
+            ctx.fillRect(-w * (truck ? 1.6 : 1), -w * 0.4, w * (truck ? 3.2 : 2), w * 0.8);
+            ctx.restore();
+          }
+          if (cs.status === 'slow') { ctx.fillStyle = 'rgba(255,170,60,.85)'; for (let i = 1; i <= 4; i++) ctx.fillRect(p[0] - dx * len * i * 0.18 - 2, p[1] - dy * len * i * 0.18 - 1.2, 4, 2.4); }
+        }
+        const col = cs.status === 'closed' ? '#f87171' : cs.status === 'slow' ? '#fbbf24' : '#4ade80', r = Math.min(7, 3.5 + k * 0.25);
+        if (cx.id === S.selX) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p[0], p[1], r + 6, 0, 6.2832); ctx.stroke(); }
+        ctx.fillStyle = col; ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(p[0], p[1] - r); ctx.lineTo(p[0] + r, p[1]); ctx.lineTo(p[0], p[1] + r); ctx.lineTo(p[0] - r, p[1]); ctx.closePath(); ctx.fill(); ctx.stroke();
+        if (cs.status === 'closed') { ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(p[0] - r * 0.5, p[1] - r * 0.5); ctx.lineTo(p[0] + r * 0.5, p[1] + r * 0.5); ctx.moveTo(p[0] + r * 0.5, p[1] - r * 0.5); ctx.lineTo(p[0] - r * 0.5, p[1] + r * 0.5); ctx.stroke(); }
+        S.hits.push([p[0], p[1], cx.id]);
+        if (k >= 4.5) { ctx.font = '500 11px "IBM Plex Sans", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = 'rgba(8,18,36,.8)'; const tw = ctx.measureText(cx.name).width; ctx.fillRect(p[0] - tw / 2 - 3, p[1] + r + 2, tw + 6, 15); ctx.fillStyle = '#e6eefc'; ctx.fillText(cx.name, p[0], p[1] + r + 4); }
+      }
+    }
     // Units: governors, federal forces, agencies, Guard and state police. Their badges are placed before any dot label.
     const ulabels = [];
-    S.hits = [];
     for (const u of Object.values(S.units || {})) {
       const kd = USA_UNIT_KINDS[u.kind];
       if (!kd || u.hidden || !L[kd.layer] || k < kd.dot) continue;
@@ -324,7 +355,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
       if (drag) { moved += Math.abs(e.movementX) + Math.abs(e.movementY); if (drag.g) commit(anchor(drag.g, m, cur().k)); return; }
       let uh = null, ud = 12;
       for (const h of st.current.hits || []) { const d = Math.hypot(h[0] - m[0], h[1] - m[1]); if (d < ud) { ud = d; uh = h[2]; } }
-      if (uh !== st.current.hoverUnit) { st.current.hoverUnit = uh; const u = uh && st.current.units[uh]; c.title = u ? `${u.name}${u.person ? ` — ${u.person}` : ''}` : ''; c.style.cursor = uh ? 'pointer' : ''; }
+      if (uh !== st.current.hoverUnit) { st.current.hoverUnit = uh; const u = uh && (st.current.units[uh] || st.current.crossings?.[uh]); c.title = u ? `${u.name}${u.person ? ` — ${u.person}` : ''}` : ''; c.style.cursor = uh ? 'pointer' : ''; }
       if (uh) return;
       const S = st.current, v = cur();
       if (!S.bp) return;
