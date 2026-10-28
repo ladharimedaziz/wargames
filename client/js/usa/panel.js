@@ -2,7 +2,9 @@
 import { html, useState, useEffect, useRef, run, useMemo, cls, toast } from '../lib.js';
 import { TimerControls } from '../world/display-tab.js';
 import { DMDrawer, useUnread } from '../views/dm.js';
-import { UnitCard, StateInspector, NationOverview, CrossingCard } from './inspector.js';
+import { UnitCard, StateInspector, NationOverview, CrossingCard, GroupCard, SideOptions } from './inspector.js';
+import { UNIT_TYPES, TYPE_GROUPS } from '/shared/data/usa-types.js';
+import { effSide, simClock, simSeconds, SIM_SPEEDS } from '/shared/engine/usa-sim.js';
 import { UsMap, loadUsa, viewFor, unitLabel } from './map.js';
 import { USA_VIEW, USA_UNIT_KINDS, UNIT_LAYERS, LIGHT_SERVICES, LIGHT_PALETTE, LIGHT_PATTERNS, lightColors, getUnits, SILS } from '/shared/engine/usa.js';
 
@@ -31,20 +33,34 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
   const jump = v => { setView(v); if (live) send(v); };
   const [marking, setMarking] = useState(false);
   const [tab, setTab] = useState('map'), [selState, setSelState] = useState(null), [selX, setSelX] = useState(null);
-  const [sel, setSel] = useState(null), [placing, setPlacing] = useState(null); // placing: {id} to move a unit, or {spawn} to make one
+  const [selIds, setSelIds] = useState([]), [placing, setPlacing] = useState(null); // placing: {id} teleports a unit, {spawn} makes one, {order} gives the picked units an order
+  const sel = selIds.length === 1 ? selIds[0] : null, setSel = id => setSelIds(id ? [id] : []);
   const units = useMemo(() => getUnits(u), [u.mods, u.custom]);
-  const pickUnit = id => {
-    if (id.startsWith('bx-')) { setSelX(id); setSel(null); return; }
-    setSelX(null); setSel(id); const x = units[id]; if (x && x.owner?.length === 2) setSelState(x.owner);
+  const pickUnit = (id, add) => {
+    if (id.startsWith('bx-')) { setSelX(id); setSelIds([]); return; }
+    if (placing?.pickTarget && selIds.length && !selIds.includes(id)) { act({ type: 'usaOrder', ids: selIds, order: { type: placing.order, target: id } }); setPlacing(null); return; }
+    setSelX(null);
+    if (add) { setSelIds(ids => (ids.includes(id) ? ids.filter(x => x !== id) : [...ids, id])); return; }
+    setSelIds([id]); const x = units[id]; if (x && x.owner?.length === 2) setSelState(x.owner);
+  };
+  const onBox = ids => { setSelX(null); setSelIds(ids.filter(id => units[id])); };
+  // Right-click: an enemy is attacked, a friend escorted, open ground is where the picked units go.
+  const onOrder = ({ lon, lat, target }) => {
+    if (!selIds.length) return;
+    const t = target && units[target], first = units[selIds[0]];
+    if (t && !selIds.includes(target)) act({ type: 'usaOrder', ids: selIds, order: { type: first && effSide(first) !== effSide(t) ? 'attack' : 'escort', target } });
+    else if (!t) act({ type: 'usaOrder', ids: selIds, order: { type: 'move', to: [lon, lat] } });
   };
   const onPlace = (lon, lat) => {
-    const p = placing; setPlacing(null);
-    if (!p) return;
-    if (p.id) act({ type: 'usaUnit', id: p.id, lon, lat });
-    else act({ type: 'usaSpawn', ...p.spawn, lon, lat }).then(r => r.result?.id && setSel(r.result.id));
+    const p = placing; if (!p) return;
+    if (p.order) { setPlacing(null); act({ type: 'usaOrder', ids: selIds, order: { type: p.order, to: [lon, lat] } }); return; }
+    if (p.id) { setPlacing(null); act({ type: 'usaUnit', id: p.id, lon, lat }); return; }
+    if (!p.keep) setPlacing(null);
+    act({ type: 'usaSpawn', ...p.spawn, lon, lat }).then(r => { if (!p.keep && r.result?.id) setSel(r.result.id); });
   };
   const onPick = id => {
-    if (!marking) { setSelState(id); setSel(null); setSelX(null); return; }
+    if (placing?.order && !placing.pickTarget) return;
+    if (!marking) { setSelState(id); setSelIds([]); setSelX(null); return; }
     act({ type: 'usaHighlight', states: u.highlight.includes(id) ? u.highlight.filter(x => x !== id) : [...u.highlight, id] });
   };
   const states = useMemo(() => (data ? [...data.states].sort((a, b) => a.name.localeCompare(b.name)) : []), [data]);
@@ -85,7 +101,7 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
             <div class="dim small">Every unit is a dot with a badge above it. Click one to see it on the right.</div>
             <select class="input sm" value="" onChange=${e => e.target.value && pickUnit(e.target.value)}><option value="">Find a governor…</option>${Object.values(units).filter(x => x.kind === 'governor').sort((a, b) => a.owner.localeCompare(b.owner)).map(x => html`<option value=${x.id}>${x.owner} · ${x.person}${x.control === 'delegate' ? ' (delegate)' : ''}</option>`)}</select>
           </div></div>
-          <${SpawnCard} placing=${placing} setPlacing=${setPlacing} count=${Object.keys(u.custom || {}).length} act=${act} />`}
+          <${SpawnCard} placing=${placing} setPlacing=${setPlacing} count=${Object.keys(u.custom || {}).length} act=${act} states=${states} />`}
           ${tab === 'stage' && html`<div class="card"><div class="card-h"><h3>Stage</h3></div><div class="card-b col">
             <input class="input sm" placeholder="Title" value=${topic.title} onInput=${e => setTopic({ ...topic, title: e.target.value })} />
             <input class="input sm" placeholder="Subtitle" value=${topic.subtitle} onInput=${e => setTopic({ ...topic, subtitle: e.target.value })} />
@@ -95,11 +111,12 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
           </div></div>
           <${TimerControls} conn=${conn} state=${state} />`}
         </aside>
-        <div class="us-mapbox"><${UsMap} usa=${u} view=${view} interactive=${true} onView=${onView} onPick=${onPick} onPickUnit=${pickUnit} onPlace=${placing ? onPlace : null} selectedUnit=${sel} selectedState=${selState} selectedCrossing=${selX} /><div class="us-readout mono">zoom ${view.k.toFixed(1)}×</div></div>
+        <div class="us-mapbox"><${UsMap} usa=${u} view=${view} interactive=${true} onView=${onView} onPick=${onPick} onPickUnit=${pickUnit} onPlace=${placing && !placing.pickTarget ? onPlace : null} selectedUnit=${sel} selectedUnits=${selIds} selectedState=${selState} selectedCrossing=${selX} onBox=${onBox} onOrder=${onOrder} /><${SimBar} u=${u} act=${act} /><div class="us-readout mono">zoom ${view.k.toFixed(1)}×</div></div>
         <aside class="us-right">
           ${selX ? html`<${CrossingCard} u=${u} id=${selX} act=${act} close=${() => setSelX(null)} />`
-            : sel && units[sel] ? html`<${UnitCard} unit=${units[sel]} act=${act} placing=${placing} setPlacing=${setPlacing} close=${() => setSel(null)} jump=${v => jump(v)} />`
-            : selState ? html`<${StateInspector} u=${u} units=${units} code=${selState} data=${data} act=${act} setSel=${setSel} close=${() => setSelState(null)} jump=${jump} />`
+            : selIds.length > 1 ? html`<${GroupCard} ids=${selIds} units=${units} act=${act} placing=${placing} setPlacing=${setPlacing} close=${() => setSelIds([])} setSelIds=${setSelIds} />`
+            : sel && units[sel] ? html`<${UnitCard} unit=${units[sel]} units=${units} act=${act} placing=${placing} setPlacing=${setPlacing} close=${() => setSel(null)} jump=${v => jump(v)} />`
+            : selState ? html`<${StateInspector} u=${u} units=${units} code=${selState} data=${data} act=${act} setSel=${setSel} placing=${placing} close=${() => setSelState(null)} jump=${jump} />`
             : html`<${NationOverview} u=${u} units=${units} act=${act} setSel=${setSel} setState=${setSelState} setCrossing=${setSelX} />`}
         </aside>
       </div>
@@ -136,16 +153,35 @@ function ColorPick({ onSet }) {
     <div class="row wrap"><button class="btn sm gold" disabled=${!picked.length} onClick=${() => { onSet(picked); setPicked([]); }}>Set colours</button><button class="btn sm ghost" disabled=${!picked.length} onClick=${() => setPicked([])}>Reset pick</button></div></div>`;
 }
 
-// Make a unit of your own (a militia, a task force, a convoy): fill this in, press Place, then click the map.
-function SpawnCard({ placing, setPlacing, count, act }) {
-  const [f, setF] = useState({ name: '', sil: 'infantry', strength: 100 });
-  const arming = placing && !placing.id;
+// The game clock on the map: play or pause, how fast, and the date and time in the committee.
+function SimBar({ u, act }) {
+  const sim = u.sim || { running: false, speed: 60, t: 0 }, at = useRef(Date.now()), [, tick] = useState(0);
+  useEffect(() => { at.current = Date.now(); }, [u.sim?.t, u.sim?.running, u.sim?.speed]);
+  useEffect(() => { if (!sim.running) return; const i = setInterval(() => tick(n => n + 1), 500); return () => clearInterval(i); }, [sim.running]);
+  return html`<div class="us-sim">
+    <button class=${cls('btn sm', sim.running ? 'danger' : 'gold')} onClick=${() => act({ type: 'usaSim', running: !sim.running })}>${sim.running ? '⏸ Pause' : '▶ Start'}</button>
+    <b class="mono">${simClock(simSeconds(u, Date.now() - at.current))}</b>
+    <div class="row">${SIM_SPEEDS.map(v => html`<button class=${cls('btn xs', sim.speed === v && 'on')} onClick=${() => act({ type: 'usaSim', speed: v })} title=${`${v} game seconds per second`}>×${v}</button>`)}</div>
+  </div>`;
+}
+
+// Bring in units: pick a kind, a side, and click the map (or send it to a state capital).
+function SpawnCard({ placing, setPlacing, count, act, states }) {
+  const [f, setF] = useState({ utype: 'ng_bct', name: '', side: 'fed', strength: 100, keep: true, state: 'TX' });
+  const arming = placing?.spawn;
+  const ty = UNIT_TYPES[f.utype], spawn = { utype: f.utype, name: f.name.trim() || undefined, side: f.side, strength: Number(f.strength) };
   return html`<div class="card"><div class="card-h"><h3>New unit</h3></div><div class="card-b col">
-    <input class="input sm" placeholder="Name, e.g. Free Texas Militia" value=${f.name} onInput=${e => setF({ ...f, name: e.target.value })} />
-    <select class="input sm" value=${f.sil} onChange=${e => setF({ ...f, sil: e.target.value })}>${SILS.map(k => html`<option value=${k}>Picture: ${k}</option>`)}</select>
+    <select class="input sm" value=${f.utype} onChange=${e => setF({ ...f, utype: e.target.value, side: UNIT_TYPES[e.target.value].group === 'National Guard' ? `st:${f.state}` : f.side })}>
+      ${TYPE_GROUPS.map(g => html`<optgroup label=${g}>${Object.values(UNIT_TYPES).filter(t => t.group === g).map(t => html`<option value=${t.id}>${t.name}</option>`)}</optgroup>`)}</select>
+    <div class="dim small">${ty.desc} ${ty.men.toLocaleString('en-US')} people${ty.speed ? `, ${ty.speed} km/h` : ''}.</div>
+    <input class="input sm" placeholder=${`Name (default: ${ty.name})`} value=${f.name} onInput=${e => setF({ ...f, name: e.target.value })} />
+    <select class="input sm" value=${f.side} onChange=${e => setF({ ...f, side: e.target.value })}><${SideOptions} /></select>
     <label class="row small">Strength <input type="range" min="0" max="100" value=${f.strength} onInput=${e => setF({ ...f, strength: e.target.value })} /> <b>${f.strength}%</b></label>
-    <button class=${cls('btn sm gold', arming && 'on')} disabled=${!f.name.trim()} onClick=${() => setPlacing(arming ? null : { spawn: { name: f.name, sil: f.sil, strength: Number(f.strength) } })}>${arming ? 'Click the map to place it…' : 'Place on map'}</button>
+    <label class="row small"><input type="checkbox" checked=${f.keep} onChange=${e => setF({ ...f, keep: e.target.checked })} /> Keep placing (press Esc to stop)</label>
+    <button class=${cls('btn sm gold', arming && 'on')} onClick=${() => setPlacing(arming ? null : { spawn, keep: f.keep })}>${arming ? 'Click the map to place it…' : 'Place on the map'}</button>
+    <div class="row wrap"><select class="input sm grow" value=${f.state} onChange=${e => setF({ ...f, state: e.target.value })}>${states.map(s => html`<option value=${s.id}>${s.name}</option>`)}</select>
+      <button class="btn sm" onClick=${() => act({ type: 'usaSpawn', ...spawn, at: 'capital', state: f.state })}>At the capital</button></div>
     <div class="row wrap"><button class="btn sm" onClick=${() => act({ type: 'usaFederalize', state: 'all', on: true })}>Federalize every Guard</button><button class="btn sm ghost" onClick=${() => act({ type: 'usaFederalize', state: 'all', on: false })}>Release them</button></div>
-    <div class="dim small">${count} unit${count === 1 ? '' : 's'} made by you. Click any dot to rename, move, resize or hide it.</div>
+    <div class="dim small">${count} unit${count === 1 ? '' : 's'} made by you. Click a dot to see it; Shift-drag on the map picks many.</div>
   </div></div>`;
 }

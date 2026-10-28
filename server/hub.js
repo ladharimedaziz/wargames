@@ -2,6 +2,7 @@
 // and the new committee state is pushed to everyone in that room within milliseconds.
 import { WebSocketServer } from 'ws';
 import { applyAction } from '../shared/engine/reducer.js';
+import { tickUsa } from '../shared/engine/usa.js';
 import { tensionLevel } from '../shared/engine/core.js';
 import { verifyToken, parseCookies, accounts, passwordFor, rotatePassword, setPassword, signOut, COMMITTEE_IDS } from './auth.js';
 import { readJSON, writeJSON } from './files.js';
@@ -289,6 +290,17 @@ export function createHub(server, store, geo) {
     if (globalState.pause?.until && globalState.pause.until < Date.now()) { globalState.pause = null; pushGlobal(); }
   }, 15000);
   wss.on('close', () => clearInterval(beat));
+
+  // The game clock of the US committees: about once a second, and only while it runs. The state goes out when units moved or fought.
+  const simBeat = setInterval(() => {
+    for (const id of COMMITTEE_IDS) {
+      try {
+        const state = store.get(id);
+        if (state?.mode === 'usa' && state.usa?.sim?.running && tickUsa(state, Date.now())) { store.touch(id); broadcastState(id); }
+      } catch (e) { console.error('[sim]', e); }
+    }
+  }, 1000);
+  wss.on('close', () => clearInterval(simBeat));
 
   return { wss, clients, broadcastState };
 }

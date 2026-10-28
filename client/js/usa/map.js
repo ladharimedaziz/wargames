@@ -5,6 +5,7 @@ import { geoAlbers, geoPath, geoCentroid } from 'd3-geo';
 import { html, useRef, useEffect, useMemo, cls } from '../lib.js';
 import { drawSil, getImage, sealUrl } from './art.js';
 import { USA_VIEW, USA_MAX_ZOOM, USA_UNIT_KINDS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors, getUnits, CROSSING_LIST, crossingState } from '/shared/engine/usa.js';
+import { sideColor, effSide } from '/shared/engine/usa-sim.js';
 
 let loading = null;
 // Loads and indexes the map files once: the states, the roads, and the Canadian and Mexican regions beside them.
@@ -99,9 +100,10 @@ const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', neighbor: '#0f2038
 export const unitLabel = u => (u.kind === 'governor' ? `${u.owner === 'DC' ? 'Mayor' : 'Gov.'} ${u.person}${u.party ? ` (${u.party})` : ''}` : u.federal ? `${u.short} · federal` : u.short);
 const roundRect = (ctx, x, y, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); };
 
-export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selectedUnit = null, selectedState = null, selectedCrossing = null, interactive = false, className = '' }) {
+export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder, onBox, selectedUnit = null, selectedUnits = null, selectedState = null, selectedCrossing = null, interactive = false, className = '' }) {
   const cv = useRef(), ov = useRef(), st = useRef({ data: null, w: 0, h: 0, cur: { ...USA_VIEW }, want: { ...USA_VIEW }, hover: null, raf: 0, onView, onPick, usa });
-  st.current.onView = onView; st.current.onPick = onPick; st.current.onPickUnit = onPickUnit; st.current.onPlace = onPlace; st.current.usa = usa; st.current.selUnit = selectedUnit; st.current.selState = selectedState; st.current.selX = selectedCrossing;
+  st.current.onView = onView; st.current.onPick = onPick; st.current.onPickUnit = onPickUnit; st.current.onPlace = onPlace; st.current.usa = usa; st.current.selUnit = selectedUnit; st.current.selSet = new Set(selectedUnits || (selectedUnit ? [selectedUnit] : [])); st.current.onOrder = onOrder; st.current.onBox = onBox;
+  if (st.current.usaPrev !== usa) { st.current.usaPrev = usa; st.current.recvAt = performance.now(); } st.current.selState = selectedState; st.current.selX = selectedCrossing;
   st.current.crossings = useMemo(() => Object.fromEntries(CROSSING_LIST.map(c => [c.id, crossingState(usa, c.id)])), [usa.border, usa.crossings]);
   st.current.units = useMemo(() => getUnits(usa), [usa.mods, usa.custom]);
   st.current.unitSig = useMemo(() => { let h = 0; for (const ch of JSON.stringify([usa.mods, usa.custom])) h = (h * 31 + ch.charCodeAt(0)) | 0; return h; }, [usa.mods, usa.custom]); // changes whenever a unit is edited, so badges re-lay out
@@ -221,8 +223,8 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
     const L = S.usa.layers, LB = S.usa.lightbars || {}, pat = S.usa.lightPattern || 'mixed';
     const lo = proj.invert([-30, S.h + 30]), hi = proj.invert([S.w + 30, -30]);
     const [x0, x1] = [Math.min(lo[0], hi[0]) - 0.2, Math.max(lo[0], hi[0]) + 0.2], [y0, y1] = [Math.min(lo[1], hi[1]) - 0.2, Math.max(lo[1], hi[1]) + 0.2];
-    const layout = `${S.baseKey}|${Object.entries(L).join()}|${S.unitSig}|${S.selUnit}`;
-    const wantLabels = S.labelKey !== layout, labels = [];
+    const layout = `${S.baseKey}|${Object.entries(L).join()}|${S.unitSig}|${[...S.selSet].join()}`;
+    const moving = !!S.usa.sim?.running && Object.values(S.units || {}).some(u => u.mv), wantLabels = S.labelKey !== layout || moving, labels = [];
     let flashing = false;
     S.hits = [];
     // Border crossings: a gate marker coloured by its status, and vehicles driving through. Vehicles fade in as they arrive and fade
@@ -255,17 +257,22 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
         if (k >= 4.5) { ctx.font = '500 11px "IBM Plex Sans", sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.fillStyle = 'rgba(8,18,36,.8)'; const tw = ctx.measureText(cx.name).width; ctx.fillRect(p[0] - tw / 2 - 3, p[1] + r + 2, tw + 6, 15); ctx.fillStyle = '#e6eefc'; ctx.fillText(cx.name, p[0], p[1] + r + 4); }
       }
     }
-    // Units: governors, federal forces, agencies, Guard and state police. Their badges are placed before any dot label.
-    const ulabels = [];
+    // Units: governors, federal forces, agencies, Guard, state police and the Zeus's own. Their badges are placed before any dot label.
+    // A moving unit glides from where the last tick put it, in the direction `mv` says, until the next tick arrives.
+    const ulabels = [], posOf = new Map(), glide = S.usa.sim?.running ? Math.min(2.5, (now - (S.recvAt || now)) / 1000) : 0;
+    let anyMv = false;
     for (const u of Object.values(S.units || {})) {
       const kd = USA_UNIT_KINDS[u.kind];
       if (!kd || u.hidden || !L[kd.layer] || k < kd.dot) continue;
-      if (u.lon < x0 || u.lon > x1 || u.lat < y0 || u.lat > y1) continue;
-      const p = proj([u.lon, u.lat]); if (!p) continue;
-      const r = Math.min(8, 3.5 + k * 0.1), chosen = u.id === S.selUnit;
+      const lon = u.mv && glide ? u.lon + u.mv[0] * glide : u.lon, lat = u.mv && glide ? u.lat + u.mv[1] * glide : u.lat;
+      if (u.mv && glide) anyMv = true;
+      posOf.set(u.id, [lon, lat]);
+      if (lon < x0 || lon > x1 || lat < y0 || lat > y1) continue;
+      const p = proj([lon, lat]); if (!p) continue;
+      const r = Math.min(8, 3.5 + k * 0.1), chosen = S.selSet.has(u.id);
       if (chosen) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p[0], p[1], r + 6, 0, 6.2832); ctx.stroke(); }
-      let fill = u.federal ? '#ff6b5a' : kd.color; const svc = svcOf(u);
-      if (svc && LB[svc]) {
+      let fill = u.destroyed ? '#5b6378' : u.federal ? '#ff6b5a' : u.kind === 'custom' ? sideColor(effSide(u)) : kd.color; const svc = svcOf(u);
+      if (svc && LB[svc] && !u.destroyed) {
         flashing = true;
         const h = (u.id.length * 131 + u.id.charCodeAt(u.id.length - 1) * 17) % 9973, def = LIGHT_PATTERNS[pat] || LIGHT_PATTERNS[LIGHT_PATTERN_IDS[h % LIGHT_PATTERN_IDS.length]], cols = lightColors(S.usa, svc, u.owner);
         let total = 0; for (const st of def.steps) total += st[1];
@@ -274,10 +281,42 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
         fill = ci >= 0 ? cols[ci % cols.length] : '#2a3144';
       }
       ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 6.2832); ctx.fill();
-      ctx.lineWidth = 2; ctx.strokeStyle = u.control === 'delegate' ? '#ffd166' : 'rgba(0,0,0,.75)'; ctx.stroke();
+      ctx.lineWidth = 2; ctx.strokeStyle = u.routed ? '#ffffff' : u.control === 'delegate' ? '#ffd166' : 'rgba(0,0,0,.75)'; ctx.stroke();
+      if (u.destroyed) { ctx.strokeStyle = '#ff6a5a'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(p[0] - r, p[1] - r); ctx.lineTo(p[0] + r, p[1] + r); ctx.moveTo(p[0] + r, p[1] - r); ctx.lineTo(p[0] - r, p[1] + r); ctx.stroke(); }
+      else if (k >= 2 && (u.strength < 100 || chosen)) {
+        const w = 16, f = Math.max(0, u.strength) / 100;
+        ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(p[0] - w / 2 - 1, p[1] + r + 2, w + 2, 5);
+        ctx.fillStyle = f > 0.6 ? '#5fd08a' : f > 0.3 ? '#ffd166' : '#ff5a4a'; ctx.fillRect(p[0] - w / 2, p[1] + r + 3, w * f, 3);
+      }
       S.hits.push([p[0], p[1], u.id]);
       if (k >= kd.label || chosen) ulabels.push([p[0], p[1] - r - 4, unitLabel(u), u]);
     }
+    // What the picked units are doing: a dashed line to where they are going (green move, blue patrol, red attack, gold escort).
+    const proj2 = g => proj(g);
+    for (const id of S.selSet) {
+      const u = S.units?.[id], o = u?.order, from = posOf.get(id); if (!o || !from) continue;
+      const colr = o.type === 'attack' ? '#ff5a4a' : o.type === 'patrol' ? '#4aa8ff' : o.type === 'escort' ? '#ffd166' : '#5fd08a';
+      const pts = o.type === 'patrol' ? [o.a, o.b] : o.target ? [posOf.get(o.target) || (S.units[o.target] && [S.units[o.target].lon, S.units[o.target].lat])] : [o.to];
+      ctx.strokeStyle = colr; ctx.fillStyle = colr; ctx.lineWidth = 1.6; ctx.setLineDash([6, 5]); ctx.beginPath();
+      const p0 = proj2(from); if (!p0) continue; ctx.moveTo(p0[0], p0[1]);
+      for (const g of pts) { const q = g && proj2(g); if (q) ctx.lineTo(q[0], q[1]); }
+      ctx.stroke(); ctx.setLineDash([]);
+      const last = pts[pts.length - 1], q = last && proj2(last); if (q) { ctx.beginPath(); ctx.arc(q[0], q[1], 4, 0, 6.2832); ctx.fill(); }
+    }
+    // Fighting: a flickering tracer from each firing unit to its target, and a burst on the target.
+    let shots = 0;
+    for (const u of Object.values(S.units || {})) {
+      if (!u.eng || u.destroyed || shots > 150) continue;
+      const a = posOf.get(u.id), b = posOf.get(u.eng); if (!a || !b) continue;
+      const pa = proj2(a), pb = proj2(b); if (!pa || !pb) continue;
+      if ((pa[0] < -50 && pb[0] < -50) || (pa[0] > S.w + 50 && pb[0] > S.w + 50)) continue;
+      shots++; flashing = true;
+      const ph = ((now / 120) + u.id.length * 7) % 3;
+      ctx.strokeStyle = ph < 1.5 ? 'rgba(255,90,70,.95)' : 'rgba(255,220,120,.9)'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(pa[0], pa[1]); ctx.lineTo(pb[0], pb[1]); ctx.stroke();
+      ctx.fillStyle = ph < 1 ? 'rgba(255,200,80,.9)' : 'rgba(255,90,60,.7)'; ctx.beginPath(); ctx.arc(pb[0], pb[1], 3 + (ph % 1) * 6, 0, 6.2832); ctx.fill();
+    }
+    if (anyMv) flashing = true;
+    if (S.box) { const b = S.box; ctx.fillStyle = 'rgba(74,168,255,.15)'; ctx.strokeStyle = 'rgba(74,168,255,.9)'; ctx.lineWidth = 1; ctx.fillRect(Math.min(b[0], b[2]), Math.min(b[1], b[3]), Math.abs(b[2] - b[0]), Math.abs(b[3] - b[1])); ctx.strokeRect(Math.min(b[0], b[2]), Math.min(b[1], b[3]), Math.abs(b[2] - b[0]), Math.abs(b[3] - b[1])); }
     // Labels go in priority order (units first, then the layers in order); one that would overlap a placed label is dropped.
     if (wantLabels) {
       const placed = [], grid = new Map(), G = 64;
@@ -328,7 +367,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
     return () => { dead = true; ro.disconnect(); cancelAnimationFrame(st.current.raf); clearTimeout(st.current.raf); clearTimeout(st.current.settle); };
   }, []);
   useEffect(() => { st.current.want = { ...USA_VIEW, ...view }; if (!st.current.data) return; redraw(); }, [view?.lon, view?.lat, view?.k]);
-  useEffect(redraw, [selectedUnit, usa.mods, usa.custom, Object.entries(usa.layers).join(), Object.entries(usa.lightbars || {}).join(), usa.lightPattern, JSON.stringify(usa.lightColors || {}), (usa.highlight || []).join(',')]);
+  useEffect(redraw, [selectedUnit, selectedUnits, usa, usa.mods, usa.custom, Object.entries(usa.layers).join(), Object.entries(usa.lightbars || {}).join(), usa.lightPattern, JSON.stringify(usa.lightColors || {}), (usa.highlight || []).join(',')]);
 
   // Pointer handling for the Zeus panel: drag to pan, wheel to zoom around the cursor, click to pick a state.
   useEffect(() => {
@@ -348,10 +387,20 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
     const commit = v => { if (!v) return; Object.assign(st.current.want, v); redraw(); st.current.onView?.({ ...st.current.want }); };
     const geoAt = m => { const S = st.current; return viewProjection(baseProjection(S.data, S.w, S.h), cur(), S.w, S.h).invert(m); };
     let drag = null, moved = 0;
-    const down = e => { if (!st.current.data) return; drag = { m: pos(e), g: geoAt(pos(e)) }; moved = 0; c.setPointerCapture(e.pointerId); };
+    const down = e => {
+      if (!st.current.data || e.button === 2) return;
+      drag = { m: pos(e), g: geoAt(pos(e)), box: e.shiftKey && !st.current.hoverUnit }; moved = 0; c.setPointerCapture(e.pointerId);
+    };
+    // Right-click is the RTS order: on a unit it means attack or escort, anywhere else it means go there.
+    const ctxMenu = e => {
+      e.preventDefault();
+      const o = st.current.onOrder; if (!o || !st.current.data) return;
+      const g = geoAt(pos(e)); if (g) o({ lon: g[0], lat: g[1], target: st.current.hoverUnit && st.current.units[st.current.hoverUnit] ? st.current.hoverUnit : null });
+    };
     const move = e => {
       if (!st.current.data) return;
       const m = pos(e);
+      if (drag?.box) { st.current.box = [drag.m[0], drag.m[1], m[0], m[1]]; redraw(); return; }
       if (drag) { moved += Math.abs(e.movementX) + Math.abs(e.movementY); if (drag.g) commit(anchor(drag.g, m, cur().k)); return; }
       let uh = null, ud = 12;
       for (const h of st.current.hits || []) { const d = Math.hypot(h[0] - m[0], h[1] - m[1]); if (d < ud) { ud = d; uh = h[2]; } }
@@ -362,7 +411,13 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
       const o = S.bp.p([v.lon, v.lat]), hit = stateAt(S, [(m[0] - S.w / 2) / v.k + o[0], (m[1] - S.h / 2) / v.k + o[1]]);
       if (hit !== st.current.hover) { st.current.hover = hit; c.title = hit ? st.current.data.byState.get(hit).name : ''; redraw(); }
     };
-    const up = e => { if (drag && moved < 4) { if (st.current.onPlace) { const g = geoAt(pos(e)); if (g) st.current.onPlace(g[0], g[1]); } else if (st.current.hoverUnit) st.current.onPickUnit?.(st.current.hoverUnit); else if (st.current.hover) st.current.onPick?.(st.current.hover); } drag = null; try { c.releasePointerCapture(e.pointerId); } catch {} };
+    const up = e => {
+      if (drag?.box) {
+        const b = st.current.box; st.current.box = null;
+        if (b) { const x0 = Math.min(b[0], b[2]), x1 = Math.max(b[0], b[2]), y0 = Math.min(b[1], b[3]), y1 = Math.max(b[1], b[3]); st.current.onBox?.((st.current.hits || []).filter(h => !h[2].startsWith('bx-') && h[0] >= x0 && h[0] <= x1 && h[1] >= y0 && h[1] <= y1).map(h => h[2])); }
+        drag = null; redraw(); try { c.releasePointerCapture(e.pointerId); } catch {} return;
+      }
+      if (drag && moved < 4) { if (st.current.onPlace) { const g = geoAt(pos(e)); if (g) st.current.onPlace(g[0], g[1]); } else if (st.current.hoverUnit) st.current.onPickUnit?.(st.current.hoverUnit, e.shiftKey || e.ctrlKey || e.metaKey); else if (st.current.hover) st.current.onPick?.(st.current.hover); } drag = null; try { c.releasePointerCapture(e.pointerId); } catch {} };
     const wheel = e => {
       e.preventDefault();
       if (!st.current.data) return;
@@ -370,8 +425,8 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
       const k = Math.max(1, Math.min(USA_MAX_ZOOM, cur().k * Math.exp(-e.deltaY * 0.0015)));
       if (g) commit(anchor(g, m, k));
     };
-    c.addEventListener('pointerdown', down); c.addEventListener('pointermove', move); c.addEventListener('pointerup', up); c.addEventListener('wheel', wheel, { passive: false });
-    return () => { c.removeEventListener('pointerdown', down); c.removeEventListener('pointermove', move); c.removeEventListener('pointerup', up); c.removeEventListener('wheel', wheel); };
+    c.addEventListener('pointerdown', down); c.addEventListener('pointermove', move); c.addEventListener('pointerup', up); c.addEventListener('wheel', wheel, { passive: false }); c.addEventListener('contextmenu', ctxMenu);
+    return () => { c.removeEventListener('contextmenu', ctxMenu); c.removeEventListener('pointerdown', down); c.removeEventListener('pointermove', move); c.removeEventListener('pointerup', up); c.removeEventListener('wheel', wheel); };
   }, [interactive]);
 
   return html`<div class="us-wrap"><canvas ref=${cv} class=${cls('us-canvas', className, interactive && 'interactive')}></canvas><canvas ref=${ov} class="us-canvas us-over"></canvas></div>`;
