@@ -1,7 +1,7 @@
 // The continental US map: states, counties and highways drawn on a canvas. The stage follows the Zeus's view;
 // on the Zeus panel it can be dragged and zoomed (`interactive`).
 import { feature, mesh } from 'topojson-client';
-import { geoAlbers, geoPath, geoCentroid, geoContains } from 'd3-geo';
+import { geoAlbers, geoPath, geoCentroid } from 'd3-geo';
 import { html, useRef, useEffect, useMemo, cls } from '../lib.js';
 import { drawSil, getImage, sealUrl } from './art.js';
 import { USA_VIEW, USA_MAX_ZOOM, USA_DOTS, USA_UNIT_KINDS, MIL_COLORS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors, getUnits } from '/shared/engine/usa.js';
@@ -31,13 +31,42 @@ export function loadUsa() {
 }
 
 // The Albers projection with the lower 48 fitted into w x h at zoom 1. A view {lon, lat, k} puts that point in the middle at zoom k.
+// Fitting streams the whole nation through the projection, so the result is kept per size: the pointer handlers ask for it on
+// every move. Callers must not change the returned projection.
+const fitted = new WeakMap();
 function baseProjection(data, w, h) {
-  return geoAlbers().rotate([96, 0]).center([0, 38.5]).parallels([29.5, 45.5]).fitExtent([[w * 0.03, h * 0.05], [w * 0.97, h * 0.95]], data.nation);
+  const m = fitted.get(data) || fitted.set(data, new Map()).get(data), key = `${w}x${h}`;
+  if (!m.has(key)) m.set(key, geoAlbers().rotate([96, 0]).center([0, 38.5]).parallels([29.5, 45.5]).fitExtent([[w * 0.03, h * 0.05], [w * 0.97, h * 0.95]], data.nation));
+  return m.get(key);
 }
 function viewProjection(base, view, w, h) {
   const t0 = base.translate(), s0 = base.scale(), p = base([view.lon, view.lat]);
   return geoAlbers().rotate([96, 0]).center([0, 38.5]).parallels([29.5, 45.5]).scale(s0 * view.k)
     .translate([w / 2 - (p[0] - t0[0]) * view.k, h / 2 - (p[1] - t0[1]) * view.k]).clipExtent([[-20, -20], [w + 20, h + 20]]);
+}
+
+// Every shape projected once into Path2D objects at zoom 1, for the current base projection (S.bp). Re-projecting ~3,000
+// counties and every road on each frame of a pan or zoom made the map crawl; a view is just this picture scaled and moved.
+function basePaths(S) {
+  const B = S.bp, proj = B.fine ||= geoAlbers().rotate([96, 0]).center([0, 38.5]).parallels([29.5, 45.5]).scale(B.p.scale()).translate(B.p.translate()).precision(0.05);
+  const mk = obj => { const p = new Path2D(); geoPath(proj, p)(obj); return p; };
+  if (!B.paths) {
+    const roads = list => { const p = new Path2D(), path = geoPath(proj, p); for (const l of list) path({ type: 'LineString', coordinates: l.coordinates }); return p; };
+    B.paths = {
+      nation: mk(S.data.nation), counties: mk(S.data.countyMesh), states: mk(S.data.stateMesh), outline: mk(S.data.outline),
+      highways: roads(S.data.highways), interstates: roads(S.data.interstates),
+      byState: new Map(S.data.states.map(s => [s.id, mk(s.f)])),
+    };
+  }
+  if (cityData && !B.paths.cities) B.paths.cities = mk(cityData.all);
+  return B.paths;
+}
+let hitCtx = null;
+// The state under base-projection point b, tested against the cached paths (geoContains on every state was slow).
+function stateAt(S, b) {
+  hitCtx ||= new OffscreenCanvas(1, 1).getContext('2d');
+  for (const [id, p] of basePaths(S).byState) if (hitCtx.isPointInPath(p, b[0], b[1])) return id;
+  return null;
 }
 
 // The view that frames one state (or the whole country with no id).
@@ -85,19 +114,24 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
 
   // The terrain, roads, borders and names are painted into an off-screen canvas that is reused while the view and layers stay the
   // same, so flashing lightbars only repaint the dots on top.
+  // Shapes are pre-projected at zoom 1 (basePaths), and every view is that picture scaled by k and shifted, so a pan or zoom
+  // only re-fills cached paths. Widths are given in screen pixels and divided by k.
   const paintBase = (ctx, S, proj, k) => {
-    const path = geoPath(proj, ctx), L = S.usa.layers;
+    const L = S.usa.layers, P = basePaths(S), o = S.bp.p([S.cur.lon, S.cur.lat]);
+    const geo = fn => { ctx.save(); ctx.transform(k, 0, 0, k, S.w / 2 - k * o[0], S.h / 2 - k * o[1]); fn(); ctx.restore(); };
+    const line = (p, color, wd) => geo(() => { ctx.strokeStyle = color; ctx.lineWidth = wd / k; ctx.stroke(p); });
     ctx.fillStyle = COL.sea; ctx.fillRect(0, 0, S.w, S.h);
-    ctx.beginPath(); path(S.data.nation); ctx.fillStyle = COL.land; ctx.fill();
-    const hi = new Set(S.usa.highlight || []);
-    if (hi.size) { ctx.beginPath(); for (const s of S.data.states) if (hi.has(s.id)) path(s.f); ctx.fillStyle = COL.hi; ctx.fill(); }
-    if (S.hover) { const s = S.data.byState.get(S.hover); if (s) { ctx.beginPath(); path(s.f); ctx.fillStyle = COL.hover; ctx.fill(); } }
-    if (L.counties) { ctx.beginPath(); path(S.data.countyMesh); ctx.strokeStyle = COL.county; ctx.lineWidth = k < 2 ? 0.4 : k < 8 ? 0.6 : 0.9; ctx.stroke(); }
+    geo(() => {
+      ctx.fillStyle = COL.land; ctx.fill(P.nation);
+      ctx.fillStyle = COL.hi; for (const id of new Set(S.usa.highlight || [])) { const p = P.byState.get(id); if (p) ctx.fill(p); }
+      if (S.hover && P.byState.has(S.hover)) { ctx.fillStyle = COL.hover; ctx.fill(P.byState.get(S.hover)); }
+    });
+    if (L.counties) line(P.counties, COL.county, k < 2 ? 0.4 : k < 8 ? 0.6 : 0.9);
     if (L.cities && k >= 2) {
       if (!cityData) loadCities().then(() => { S.baseKey = null; redraw(); });
       else {
-        ctx.beginPath(); path(cityData.all); ctx.fillStyle = 'rgba(255,196,120,.10)'; ctx.fill();
-        ctx.strokeStyle = 'rgba(255,196,120,.7)'; ctx.lineWidth = k < 6 ? 0.6 : 1.1; ctx.stroke();
+        geo(() => { ctx.fillStyle = 'rgba(255,196,120,.10)'; ctx.fill(P.cities); });
+        line(P.cities, 'rgba(255,196,120,.7)', k < 6 ? 0.6 : 1.1);
         if (L.labels && k >= 5) {
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `500 ${Math.round(Math.min(14, 9 + k * 0.1))}px "IBM Plex Sans", sans-serif`;
           const placed = [];
@@ -113,12 +147,11 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
     }
     if (L.highways) {
       ctx.lineJoin = 'round'; ctx.lineCap = 'round';
-      const road = (list, color, wd) => { ctx.beginPath(); for (const l of list) path({ type: 'LineString', coordinates: l.coordinates }); ctx.strokeStyle = color; ctx.lineWidth = wd; ctx.stroke(); };
-      if (k >= 1.6) road(S.data.highways, COL.u, k > 6 ? 1.2 : 0.7);
-      road(S.data.interstates, COL.i, k > 6 ? 2 : k > 2.5 ? 1.4 : 0.9);
+      if (k >= 1.6) line(P.highways, COL.u, k > 6 ? 1.2 : 0.7);
+      line(P.interstates, COL.i, k > 6 ? 2 : k > 2.5 ? 1.4 : 0.9);
     }
-    if (L.states) { ctx.beginPath(); path(S.data.stateMesh); ctx.strokeStyle = COL.state; ctx.lineWidth = k < 4 ? 1.1 : 1.8; ctx.stroke(); }
-    ctx.beginPath(); path(S.data.outline); ctx.strokeStyle = COL.coast; ctx.lineWidth = 1.2; ctx.stroke();
+    if (L.states) line(P.states, COL.state, k < 4 ? 1.1 : 1.8);
+    line(P.outline, COL.coast, 1.2);
     if (L.labels) {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = COL.label;
       if (k < 9) {
@@ -148,10 +181,30 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
     }
     if (!S.bp || S.bp.w !== S.w || S.bp.h !== S.h) S.bp = { w: S.w, h: S.h, p: baseProjection(S.data, S.w, S.h) };
     const proj = viewProjection(S.bp.p, v, S.w, S.h), k = v.k, L = S.usa.layers;
-    const key = [v.lon.toFixed(5), v.lat.toFixed(5), k.toFixed(4), S.w, S.h, dpr, L.states, L.counties, L.cities, L.highways, L.labels, (S.usa.highlight || []).join(), S.hover].join('|');
+    const rest = [S.w, S.h, dpr, L.states, L.counties, L.cities, L.highways, L.labels, (S.usa.highlight || []).join(), S.hover].join('|');
+    const key = [v.lon.toFixed(5), v.lat.toFixed(5), k.toFixed(4), rest].join('|'), now = performance.now();
     // The map itself lives on the bottom canvas and is repainted only when the view or layers change; the dots live on a canvas
     // above it, cleared and redrawn every frame, so flashing never repaints the map.
-    if (S.baseKey !== key) { ctx.setTransform(dpr, 0, 0, dpr, 0, 0); paintBase(ctx, S, proj, k); S.baseKey = key; }
+    // While the view keeps changing (a drag, a wheel, a glide), the last sharp paint is stretched into place instead: rasterising
+    // every county line each frame stutters even on a good GPU. A full paint follows once the view has been still for 150 ms.
+    if (S.baseKey !== key) {
+      const snap = S.snap;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      if (snap && snap.rest === rest && now - S.changedAt < 150) {
+        const ps = S.bp.p([snap.lon, snap.lat]), p = S.bp.p([v.lon, v.lat]), r = k / snap.k;
+        ctx.fillStyle = COL.sea; ctx.fillRect(0, 0, S.w, S.h);
+        ctx.transform(r, 0, 0, r, S.w / 2 * (1 - r) + k * (ps[0] - p[0]), S.h / 2 * (1 - r) + k * (ps[1] - p[1]));
+        ctx.drawImage(snap.c, 0, 0, S.w, S.h);
+        clearTimeout(S.settle); S.settle = setTimeout(() => { S.baseKey = null; redraw(); }, 150);
+      } else {
+        paintBase(ctx, S, proj, k);
+        const sc = snap?.c || document.createElement('canvas');
+        if (sc.width !== c.width || sc.height !== c.height) { sc.width = c.width; sc.height = c.height; }
+        sc.getContext('2d').drawImage(c, 0, 0);
+        S.snap = { c: sc, rest, lon: v.lon, lat: v.lat, k };
+      }
+      S.baseKey = key; S.changedAt = now;
+    }
     const octx = ov.current.getContext('2d');
     octx.setTransform(1, 0, 0, 1, 0, 0); octx.clearRect(0, 0, ov.current.width, ov.current.height); octx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const flashing = drawDots(octx, S, proj, k, performance.now());
@@ -281,7 +334,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
       redraw();
     });
     ro.observe(c);
-    return () => { dead = true; ro.disconnect(); cancelAnimationFrame(st.current.raf); clearTimeout(st.current.raf); };
+    return () => { dead = true; ro.disconnect(); cancelAnimationFrame(st.current.raf); clearTimeout(st.current.raf); clearTimeout(st.current.settle); };
   }, []);
   useEffect(() => { st.current.want = { ...USA_VIEW, ...view }; if (!st.current.data) return; redraw(); }, [view?.lon, view?.lat, view?.k]);
   useEffect(redraw, [selectedUnit, usa.mods, usa.custom, Object.entries(usa.layers).join(), Object.entries(usa.lightbars || {}).join(), usa.lightPattern, JSON.stringify(usa.lightColors || {}), (usa.highlight || []).join(',')]);
@@ -313,8 +366,9 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
       for (const h of st.current.hits || []) { const d = Math.hypot(h[0] - m[0], h[1] - m[1]); if (d < ud) { ud = d; uh = h[2]; } }
       if (uh !== st.current.hoverUnit) { st.current.hoverUnit = uh; const u = uh && st.current.units[uh]; c.title = u ? `${u.name}${u.person ? ` — ${u.person}` : ''}` : ''; c.style.cursor = uh ? 'pointer' : ''; }
       if (uh) return;
-      const g = geoAt(m); let hit = null;
-      if (g) for (const s of st.current.data.states) if (geoContains(s.f, g)) { hit = s.id; break; }
+      const S = st.current, v = cur();
+      if (!S.bp) return;
+      const o = S.bp.p([v.lon, v.lat]), hit = stateAt(S, [(m[0] - S.w / 2) / v.k + o[0], (m[1] - S.h / 2) / v.k + o[1]]);
       if (hit !== st.current.hover) { st.current.hover = hit; c.title = hit ? st.current.data.byState.get(hit).name : ''; redraw(); }
     };
     const up = e => { if (drag && moved < 4) { if (st.current.onPlace) { const g = geoAt(pos(e)); if (g) st.current.onPlace(g[0], g[1]); } else if (st.current.hoverUnit) st.current.onPickUnit?.(st.current.hoverUnit); else if (st.current.hover) st.current.onPick?.(st.current.hover); } drag = null; try { c.releasePointerCapture(e.pointerId); } catch {} };
