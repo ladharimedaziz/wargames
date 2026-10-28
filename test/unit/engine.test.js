@@ -861,3 +861,34 @@ test('US orders can be queued, spread into a formation, and attack-moved', async
   assert.ok(Math.abs(u.lon + 100.4) < 0.01, 'it went on to the queued point');
   assert.ok(z({ type: 'usaOrder', ids: [ids[1]], order: { type: 'amove', to: [-101, 35] } }).ok && getUnits(s.usa)[ids[1]].order.type === 'amove');
 });
+
+test('aircraft launch from air bases, stay in range, land again and die with a bombed base', async () => {
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const { applyAction } = await import('../../shared/engine/reducer.js');
+  const { tickUsa, getUnits } = await import('../../shared/engine/usa.js');
+  const s = createUsaState({ id: 'u', name: 'US', seed: 10 });
+  const z = a => applyAction(s, a, { role: 'zeus', user: 'z', now: 1_000_000 });
+  const U = () => getUnits(s.usa), run = (n, speed = 60) => { z({ type: 'usaSim', running: true, speed }); s.usa.sim.at = s.usa.sim.at || 1_000_000; for (let i = 0; i < n; i++) tickUsa(s, s.usa.sim.at + 1000); };
+  assert.ok(Object.values(U()).filter(x => x.kind === 'base').length >= 50, 'about fifty air bases');
+  assert.equal(U()['ac-langley-1'].air, 'parked');
+  assert.equal(U()['f-langley'], undefined, 'the old wing dot is gone');
+  // Out of range: an F-22 cannot be sent to the Pacific coast from Virginia
+  assert.equal(z({ type: 'usaOrder', ids: ['ac-langley-1'], order: { type: 'move', to: [-122, 37] } }).ok, false, 'beyond its combat radius');
+  assert.ok(z({ type: 'usaOrder', ids: ['ac-langley-1'], order: { type: 'move', to: [-80, 38] } }).ok);
+  assert.equal(U()['ac-langley-1'].air, 'takeoff');
+  run(10); // 10 s at x60 = 10 minutes
+  assert.equal(U()['ac-langley-1'].air, 'flying');
+  assert.ok(U()['ac-langley-1'].lon < -76.5, 'it is under way');
+  assert.ok(z({ type: 'usaScramble', base: 'ab-langley', recall: true }).ok, 'recall');
+  run(60);
+  assert.equal(U()['ac-langley-1'].air, 'parked', 'it landed and parked');
+  // A bombed base takes the parked aircraft with it
+  assert.ok(z({ type: 'usaScramble', base: 'ab-whiteman' }).ok, 'scramble the B-2s');
+  assert.equal(U()['ac-whiteman-1'].air, 'takeoff');
+  const bh = z({ type: 'usaSpawn', utype: 'bomber', side: 'foreign', name: 'Raider', lon: -76.36, lat: 37.1 }).id;
+  assert.ok(z({ type: 'usaHostile', a: 'fed', b: 'foreign', on: true }).ok);
+  s.usa.mods['ab-langley'] = { strength: 5 };
+  assert.ok(z({ type: 'usaOrder', ids: [bh], order: { type: 'attack', target: 'ab-langley' } }).ok);
+  run(200, 300);
+  assert.ok(U()['ab-langley'].destroyed || U()['ab-langley'].strength < 5, 'the base was hit');
+});

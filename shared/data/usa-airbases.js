@@ -1,0 +1,63 @@
+// Major US air bases of the lower 48 and the squadrons based at them. Positions are rounded to a few kilometres.
+// [id, name, short label, branch, lon, lat, state, [[squadron type, how many], ...]]
+// branch: usaf, navy, usmc, ang (Air National Guard: answers to the state's governor until federalized). Types are in usa-types.js.
+export const AIRBASES = [
+  // ---- Air Force: fighters and bombers ----
+  ['langley', 'Joint Base Langley-Eustis', 'Langley', 'usaf', -76.360, 37.083, 'VA', [['f22_sqn', 2]]],
+  ['barksdale', 'Barksdale Air Force Base', 'Barksdale', 'usaf', -93.660, 32.500, 'LA', [['bomber', 2]]],
+  ['whiteman', 'Whiteman Air Force Base', 'Whiteman', 'usaf', -93.550, 38.730, 'MO', [['bomber', 1]]],
+  ['minot', 'Minot Air Force Base', 'Minot', 'usaf', -101.358, 48.416, 'ND', [['bomber', 1]]],
+  ['dyess', 'Dyess Air Force Base', 'Dyess', 'usaf', -99.855, 32.421, 'TX', [['bomber', 1], ['c130', 1]]],
+  ['ellsworth', 'Ellsworth Air Force Base', 'Ellsworth', 'usaf', -103.103, 44.145, 'SD', [['bomber', 1]]],
+  ['nellis', 'Nellis Air Force Base', 'Nellis', 'usaf', -115.034, 36.236, 'NV', [['f35_sqn', 1], ['f15_sqn', 2]]],
+  ['edwards', 'Edwards Air Force Base', 'Edwards', 'usaf', -117.884, 34.905, 'CA', [['f35_sqn', 1]]],
+  ['eglin', 'Eglin Air Force Base', 'Eglin', 'usaf', -86.525, 30.483, 'FL', [['f35_sqn', 2]]],
+  ['tyndall', 'Tyndall Air Force Base', 'Tyndall', 'usaf', -85.575, 30.070, 'FL', [['f22_sqn', 1], ['f35_sqn', 1]]],
+  ['seymour', 'Seymour Johnson Air Force Base', 'Seymour Johnson', 'usaf', -77.961, 35.339, 'NC', [['f15_sqn', 2]]],
+  ['shaw', 'Shaw Air Force Base', 'Shaw', 'usaf', -80.470, 33.972, 'SC', [['f15_sqn', 2]]],
+  ['moody', 'Moody Air Force Base', 'Moody', 'usaf', -83.193, 30.968, 'GA', [['a10_sqn', 2]]],
+  ['luke', 'Luke Air Force Base', 'Luke', 'usaf', -112.383, 33.535, 'AZ', [['f35_sqn', 2]]],
+  ['davismonthan', 'Davis-Monthan Air Force Base', 'Davis-Monthan', 'usaf', -110.883, 32.167, 'AZ', [['a10_sqn', 2]]],
+  ['mountainhome', 'Mountain Home Air Force Base', 'Mountain Home', 'usaf', -115.872, 43.044, 'ID', [['f15_sqn', 2]]],
+  ['hill', 'Hill Air Force Base', 'Hill', 'usaf', -111.973, 41.124, 'UT', [['f35_sqn', 3]]],
+  ['holloman', 'Holloman Air Force Base', 'Holloman', 'usaf', -106.107, 32.852, 'NM', [['f15_sqn', 1], ['mq9', 1]]],
+  ['cannon', 'Cannon Air Force Base', 'Cannon', 'usaf', -103.322, 34.383, 'NM', [['mq9', 2]]],
+  ['beale', 'Beale Air Force Base', 'Beale', 'usaf', -121.436, 39.136, 'CA', [['mq9', 1]]],
+  ['grandforks', 'Grand Forks Air Force Base', 'Grand Forks', 'usaf', -97.401, 47.961, 'ND', [['mq9', 2]]],
+  // ---- Air Force: transport, tanker and radar ----
+  ['andrews', 'Joint Base Andrews', 'Andrews', 'usaf', -76.867, 38.811, 'MD', [['c130', 1]]],
+  ['dover', 'Dover Air Force Base', 'Dover', 'usaf', -75.466, 39.130, 'DE', [['c130', 2]]],
+  ['mcguire', 'Joint Base McGuire-Dix-Lakehurst', 'McGuire', 'usaf', -74.592, 40.016, 'NJ', [['tanker', 2]]],
+  ['robins', 'Robins Air Force Base', 'Robins', 'usaf', -83.592, 32.640, 'GA', [['awacs', 1]]],
+  ['littlerock', 'Little Rock Air Force Base', 'Little Rock', 'usaf', -92.150, 34.917, 'AR', [['c130', 2]]],
+  ['tinker', 'Tinker Air Force Base', 'Tinker', 'usaf', -97.386, 35.415, 'OK', [['awacs', 1], ['tanker', 1]]],
+  ['altus', 'Altus Air Force Base', 'Altus', 'usaf', -99.267, 34.667, 'OK', [['tanker', 1], ['c130', 1]]],
+  ['scott', 'Scott Air Force Base', 'Scott', 'usaf', -89.835, 38.545, 'IL', [['c130', 1], ['tanker', 1]]],
+  ['fairchild', 'Fairchild Air Force Base', 'Fairchild', 'usaf', -117.656, 47.615, 'WA', [['tanker', 2]]],
+  ['travis', 'Travis Air Force Base', 'Travis', 'usaf', -121.927, 38.263, 'CA', [['c130', 3], ['tanker', 1]]],
+  ['mcchord', 'McChord Field (Joint Base Lewis-McChord)', 'McChord', 'usaf', -122.476, 47.138, 'WA', [['c130', 2]]],
+  // ---- Navy and Marine Corps ----
+  ['oceana', 'Naval Air Station Oceana', 'NAS Oceana', 'navy', -76.030, 36.820, 'VA', [['f35_sqn', 2], ['f15_sqn', 2]]],
+  ['lemoore', 'Naval Air Station Lemoore', 'NAS Lemoore', 'navy', -119.952, 36.333, 'CA', [['f35_sqn', 2], ['f15_sqn', 2]]],
+  ['whidbey', 'Naval Air Station Whidbey Island', 'NAS Whidbey', 'navy', -122.656, 48.352, 'WA', [['f15_sqn', 1]]],
+  ['jacksonville', 'Naval Air Station Jacksonville', 'NAS Jacksonville', 'navy', -81.681, 30.236, 'FL', [['c130', 1]]],
+  ['northisland', 'Naval Air Station North Island', 'NAS North Island', 'navy', -117.215, 32.699, 'CA', [['c130', 1]]],
+  ['fallon', 'Naval Air Station Fallon', 'NAS Fallon', 'navy', -118.701, 39.416, 'NV', [['f15_sqn', 1]]],
+  ['miramar', 'Marine Corps Air Station Miramar', 'MCAS Miramar', 'usmc', -117.142, 32.868, 'CA', [['f35_sqn', 2]]],
+  ['cherrypoint', 'Marine Corps Air Station Cherry Point', 'MCAS Cherry Point', 'usmc', -76.881, 34.901, 'NC', [['f35_sqn', 2]]],
+  ['beaufort', 'Marine Corps Air Station Beaufort', 'MCAS Beaufort', 'usmc', -80.723, 32.477, 'SC', [['f35_sqn', 1]]],
+  ['yuma', 'Marine Corps Air Station Yuma', 'MCAS Yuma', 'usmc', -114.606, 32.657, 'AZ', [['f35_sqn', 1]]],
+  // ---- Air National Guard wings: the governor's until federalized ----
+  ['selfridge', 'Selfridge Air National Guard Base', 'Selfridge ANG', 'ang', -82.835, 42.608, 'MI', [['ng_air_wing', 1]]],
+  ['atlanticcity', 'Atlantic City Air National Guard Base', 'Atlantic City ANG', 'ang', -74.577, 39.457, 'NJ', [['ng_air_wing', 1]]],
+  ['kingsley', 'Kingsley Field Air National Guard Base', 'Kingsley ANG', 'ang', -121.733, 42.156, 'OR', [['ng_air_wing', 1]]],
+  ['mcentire', 'McEntire Joint National Guard Base', 'McEntire ANG', 'ang', -80.800, 33.921, 'SC', [['ng_air_wing', 1]]],
+  ['fargo', 'Fargo Air National Guard Base', 'Fargo ANG', 'ang', -96.816, 46.921, 'ND', [['ng_air_wing', 1]]],
+  ['joefoss', 'Joe Foss Field Air National Guard Base', 'Joe Foss ANG', 'ang', -96.740, 43.580, 'SD', [['ng_air_wing', 1]]],
+  ['barnes', 'Barnes Air National Guard Base', 'Barnes ANG', 'ang', -72.716, 42.157, 'MA', [['ng_air_wing', 1]]],
+  ['duluth', 'Duluth Air National Guard Base', 'Duluth ANG', 'ang', -92.194, 46.842, 'MN', [['ng_air_wing', 1]]],
+  ['truax', 'Truax Field Air National Guard Base', 'Truax ANG', 'ang', -89.337, 43.139, 'WI', [['ng_air_wing', 1]]],
+  ['savannah', 'Savannah Air National Guard Base', 'Savannah ANG', 'ang', -81.202, 32.127, 'GA', [['ng_air_wing', 1]]],
+];
+// How far from its base each kind of aircraft may be sent, in kilometres. There is no fuel to track; this is its combat radius.
+export const AIR_RADIUS = { f22_sqn: 1100, f35_sqn: 1100, f15_sqn: 1200, a10_sqn: 550, bomber: 5500, c130: 3500, tanker: 3500, awacs: 3500, mq9: 1800, ng_air_wing: 1100, air_wing: 1200 };
