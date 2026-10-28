@@ -59,6 +59,8 @@ export const USA_UNIT_KINDS = {
   police: { layer: 'uState', name: 'State police', color: '#4f9bff', dot: 4.5, label: 7 },
   custom: { layer: 'uCustom', name: 'Zeus-made units', color: '#ff8a5a', dot: 1, label: 3 },
 };
+// The drawn pictures a unit can use (see client/js/usa/art.js).
+export const SILS = ['tank', 'infantry', 'fighter', 'bomber', 'helicopter', 'carrier', 'destroyer', 'ship', 'sub', 'missile', 'satellite', 'shield', 'guard', 'police', 'person'];
 export const UNIT_LAYERS = Object.fromEntries(Object.values(USA_UNIT_KINDS).map(k => [k.layer, k.name]));
 const AGENCIES = new Set(['fbi', 'dhs', 'fema', 'cdc', 'ice', 'cbp', 'usss', 'dea', 'atf', 'usms']);
 
@@ -164,6 +166,64 @@ export const usaActions = {
       else if (typeof a.photo === 'string' && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(a.photo) && a.photo.length <= 40000) g.photo = a.photo;
       else return err('That photo is not a small JPEG, PNG or WebP.');
     }
+    return ok();
+  } },
+  // Zeus controls any unit: rename it, move it, set its strength, hide it, hand it to a delegate. Edits to catalog units are kept
+  // as small overrides (`mods`), so the saved state stays small; `usaUnitReset` drops them.
+  usaUnit: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const base = getUnits(s.usa)[a.id];
+    if (!base) return err('No such unit.');
+    const g = CATALOG[a.id] ? (s.usa.mods[a.id] ||= {}) : s.usa.custom[a.id];
+    const num = (v, lo, hi) => (Number.isFinite(Number(v)) ? clamp(Number(v), lo, hi) : null);
+    for (const [k, n] of [['name', 80], ['short', 40], ['desc', 300]]) if (a[k] !== undefined) { const t = String(a[k]).trim().slice(0, n); if (!t && k !== 'desc') return err('Give it a name.'); g[k] = t; }
+    if (a.strength !== undefined) { const v = num(a.strength, 0, 100); if (v == null) return err('Strength is 0 to 100.'); g.strength = Math.round(v); }
+    if (a.control !== undefined) { if (!['ai', 'delegate'].includes(a.control)) return err('Control is ai or delegate.'); g.control = a.control; }
+    if (a.hidden !== undefined) g.hidden = !!a.hidden;
+    if (a.federal !== undefined) { if (!['guard', 'police'].includes(base.kind)) return err('Only a Guard or police unit can be federalized.'); g.federal = !!a.federal; }
+    if (a.sil !== undefined) { if (!SILS.includes(a.sil)) return err('Unknown picture.'); g.sil = a.sil; }
+    if (a.lon !== undefined || a.lat !== undefined) {
+      const lon = Number(a.lon ?? base.lon), lat = Number(a.lat ?? base.lat);
+      if (!Number.isFinite(lon) || !Number.isFinite(lat) || lon < -126 || lon > -65 || lat < 23 || lat > 50.5) return err('That place is not on the map.');
+      g.lon = +lon.toFixed(3); g.lat = +lat.toFixed(3);
+    }
+    return ok();
+  } },
+  usaUnitReset: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    if (!CATALOG[a.id]) return err('Only the built-in units can be reset.');
+    delete s.usa.mods[a.id];
+    return ok();
+  } },
+  // Federalizing a state's Guard puts it under the President: every Guard unit in it (or all of them) flips together.
+  usaFederalize: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const codes = a.state === 'all' ? Object.values(CATALOG).filter(x => x.kind === 'guard').map(x => x.owner) : [String(a.state || '').toUpperCase()];
+    const ids = codes.map(c => `ng-${c}`);
+    if (!ids.every(id => CATALOG[id])) return err('No such Guard.');
+    for (const id of ids) (s.usa.mods[id] ||= {}).federal = a.on === undefined ? !getUnits(s.usa)[id].federal : !!a.on;
+    return ok();
+  } },
+  // A unit of Zeus's own: a militia, a task force, a protest, a convoy. It sits on the map like any other.
+  usaSpawn: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    if (Object.keys(s.usa.custom).length >= 300) return err('That is the most custom units (300).');
+    const name = String(a.name || '').trim().slice(0, 80);
+    if (!name) return err('Give the unit a name.');
+    const lon = Number(a.lon), lat = Number(a.lat);
+    if (!Number.isFinite(lon) || !Number.isFinite(lat) || lon < -126 || lon > -65 || lat < 23 || lat > 50.5) return err('Place it on the map.');
+    const sil = a.sil === undefined ? 'infantry' : a.sil;
+    if (!SILS.includes(sil)) return err('Unknown picture.');
+    let n = (s.usa.nextCustom || 1); while (s.usa.custom[`x-${n}`]) n++;
+    const id = `x-${n}`; s.usa.nextCustom = n + 1;
+    const st = Number(a.strength);
+    s.usa.custom[id] = { id, kind: 'custom', name, short: String(a.short || name).trim().slice(0, 40), owner: 'US', lon: +lon.toFixed(3), lat: +lat.toFixed(3), sil, img: null, photo: null, desc: String(a.desc || '').slice(0, 300), strength: Number.isFinite(st) ? clamp(Math.round(st), 0, 100) : 100, control: a.control === 'delegate' ? 'delegate' : 'ai', hidden: false };
+    return ok({ id });
+  } },
+  usaDeleteUnit: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    if (!s.usa.custom[a.id]) return err('Only units you made can be deleted. Hide the others.');
+    delete s.usa.custom[a.id];
     return ok();
   } },
   usaHighlight: { perm: 'zeus', run(s, a) {

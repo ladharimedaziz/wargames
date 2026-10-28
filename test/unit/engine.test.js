@@ -600,6 +600,22 @@ test('a US committee steers its map and refuses world actions', async () => {
   assert.ok(z({ type: 'usaGovernor', state: 'tx', name: 'Alex Student', control: 'delegate' }).ok && getUnits(s.usa)['gov-TX'].person === 'Alex Student' && getUnits(s.usa)['gov-TX'].control === 'delegate');
   assert.equal(z({ type: 'usaGovernor', state: 'TX', photo: 'javascript:alert(1)' }).ok, false);
   assert.equal(z({ type: 'usaGovernor', state: 'TX', photo: 'data:image/jpeg;base64,' + 'A'.repeat(50000) }).ok, false, 'photos stay small');
+  // Zeus controls every unit
+  assert.ok(z({ type: 'usaUnit', id: 'f-fbi', name: 'FBI HQ', strength: 40, hidden: true, lon: -90, lat: 35 }).ok);
+  let fbi = getUnits(s.usa)['f-fbi'];
+  assert.ok(fbi.name === 'FBI HQ' && fbi.strength === 40 && fbi.hidden && fbi.lon === -90 && fbi.lat === 35);
+  assert.equal(z({ type: 'usaUnit', id: 'f-fbi', lon: 10, lat: 35 }).ok, false, 'off the map');
+  assert.equal(z({ type: 'usaUnit', id: 'nope', name: 'x' }).ok, false);
+  assert.equal(z({ type: 'usaUnit', id: 'f-fbi', federal: true }).ok, false, 'only Guard or police');
+  assert.ok(z({ type: 'usaUnitReset', id: 'f-fbi' }).ok && getUnits(s.usa)['f-fbi'].strength === 100);
+  assert.ok(z({ type: 'usaFederalize', state: 'tx' }).ok && getUnits(s.usa)['ng-TX'].federal);
+  assert.ok(z({ type: 'usaFederalize', state: 'all', on: false }).ok && !getUnits(s.usa)['ng-TX'].federal);
+  const sp = z({ type: 'usaSpawn', name: 'Free Texas Militia', sil: 'infantry', lon: -99, lat: 31, strength: 55 });
+  assert.ok(sp.ok && getUnits(s.usa)[sp.id].strength === 55 && getUnits(s.usa)[sp.id].kind === 'custom');
+  assert.equal(z({ type: 'usaSpawn', name: 'Offshore', lon: 0, lat: 0 }).ok, false);
+  assert.ok(z({ type: 'usaUnit', id: sp.id, name: 'Militia', lon: -98, lat: 30 }).ok && getUnits(s.usa)[sp.id].name === 'Militia');
+  assert.ok(z({ type: 'usaDeleteUnit', id: sp.id }).ok && !getUnits(s.usa)[sp.id]);
+  assert.equal(z({ type: 'usaDeleteUnit', id: 'f-fbi' }).ok, false);
   assert.ok(z({ type: 'usaGovernor', state: 'TX', photo: 'data:image/png;base64,iVBORw0KGgo=' }).ok && getUnits(s.usa)['gov-TX'].photo.startsWith('data:image/png'));
   assert.ok(z({ type: 'usaGovernor', state: 'TX', photo: null }).ok && getUnits(s.usa)['gov-TX'].photo === null);
   assert.equal(z({ type: 'usaGovernor', state: 'ZZ', name: 'x' }).ok, false);

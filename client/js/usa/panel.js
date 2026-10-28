@@ -3,7 +3,7 @@ import { html, useState, useEffect, useRef, run, useMemo, cls, toast } from '../
 import { TimerControls } from '../world/display-tab.js';
 import { DMDrawer, useUnread } from '../views/dm.js';
 import { UsMap, loadUsa, viewFor, unitLabel } from './map.js';
-import { USA_VIEW, USA_DOTS, USA_UNIT_KINDS, UNIT_LAYERS, LIGHT_SERVICES, LIGHT_PALETTE, LIGHT_PATTERNS, lightColors, getUnits } from '/shared/engine/usa.js';
+import { USA_VIEW, USA_DOTS, USA_UNIT_KINDS, UNIT_LAYERS, LIGHT_SERVICES, LIGHT_PALETTE, LIGHT_PATTERNS, lightColors, getUnits, SILS } from '/shared/engine/usa.js';
 
 const LAYERS = [['states', 'State borders'], ['counties', 'County borders'], ['cities', 'City borders'], ['highways', 'Highways'], ['labels', 'Names']];
 
@@ -29,9 +29,15 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
   const onView = v => { setView(v); if (live) send(v); };
   const jump = v => { setView(v); if (live) send(v); };
   const [marking, setMarking] = useState(false);
-  const [sel, setSel] = useState(null);
+  const [sel, setSel] = useState(null), [placing, setPlacing] = useState(null); // placing: {id} to move a unit, or {spawn} to make one
   const units = useMemo(() => getUnits(u), [u.mods, u.custom]);
   const pickUnit = id => { setSel(id); const x = units[id]; if (x && live) { /* keep the map where it is */ } };
+  const onPlace = (lon, lat) => {
+    const p = placing; setPlacing(null);
+    if (!p) return;
+    if (p.id) act({ type: 'usaUnit', id: p.id, lon, lat });
+    else act({ type: 'usaSpawn', ...p.spawn, lon, lat }).then(r => r.result?.id && setSel(r.result.id));
+  };
   const onPick = id => {
     if (!marking) { if (data) jump(viewFor(data, id, 1600, 900)); return; }
     act({ type: 'usaHighlight', states: u.highlight.includes(id) ? u.highlight.filter(x => x !== id) : [...u.highlight, id] });
@@ -65,12 +71,13 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
             <select class="input sm" value="" onChange=${e => e.target.value && jump(viewFor(data, e.target.value, 1600, 900))}><option value="">Zoom to a state…</option>${states.map(s => html`<option value=${s.id}>${s.name}</option>`)}</select>
             <div class="row wrap"><button class="btn sm" onClick=${() => jump({ ...USA_VIEW })}>Whole country</button>${!live && html`<button class="btn sm gold" onClick=${() => send(view)}>Show on stage</button>`}</div>
           </div></div>
-          ${sel && units[sel] && html`<${UnitCard} unit=${units[sel]} act=${act} close=${() => setSel(null)} jump=${v => jump(v)} />`}
+          ${sel && units[sel] && html`<${UnitCard} unit=${units[sel]} act=${act} placing=${placing} setPlacing=${setPlacing} close=${() => setSel(null)} jump=${v => jump(v)} />`}
           <div class="card"><div class="card-h"><h3>Units</h3></div><div class="card-b col">
             ${Object.entries(UNIT_LAYERS).map(([k, l]) => html`<label class="row"><input type="checkbox" checked=${!!u.layers[k]} onChange=${() => act({ type: 'usaLayer', layer: k })} /> ${l}</label>`)}
             <div class="dim small">Every unit is a dot with a badge above it. Click one to see it; click a governor to edit their seat.</div>
             <select class="input sm" value="" onChange=${e => e.target.value && setSel(e.target.value)}><option value="">Find a governor…</option>${Object.values(units).filter(x => x.kind === 'governor').sort((a, b) => a.owner.localeCompare(b.owner)).map(x => html`<option value=${x.id}>${x.owner} · ${x.person}${x.control === 'delegate' ? ' (delegate)' : ''}</option>`)}</select>
           </div></div>
+          <${SpawnCard} placing=${placing} setPlacing=${setPlacing} count=${Object.keys(u.custom || {}).length} act=${act} />
           <${Lightbars} u=${u} data=${data} states=${states} act=${act} />
           <div class="card"><div class="card-h"><h3>Mark states</h3></div><div class="card-b col">
             <button class=${cls('btn sm', marking && 'on')} onClick=${() => setMarking(!marking)}>${marking ? 'Clicking marks states' : 'Click to mark states'}</button>
@@ -86,7 +93,7 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
           </div></div>
           <${TimerControls} conn=${conn} state=${state} />
         </aside>
-        <div class="us-mapbox"><${UsMap} usa=${u} view=${view} interactive=${true} onView=${onView} onPick=${onPick} onPickUnit=${pickUnit} selectedUnit=${sel} /><div class="us-readout mono">zoom ${view.k.toFixed(1)}×</div></div>
+        <div class="us-mapbox"><${UsMap} usa=${u} view=${view} interactive=${true} onView=${onView} onPick=${onPick} onPickUnit=${pickUnit} onPlace=${placing ? onPlace : null} selectedUnit=${sel} /><div class="us-readout mono">zoom ${view.k.toFixed(1)}×</div></div>
       </div>
       <${DMDrawer} conn=${conn} committee=${committee} open=${dmOpen} onClose=${() => setDmOpen(false)} kronos=${kronos} name=${state.name} />
     </div>`;
@@ -125,10 +132,13 @@ function ColorPick({ onSet }) {
 }
 
 // A unit's card. Governors can be edited: the AI plays them, or a delegate does under their own name and photo.
-function UnitCard({ unit: x, act, close, jump }) {
+function UnitCard({ unit: x, act, close, jump, placing, setPlacing }) {
   const gov = x.kind === 'governor', code = x.owner;
   const [name, setName] = useState(x.person || ''), [party, setParty] = useState(x.party || '');
-  useEffect(() => { setName(x.person || ''); setParty(x.party || ''); }, [x.id, x.person, x.party]);
+  const [uname, setUname] = useState(x.name), [short, setShort] = useState(x.short || ''), [desc, setDesc] = useState(x.desc || '');
+  useEffect(() => { setName(x.person || ''); setParty(x.party || ''); setUname(x.name); setShort(x.short || ''); setDesc(x.desc || ''); }, [x.id, x.person, x.party, x.name, x.short, x.desc]);
+  const edit = patch => act({ type: 'usaUnit', id: x.id, ...patch });
+  const builtIn = !x.id.startsWith('x-'), moving = placing?.id === x.id;
   const photo = e => {
     const f = e.target.files?.[0]; e.target.value = '';
     if (!f) return;
@@ -152,6 +162,33 @@ function UnitCard({ unit: x, act, close, jump }) {
       <input class="input sm" placeholder="Party (R, D, I…)" value=${party} onInput=${e => setParty(e.target.value)} />
       <div class="row wrap"><button class="btn sm gold" onClick=${() => act({ type: 'usaGovernor', state: code, name, party })}>Save name</button>
         <label class="btn sm">Upload photo<input type="file" accept="image/*" hidden onChange=${photo} /></label>${x.photo && html`<button class="btn sm ghost" onClick=${() => act({ type: 'usaGovernor', state: code, photo: null })}>Remove photo</button>`}</div>`
-      : html`<div class="dim small">Strength ${x.strength}% · ${x.control === 'delegate' ? 'delegate' : 'AI'}</div>`}
+      : html`<div class="row wrap"><button class=${cls('btn sm', x.control !== 'delegate' && 'on')} onClick=${() => edit({ control: 'ai' })}>AI plays</button><button class=${cls('btn sm gold', x.control === 'delegate' && 'on')} onClick=${() => edit({ control: 'delegate' })}>Delegate plays</button></div>`}
+    <div class="sub-h">Any unit: Zeus controls it</div>
+    <input class="input sm" placeholder="Full name" value=${uname} onInput=${e => setUname(e.target.value)} />
+    <input class="input sm" placeholder="Short name on the badge" value=${short} onInput=${e => setShort(e.target.value)} />
+    <textarea class="input" rows="2" placeholder="Description" value=${desc} onInput=${e => setDesc(e.target.value)}></textarea>
+    <button class="btn sm gold" onClick=${() => edit({ name: uname, short: short || uname, desc })}>Save names</button>
+    <label class="row small">Strength <input type="range" min="0" max="100" value=${x.strength} onChange=${e => edit({ strength: e.target.value })} /> <b>${x.strength}%</b></label>
+    <select class="input sm" value=${x.sil} onChange=${e => edit({ sil: e.target.value })}>${SILS.map(k => html`<option value=${k}>Picture: ${k}</option>`)}</select>
+    <div class="row wrap">
+      <button class=${cls('btn sm', moving && 'on')} onClick=${() => setPlacing(moving ? null : { id: x.id })}>${moving ? 'Click the map…' : 'Move on map'}</button>
+      <button class="btn sm" onClick=${() => edit({ hidden: !x.hidden })}>${x.hidden ? 'Show' : 'Hide'}</button>
+      ${(x.kind === 'guard' || x.kind === 'police') && html`<button class=${cls('btn sm', x.federal && 'on')} onClick=${() => edit({ federal: !x.federal })}>${x.federal ? 'Federalized' : 'Federalize'}</button>`}
+      ${builtIn ? html`<button class="btn sm ghost" onClick=${() => act({ type: 'usaUnitReset', id: x.id })}>Reset</button>` : html`<button class="btn sm ghost" onClick=${() => { act({ type: 'usaDeleteUnit', id: x.id }); close(); }}>Delete</button>`}
+    </div>
+  </div></div>`;
+}
+
+// Make a unit of your own (a militia, a task force, a convoy): fill this in, press Place, then click the map.
+function SpawnCard({ placing, setPlacing, count, act }) {
+  const [f, setF] = useState({ name: '', sil: 'infantry', strength: 100 });
+  const arming = placing && !placing.id;
+  return html`<div class="card"><div class="card-h"><h3>New unit</h3></div><div class="card-b col">
+    <input class="input sm" placeholder="Name, e.g. Free Texas Militia" value=${f.name} onInput=${e => setF({ ...f, name: e.target.value })} />
+    <select class="input sm" value=${f.sil} onChange=${e => setF({ ...f, sil: e.target.value })}>${SILS.map(k => html`<option value=${k}>Picture: ${k}</option>`)}</select>
+    <label class="row small">Strength <input type="range" min="0" max="100" value=${f.strength} onInput=${e => setF({ ...f, strength: e.target.value })} /> <b>${f.strength}%</b></label>
+    <button class=${cls('btn sm gold', arming && 'on')} disabled=${!f.name.trim()} onClick=${() => setPlacing(arming ? null : { spawn: { name: f.name, sil: f.sil, strength: Number(f.strength) } })}>${arming ? 'Click the map to place it…' : 'Place on map'}</button>
+    <div class="row wrap"><button class="btn sm" onClick=${() => act({ type: 'usaFederalize', state: 'all', on: true })}>Federalize every Guard</button><button class="btn sm ghost" onClick=${() => act({ type: 'usaFederalize', state: 'all', on: false })}>Release them</button></div>
+    <div class="dim small">${count} unit${count === 1 ? '' : 's'} made by you. Click any dot to rename, move, resize or hide it.</div>
   </div></div>`;
 }
