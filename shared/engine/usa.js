@@ -3,6 +3,7 @@ import { clamp } from './core.js';
 import { STATES, FEDERAL, STATE_INFO } from '../data/usa-units.js';
 import { CROSSINGS } from '../data/usa-border.js';
 import { UNIT_TYPES } from '../data/usa-types.js';
+import { route as roadRoute } from './usa-route.js';
 import { INCIDENTS } from '../data/usa-incidents.js';
 import { getGov, govTick, govLog, queue, applyEffect, officeState, OFFICE_BY_ID, GOV_EFFECTS } from './usa-gov.js';
 import { distKm, usaTick, SIM_SPEEDS, ROES, validSide, effSide, typeOf, inBox, isHostile, hostileKeyOf, sideName } from './usa-sim.js';
@@ -155,6 +156,16 @@ export function tickUsa(s, now) {
   return govTick(s.usa, GUARD_IDS) || moved;
 }
 const GUARD_IDS = Object.values(CATALOG).filter(x => x.kind === 'guard').map(x => x.id);
+// A move order. Wheeled and tracked units go by road where the server has the road map; everything else goes straight.
+function movement(u, to, budget) {
+  const order = { type: 'move', to };
+  // Routing is a search, so a big group order routes only its first few units; the rest go straight.
+  if (typeOf(u).domain === 'ground' && typeOf(u).speed >= 30 && budget.n-- > 0) {
+    const path = roadRoute([u.lon, u.lat], to);
+    if (path && path.length > 2) { order.path = path; order.pi = 0; }
+  }
+  return order;
+}
 function addHostile(usa, a, b) {
   if (isHostile(usa, a, b)) return false;
   usa.hostile.push(hostileKeyOf(a, b));
@@ -182,13 +193,13 @@ export const usaActions = {
     if (o.type === 'attack' || o.type === 'escort') { target = units[o.target]; if (!target || target.destroyed || target.hidden) return err('Pick a target.'); }
     const to = Array.isArray(o.to) ? [Number(o.to[0]), Number(o.to[1])] : null;
     if ((o.type === 'move' || o.type === 'patrol') && !(to && inBox(to[0], to[1]))) return err('Place it on the map.');
-    let n = 0;
+    let n = 0; const budget = { n: 12 };
     for (const id of ids) {
       const u = units[id];
       if (!u || u.destroyed || u.hidden || id === o.target) continue;
       if (o.type !== 'hold' && !typeOf(u).speed) continue;
       if (o.type === 'attack' && effSide(u) === effSide(target)) continue;
-      const order = o.type === 'hold' ? null : o.type === 'move' ? { type: 'move', to: [+to[0].toFixed(3), +to[1].toFixed(3)] }
+      const order = o.type === 'hold' ? null : o.type === 'move' ? movement(u, [+to[0].toFixed(3), +to[1].toFixed(3)], budget)
         : o.type === 'patrol' ? { type: 'patrol', a: [+u.lon.toFixed(3), +u.lat.toFixed(3)], b: [+to[0].toFixed(3), +to[1].toFixed(3)], toB: true } : { type: o.type, target: o.target };
       putUnit(s.usa, id, { order, mv: null, routed: false });
       if (o.type === 'attack') addHostile(s.usa, effSide(u), effSide(target));

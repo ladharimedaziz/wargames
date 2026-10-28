@@ -72,6 +72,21 @@ export function usaTick(s, now, getUnits, put, home) {
     if (!o || !ty.speed) { if (w.mv) { w.mv = null; dirty(w.id); } continue; }
     const km = ty.speed * (w.strength < 30 ? 0.6 : 1) * dt / 3600;
     let tx = null, tyy = null, stopAt = 0, finish = null;
+    // Along a road route the unit runs through its waypoints, carrying the rest of the tick's distance from one to the next.
+    if ((o.type === 'move' || o.type === 'return') && o.path?.length) {
+      let rem = km, arrived = false; o.pi ||= 0;
+      while (rem > 0) {
+        const [px, py] = o.path[o.pi], d = distKm(w, { lon: px, lat: py });
+        if (d <= rem) { w.lon = px; w.lat = py; rem -= d; if (o.pi >= o.path.length - 1) { arrived = true; break; } o.pi++; }
+        else { step(w, px, py, rem); rem = 0; }
+      }
+      dirty(w.id);
+      if (arrived) { if (o.type === 'return') w.routed = false; w.order = null; w.mv = null; log(usa, `${w.short || w.name} arrived.`, { id: w.id }); continue; }
+      [tx, tyy] = o.path[o.pi];
+      const d = Math.hypot((tx - w.lon) * KM_LON(w.lat), (tyy - w.lat) * KM_LAT) || 1, perReal = ty.speed * sim.speed / 3600;
+      w.mv = [+((tx - w.lon) / d * perReal).toFixed(6), +((tyy - w.lat) / d * perReal).toFixed(6)];
+      continue;
+    }
     if (o.type === 'move' || o.type === 'return') { [tx, tyy] = o.to; finish = 'arrive'; }
     else if (o.type === 'patrol') { [tx, tyy] = o.toB ? o.b : o.a; finish = 'turn'; }
     else if (o.type === 'attack' || o.type === 'escort') {

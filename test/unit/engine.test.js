@@ -792,3 +792,25 @@ test('the Zeus can set off incidents that spawn units, change status and get a g
   for (let i = 1; i <= 30; i++) tickUsa(s, 1_000_000 + i * 1000);
   assert.ok(s.usa.events.some(e => e.kind === 'gov' && /FEMA begins/.test(e.text)), 'FEMA answers the wildfire');
 });
+
+test('wheeled units follow roads when the road map is loaded', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { loadRoads } = await import('../../shared/engine/usa-route.js');
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const { applyAction } = await import('../../shared/engine/reducer.js');
+  const { tickUsa, getUnits } = await import('../../shared/engine/usa.js');
+  assert.ok(loadRoads(JSON.parse(readFileSync(new URL('../../client/data/us-roads.json', import.meta.url), 'utf8'))) > 10000);
+  const s = createUsaState({ id: 'u', name: 'US', seed: 7 });
+  const z = a => applyAction(s, a, { role: 'zeus', user: 'z', now: 1_000_000 });
+  const a = z({ type: 'usaSpawn', utype: 'stryker_bct', side: 'fed', name: 'Convoy', lon: -87.63, lat: 41.88 }).id;
+  const foot = z({ type: 'usaSpawn', utype: 'inf_co', side: 'fed', name: 'Foot', lon: -87.63, lat: 41.88 }).id;
+  assert.ok(z({ type: 'usaOrder', ids: [a, foot], order: { type: 'move', to: [-84.39, 33.75] } }).ok);
+  const o = getUnits(s.usa)[a].order, f = getUnits(s.usa)[foot].order;
+  assert.ok(o.path.length > 20 && o.path.at(-1)[0] === -84.39, 'a road route to Atlanta');
+  assert.equal(f.path, undefined, 'infantry on foot go straight');
+  z({ type: 'usaSim', running: true, speed: 1000 }); s.usa.sim.at = 1_000_000;
+  for (let i = 1; i <= 120 && getUnits(s.usa)[a].order; i++) tickUsa(s, 1_000_000 + i * 1000);
+  const u = getUnits(s.usa)[a];
+  assert.equal(u.order, null, 'it arrives');
+  assert.ok(Math.abs(u.lon + 84.39) < 0.01 && Math.abs(u.lat - 33.75) < 0.01);
+});
