@@ -3,6 +3,7 @@ import { clamp } from './core.js';
 import { STATES, FEDERAL, STATE_INFO } from '../data/usa-units.js';
 import { CROSSINGS } from '../data/usa-border.js';
 import { UNIT_TYPES } from '../data/usa-types.js';
+import { getGov, govTick, govLog, queue, applyEffect, officeState, OFFICE_BY_ID, GOV_EFFECTS } from './usa-gov.js';
 import { usaTick, SIM_SPEEDS, ROES, validSide, effSide, typeOf, inBox, isHostile, hostileKeyOf, sideName } from './usa-sim.js';
 
 const err = error => ({ ok: false, error });
@@ -118,6 +119,7 @@ export function migrateUsa(s) {
   u.mods ||= {}; u.custom ||= {}; u.states ||= {}; u.border ||= { CAN: 'open', MEX: 'open' }; u.crossings ||= {};
   u.sim ||= { running: false, speed: 60, t: 0, at: 0 }; u.hostile ||= []; u.events ||= [];
   for (const c of Object.values(u.custom)) { c.type ||= 'militia_sq'; c.side ||= 'mil'; c.roe ||= 'defend'; c.home ||= [c.lon, c.lat]; }
+  getGov(u);
   u.lightbars ||= { police: false, fire: false, ambulance: false }; u.lightPattern ||= 'mixed'; u.lightColors ||= {};
   return s;
 }
@@ -148,8 +150,10 @@ const homeOf = (usa, id, w) => (CATALOG[id] ? [CATALOG[id].lon, CATALOG[id].lat]
 // One step of the clock; the server calls this about once a second. True when the map changed and clients need the state.
 export function tickUsa(s, now) {
   migrateUsa(s);
-  return usaTick(s, now, getUnits, putUnit, (id, w) => homeOf(s.usa, id, w));
+  const moved = usaTick(s, now, getUnits, putUnit, (id, w) => homeOf(s.usa, id, w));
+  return govTick(s.usa, GUARD_IDS) || moved;
 }
+const GUARD_IDS = Object.values(CATALOG).filter(x => x.kind === 'guard').map(x => x.id);
 function addHostile(usa, a, b) {
   if (isHostile(usa, a, b)) return false;
   usa.hostile.push(hostileKeyOf(a, b));
@@ -191,6 +195,42 @@ export const usaActions = {
     }
     if (!n) return err('None of those units can take that order.');
     return ok({ count: n });
+  } },
+  // The computer-run government: switch it on or off, and edit an office (who holds it, delegate or AI).
+  usaGov: { perm: 'zeus', run(s, a) {
+    migrateUsa(s); const g = getGov(s.usa);
+    if (a.auto !== undefined) g.auto = !!a.auto;
+    if (a.approval !== undefined) { const v = Number(a.approval); if (!Number.isFinite(v)) return err('Approval is a number.'); g.approval = Math.max(0, Math.min(100, Math.round(v))); }
+    if (a.office !== undefined) {
+      if (!OFFICE_BY_ID[a.office]) return err('No such office.');
+      const o = (g.offices[a.office] ||= {});
+      if (a.person !== undefined) o.person = String(a.person).trim().slice(0, 60);
+      if (a.control !== undefined) { if (!['ai', 'delegate'].includes(a.control)) return err('AI or delegate.'); o.control = a.control; }
+    }
+    if (a.cancel) g.pending = g.pending.filter(p => p.id !== a.cancel);
+    return ok();
+  } },
+  // Makes an office speak or give an order, now or after a delay in game minutes.
+  usaGovAct: { perm: 'zeus', run(s, a) {
+    migrateUsa(s); const g = getGov(s.usa);
+    if (!OFFICE_BY_ID[a.office]) return err('Pick an office.');
+    const effect = a.effect || 'none'; if (!(effect in GOV_EFFECTS)) return err('Unknown effect.');
+    const text = String(a.text || '').trim().slice(0, 240); if (!text && effect === 'none') return err('Write what they say or pick an effect.');
+    const o = officeState(s.usa, a.office), delay = Math.max(0, Math.min(1440, Number(a.delay) || 0));
+    const line = text || `${o.title} acts: ${GOV_EFFECTS[effect].toLowerCase()}.`;
+    if (delay === 0) { applyEffect(s.usa, effect, GUARD_IDS); govLog(s.usa, line, { office: a.office }); }
+    else queue(s.usa, { office: a.office, act: effect === 'none' ? 'statement' : 'order', text: line, effect }, delay);
+    return ok();
+  } },
+  // Puts a bill to the House after a delay; the AI votes on how the public feels about the President unless the Zeus forces it.
+  usaBill: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const title = String(a.title || '').trim().slice(0, 100); if (!title) return err('Name the bill.');
+    const effect = a.effect || 'none'; if (!(effect in GOV_EFFECTS)) return err('Unknown effect.');
+    if (a.force !== undefined && !['pass', 'fail'].includes(a.force)) return err('Pass or fail.');
+    queue(s.usa, { act: 'vote', title, effect, force: a.force }, Math.max(0, Math.min(1440, Number(a.delay) || 30)));
+    govLog(s.usa, `Congress takes up ${title}.`, { office: 'speaker' });
+    return ok();
   } },
   usaRoe: { perm: 'zeus', run(s, a) {
     migrateUsa(s);
