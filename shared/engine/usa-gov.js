@@ -1,20 +1,22 @@
+// Office holders are the people in post at the end of 2025 and may be out of date; the Zeus can rename anyone, and a delegate
+// who takes an office types their own name.
 // The rest of the US government, run by the computer unless a delegate takes an office: President, cabinet, military chiefs,
 // Congress and the Supreme Court. It watches the events of the simulation and answers them after a realistic delay, and the
 // Zeus can make any office act, queue an order, or put a bill to a vote.
 import { sideName } from './usa-sim.js';
 
 export const OFFICES = [
-  ['pres', 'President of the United States', 'exec'], ['vp', 'Vice President', 'exec'], ['nsa', 'National Security Adviser', 'exec'],
-  ['state', 'Secretary of State', 'cabinet'], ['treasury', 'Secretary of the Treasury', 'cabinet'], ['defense', 'Secretary of Defense', 'cabinet'],
-  ['justice', 'Attorney General', 'cabinet'], ['dhs', 'Secretary of Homeland Security', 'cabinet'], ['hhs', 'Secretary of Health and Human Services', 'cabinet'],
-  ['transport', 'Secretary of Transportation', 'cabinet'], ['energy', 'Secretary of Energy', 'cabinet'], ['commerce', 'Secretary of Commerce', 'cabinet'],
-  ['fema', 'FEMA Administrator', 'cabinet'], ['fbi', 'Director of the FBI', 'cabinet'],
-  ['joint', 'Chairman of the Joint Chiefs of Staff', 'military'],
-  ['speaker', 'Speaker of the House', 'congress'], ['senate', 'Senate Majority Leader', 'congress'],
-  ['scotus', 'Chief Justice of the United States', 'judiciary'],
+  ['pres', 'President of the United States', 'exec', 'Donald Trump'], ['vp', 'Vice President', 'exec', 'JD Vance'], ['nsa', 'National Security Adviser', 'exec', 'Marco Rubio'],
+  ['state', 'Secretary of State', 'cabinet', 'Marco Rubio'], ['treasury', 'Secretary of the Treasury', 'cabinet', 'Scott Bessent'], ['defense', 'Secretary of Defense', 'cabinet', 'Pete Hegseth'],
+  ['justice', 'Attorney General', 'cabinet', 'Pam Bondi'], ['dhs', 'Secretary of Homeland Security', 'cabinet', 'Kristi Noem'], ['hhs', 'Secretary of Health and Human Services', 'cabinet', 'Robert F. Kennedy Jr.'],
+  ['transport', 'Secretary of Transportation', 'cabinet', 'Sean Duffy'], ['energy', 'Secretary of Energy', 'cabinet', 'Chris Wright'], ['commerce', 'Secretary of Commerce', 'cabinet', 'Howard Lutnick'],
+  ['fema', 'FEMA Administrator', 'cabinet', ''], ['fbi', 'Director of the FBI', 'cabinet', 'Kash Patel'],
+  ['joint', 'Chairman of the Joint Chiefs of Staff', 'military', 'Gen. Dan Caine'],
+  ['speaker', 'Speaker of the House', 'congress', 'Mike Johnson'], ['senate', 'Senate Majority Leader', 'congress', 'John Thune'],
+  ['scotus', 'Chief Justice of the United States', 'judiciary', 'John Roberts'],
 ];
 export const OFFICE_BRANCH = { exec: 'White House', cabinet: 'Cabinet and agencies', military: 'Military', congress: 'Congress', judiciary: 'Courts' };
-export const OFFICE_BY_ID = Object.fromEntries(OFFICES.map(o => [o[0], { id: o[0], title: o[1], branch: o[2] }]));
+export const OFFICE_BY_ID = Object.fromEntries(OFFICES.map(o => [o[0], { id: o[0], title: o[1], branch: o[2], person: o[3] }]));
 // What an order or a passed bill can do to the simulation.
 export const GOV_EFFECTS = {
   none: 'Nothing but the words',
@@ -31,7 +33,7 @@ export function getGov(usa) {
   g.offices ||= {}; g.pending ||= []; g.cool ||= {}; g.snap ||= { st: {}, bd: {} };
   return g;
 }
-export const officeState = (usa, id) => ({ ...OFFICE_BY_ID[id], person: '', control: 'ai', ...(getGov(usa).offices[id] || {}) });
+export const officeState = (usa, id) => ({ ...OFFICE_BY_ID[id], control: 'ai', ...(getGov(usa).offices[id] || {}) });
 const clock = usa => Math.round(usa.sim?.t || 0);
 export function govLog(usa, text, extra = {}) {
   usa.events.push({ t: clock(usa), text, kind: 'gov', ...extra });

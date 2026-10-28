@@ -205,8 +205,11 @@ export const usaActions = {
     if (a.office !== undefined) {
       if (!OFFICE_BY_ID[a.office]) return err('No such office.');
       const o = (g.offices[a.office] ||= {});
+      if (a.control !== undefined && !['ai', 'delegate'].includes(a.control)) return err('AI or delegate.');
+      if (a.person !== undefined && (a.control ?? o.control ?? 'ai') !== 'delegate') return err('Give the office to a delegate before renaming it.');
+      if (a.control === 'ai') delete o.person; // the real office holder is back
+      if (a.control !== undefined) o.control = a.control;
       if (a.person !== undefined) o.person = String(a.person).trim().slice(0, 60);
-      if (a.control !== undefined) { if (!['ai', 'delegate'].includes(a.control)) return err('AI or delegate.'); o.control = a.control; }
     }
     if (a.cancel) g.pending = g.pending.filter(p => p.id !== a.cancel);
     return ok();
@@ -296,6 +299,10 @@ export const usaActions = {
     const id = `gov-${String(a.state || '').toUpperCase()}`;
     if (!CATALOG[id]) return err('No such state.');
     const g = (s.usa.mods[id] ||= {});
+    // The real governor plays while the AI does; a name, party or photo can only be set once a delegate has the seat, and handing it back to the AI restores the real one.
+    const control = a.control ?? getUnits(s.usa)[id].control;
+    if ((a.name !== undefined || a.party !== undefined || (a.photo !== undefined && a.photo !== null)) && control !== 'delegate') return err('Set the state to delegate before changing the governor.');
+    if (a.control === 'ai') { delete g.person; delete g.short; delete g.party; delete g.photo; }
     if (a.name !== undefined) { const n = String(a.name).trim().slice(0, 60); if (!n) return err('Give them a name.'); g.person = n; g.short = n; }
     if (a.party !== undefined) g.party = String(a.party).slice(0, 12);
     if (a.control !== undefined) { if (!['ai', 'delegate'].includes(a.control)) return err('Control is ai or delegate.'); g.control = a.control; }

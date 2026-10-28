@@ -39,10 +39,11 @@ export function UnitCard({ unit: x, units, act, close, jump, placing, setPlacing
     <div class="dim small">${x.desc}</div>
     ${gov ? html`
       <div class="row wrap"><button class=${cls('btn sm', x.control !== 'delegate' && 'on')} onClick=${() => act({ type: 'usaGovernor', state: code, control: 'ai' })}>AI plays</button><button class=${cls('btn sm gold', x.control === 'delegate' && 'on')} onClick=${() => act({ type: 'usaGovernor', state: code, control: 'delegate' })}>Delegate plays</button></div>
-      <input class="input sm" placeholder="Name" value=${name} onInput=${e => setName(e.target.value)} />
-      <input class="input sm" placeholder="Party (R, D, I…)" value=${party} onInput=${e => setParty(e.target.value)} />
-      <div class="row wrap"><button class="btn sm gold" onClick=${() => act({ type: 'usaGovernor', state: code, name, party })}>Save name</button>
-        <label class="btn sm">Upload photo<input type="file" accept="image/*" hidden onChange=${photo} /></label>${x.photo && html`<button class="btn sm ghost" onClick=${() => act({ type: 'usaGovernor', state: code, photo: null })}>Remove photo</button>`}</div>`
+      <input class="input sm" placeholder="Name" value=${name} disabled=${x.control !== 'delegate'} onInput=${e => setName(e.target.value)} />
+      <input class="input sm" placeholder="Party (R, D, I…)" value=${party} disabled=${x.control !== 'delegate'} onInput=${e => setParty(e.target.value)} />
+      ${x.control !== 'delegate' && html`<div class="dim small">The real governor is in office. Choose “Delegate plays” to put a student in the seat under their own name.</div>`}
+      <div class="row wrap"><button class="btn sm gold" disabled=${x.control !== 'delegate'} onClick=${() => act({ type: 'usaGovernor', state: code, name, party })}>Save name</button>
+        <label class=${cls('btn sm', x.control !== 'delegate' && 'disabled')}>Upload photo<input type="file" accept="image/*" disabled=${x.control !== 'delegate'} hidden onChange=${photo} /></label>${x.photo && html`<button class="btn sm ghost" onClick=${() => act({ type: 'usaGovernor', state: code, photo: null })}>Remove photo</button>`}</div>`
       : html`<div class="row wrap"><button class=${cls('btn sm', x.control !== 'delegate' && 'on')} onClick=${() => edit({ control: 'ai' })}>AI plays</button><button class=${cls('btn sm gold', x.control === 'delegate' && 'on')} onClick=${() => edit({ control: 'delegate' })}>Delegate plays</button></div>`}
     <${ForceInfo} x=${x} units=${units} />
     <${OrderBar} ids=${[x.id]} act=${act} placing=${placing} setPlacing=${setPlacing} roe=${x.roe} fixed=${!typeOf(x).speed} />
