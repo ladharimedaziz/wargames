@@ -91,6 +91,7 @@ export function loadCities() {
   return cityLoading;
 }
 
+const STATUS_TINT = { alert: 'rgba(255,209,102,.16)', emergency: 'rgba(255,138,74,.28)', martial: 'rgba(255,74,74,.36)' };
 const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', neighbor: '#0d1b31', region: 'rgba(150,180,230,.22)', state: 'rgba(190,215,255,.7)', coast: 'rgba(190,215,255,.85)', i: '#f3b24a', u: 'rgba(200,170,120,.7)', label: '#dfe9fb', hover: 'rgba(255,255,255,.14)' };
 
 // `view` is the view to show, `onView` is called as the viewer drags or zooms, `onPick` with a state code on click.
@@ -98,9 +99,9 @@ const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', neighbor: '#0d1b31
 export const unitLabel = u => (u.kind === 'governor' ? `${u.owner === 'DC' ? 'Mayor' : 'Gov.'} ${u.person}${u.party ? ` (${u.party})` : ''}` : u.federal ? `${u.short} · federal` : u.short);
 const roundRect = (ctx, x, y, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); };
 
-export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selectedUnit = null, interactive = false, className = '' }) {
+export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selectedUnit = null, selectedState = null, interactive = false, className = '' }) {
   const cv = useRef(), ov = useRef(), st = useRef({ data: null, w: 0, h: 0, cur: { ...USA_VIEW }, want: { ...USA_VIEW }, hover: null, raf: 0, onView, onPick, usa });
-  st.current.onView = onView; st.current.onPick = onPick; st.current.onPickUnit = onPickUnit; st.current.onPlace = onPlace; st.current.usa = usa; st.current.selUnit = selectedUnit;
+  st.current.onView = onView; st.current.onPick = onPick; st.current.onPickUnit = onPickUnit; st.current.onPlace = onPlace; st.current.usa = usa; st.current.selUnit = selectedUnit; st.current.selState = selectedState;
   st.current.units = useMemo(() => getUnits(usa), [usa.mods, usa.custom]);
   st.current.unitSig = useMemo(() => { let h = 0; for (const ch of JSON.stringify([usa.mods, usa.custom])) h = (h * 31 + ch.charCodeAt(0)) | 0; return h; }, [usa.mods, usa.custom]); // changes whenever a unit is edited, so badges re-lay out
 
@@ -119,6 +120,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
     geo(() => {
       ctx.fillStyle = COL.land; ctx.fill(P.nation);
       ctx.fillStyle = COL.hi; for (const id of new Set(S.usa.highlight || [])) { const p = P.byState.get(id); if (p) ctx.fill(p); }
+      for (const [code, g] of Object.entries(S.usa.states || {})) { const tint = STATUS_TINT[g.status], p = tint && P.byState.get(code); if (p) { ctx.fillStyle = tint; ctx.fill(p); } }
       if (S.hover && P.byState.has(S.hover)) { ctx.fillStyle = COL.hover; ctx.fill(P.byState.get(S.hover)); }
     });
     if (L.cities && k >= 2) {
@@ -143,6 +145,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
       if (k >= 1.6) line(P.highways, COL.u, k > 6 ? 1.2 : 0.7);
       line(P.interstates, COL.i, k > 6 ? 2 : k > 2.5 ? 1.4 : 0.9);
     }
+    if (S.selState && P.byState.has(S.selState)) line(P.byState.get(S.selState), '#ffffff', 2.2);
     if (L.states) line(P.states, COL.state, k < 4 ? 1.1 : 1.8);
     line(P.outline, COL.coast, 1.2);
     if (L.labels) {
@@ -178,7 +181,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
     }
     if (!S.bp || S.bp.w !== S.w || S.bp.h !== S.h) S.bp = { w: S.w, h: S.h, p: baseProjection(S.data, S.w, S.h) };
     const proj = viewProjection(S.bp.p, v, S.w, S.h), k = v.k, L = S.usa.layers;
-    const rest = [S.w, S.h, dpr, L.states, L.neighbors, L.cities, L.highways, L.labels, (S.usa.highlight || []).join(), S.hover].join('|');
+    const rest = [S.w, S.h, dpr, L.states, L.neighbors, L.cities, L.highways, L.labels, (S.usa.highlight || []).join(), S.hover, S.selState, Object.entries(S.usa.states || {}).map(([c, g]) => c + g.status).join()].join('|');
     const key = [v.lon.toFixed(5), v.lat.toFixed(5), k.toFixed(4), rest].join('|'), now = performance.now();
     // The map itself lives on the bottom canvas and is repainted only when the view or layers change; the dots live on a canvas
     // above it, cleared and redrawn every frame, so flashing never repaints the map.

@@ -615,6 +615,14 @@ test('a US committee steers its map and refuses world actions', async () => {
   assert.ok(z({ type: 'usaUnit', id: sp.id, name: 'Militia', lon: -98, lat: 30 }).ok && getUnits(s.usa)[sp.id].name === 'Militia');
   assert.ok(z({ type: 'usaDeleteUnit', id: sp.id }).ok && !getUnits(s.usa)[sp.id]);
   assert.equal(z({ type: 'usaDeleteUnit', id: 'f-fbi' }).ok, false);
+  // State cards
+  const { getState } = await import('../../shared/engine/usa.js');
+  assert.equal(getState(s.usa, 'TX').status, 'normal');
+  assert.ok(z({ type: 'usaState', state: 'tx', status: 'emergency', stability: 35, note: 'Floods' }).ok);
+  assert.ok(getState(s.usa, 'TX').status === 'emergency' && getState(s.usa, 'TX').stability === 35 && getState(s.usa, 'TX').note === 'Floods' && getState(s.usa, 'TX').pop > 30);
+  assert.ok(z({ type: 'usaState', state: 'TX', economy: 500 }).ok && getState(s.usa, 'TX').economy === 100, 'numbers stay 0 to 100');
+  assert.equal(z({ type: 'usaState', state: 'TX', status: 'chaos' }).ok, false);
+  assert.equal(z({ type: 'usaState', state: 'AK', status: 'alert' }).ok, false, 'Alaska is out of the committee');
   assert.ok(z({ type: 'usaGovernor', state: 'TX', photo: 'data:image/png;base64,iVBORw0KGgo=' }).ok && getUnits(s.usa)['gov-TX'].photo.startsWith('data:image/png'));
   assert.ok(z({ type: 'usaGovernor', state: 'TX', photo: null }).ok && getUnits(s.usa)['gov-TX'].photo === null);
   assert.equal(z({ type: 'usaGovernor', state: 'ZZ', name: 'x' }).ok, false);
