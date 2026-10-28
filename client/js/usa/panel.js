@@ -3,9 +3,9 @@ import { html, useState, useEffect, useRef, run, useMemo, cls, toast } from '../
 import { TimerControls } from '../world/display-tab.js';
 import { DMDrawer, useUnread } from '../views/dm.js';
 import { UsMap, loadUsa, viewFor, unitLabel } from './map.js';
-import { USA_VIEW, USA_DOTS, USA_UNIT_KINDS, UNIT_LAYERS, LIGHT_SERVICES, LIGHT_PALETTE, LIGHT_PATTERNS, lightColors, getUnits, SILS } from '/shared/engine/usa.js';
+import { USA_VIEW, USA_UNIT_KINDS, UNIT_LAYERS, LIGHT_SERVICES, LIGHT_PALETTE, LIGHT_PATTERNS, lightColors, getUnits, SILS } from '/shared/engine/usa.js';
 
-const LAYERS = [['states', 'State borders'], ['counties', 'County borders'], ['cities', 'City borders'], ['highways', 'Highways'], ['labels', 'Names']];
+const LAYERS = [['states', 'State borders'], ['cities', 'City borders'], ['highways', 'Highways'], ['labels', 'Names'], ['neighbors', 'Canada and Mexico']];
 
 export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
   const u = state.usa, kronos = user.role === 'kronos';
@@ -63,9 +63,6 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
           <div class="card"><div class="card-h"><h3>Map</h3></div><div class="card-b col">
             ${LAYERS.map(([k, l]) => html`<label class="row"><input type="checkbox" checked=${u.layers[k]} onChange=${() => act({ type: 'usaLayer', layer: k })} /> ${l}</label>`)}
             <hr class="sep" />
-            <div class="sub-h">Dots</div>
-            ${Object.entries(USA_DOTS).map(([k, d]) => html`<label class="row"><input type="checkbox" checked=${!!u.layers[k]} onChange=${() => act({ type: 'usaLayer', layer: k })} /><i class="us-sw" style=${`background:${d.color}`}></i> ${d.name}</label>`)}
-            <hr class="sep" />
             <label class="row"><input type="checkbox" checked=${live} onChange=${e => { setLive(e.target.checked); if (e.target.checked) send(view); }} /> Live to stage</label>
             <div class="dim small">Drag to move, scroll to zoom, click a state to zoom to it.</div>
             <select class="input sm" value="" onChange=${e => e.target.value && jump(viewFor(data, e.target.value, 1600, 900))}><option value="">Zoom to a state…</option>${states.map(s => html`<option value=${s.id}>${s.name}</option>`)}</select>
@@ -78,7 +75,7 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
             <select class="input sm" value="" onChange=${e => e.target.value && setSel(e.target.value)}><option value="">Find a governor…</option>${Object.values(units).filter(x => x.kind === 'governor').sort((a, b) => a.owner.localeCompare(b.owner)).map(x => html`<option value=${x.id}>${x.owner} · ${x.person}${x.control === 'delegate' ? ' (delegate)' : ''}</option>`)}</select>
           </div></div>
           <${SpawnCard} placing=${placing} setPlacing=${setPlacing} count=${Object.keys(u.custom || {}).length} act=${act} />
-          <${Lightbars} u=${u} data=${data} states=${states} act=${act} />
+          <${Lightbars} u=${u} states=${states} act=${act} />
           <div class="card"><div class="card-h"><h3>Mark states</h3></div><div class="card-b col">
             <button class=${cls('btn sm', marking && 'on')} onClick=${() => setMarking(!marking)}>${marking ? 'Clicking marks states' : 'Click to mark states'}</button>
             <div class="dim small">${u.highlight.length ? u.highlight.join(', ') : 'Nothing marked.'}</div>
@@ -100,27 +97,24 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
 }
 
 // Emergency lightbars: switch them on per service, pick the flash pattern, and set the colours for a state or one county.
-function Lightbars({ u, data, states, act }) {
-  const [scope, setScope] = useState(''), [county, setCounty] = useState(''), [svc, setSvc] = useState('police');
-  const counties = useMemo(() => (data && scope ? data.counties.filter(c => c.state === scope).sort((a, b) => a.name.localeCompare(b.name)) : []), [data, scope]);
-  const id = county || scope, st = scope;
-  const cur = id ? lightColors(u, svc, st, county || '') : null;
-  const set = colors => act({ type: 'usaLightColors', id, service: svc, colors });
+function Lightbars({ u, states, act }) {
+  const [scope, setScope] = useState(''), [svc, setSvc] = useState('police');
+  const cur = scope ? lightColors(u, svc, scope) : null;
+  const set = colors => act({ type: 'usaLightColors', id: scope, service: svc, colors });
   const swatch = c => html`<i class="us-sw big" style=${`background:${c}`}></i>`;
   return html`<div class="card"><div class="card-h"><h3>Lightbars</h3></div><div class="card-b col">
     ${Object.entries(LIGHT_SERVICES).map(([k, l]) => html`<label class="row"><input type="checkbox" checked=${!!u.lightbars[k]} onChange=${() => act({ type: 'usaLightbars', service: k })} /> ${l}</label>`)}
     <div class="row wrap"><button class="btn sm" onClick=${() => act({ type: 'usaLightbars', service: 'all', on: true })}>All on</button><button class="btn sm ghost" onClick=${() => act({ type: 'usaLightbars', service: 'all', on: false })}>All off</button></div>
     <select class="input sm" value=${u.lightPattern} onChange=${e => act({ type: 'usaLightPattern', pattern: e.target.value })}><option value="mixed">Pattern: mixed</option>${Object.entries(LIGHT_PATTERNS).map(([k, p]) => html`<option value=${k}>${p.name}</option>`)}</select>
-    <div class="dim small">Lightbars show from about 3× zoom. Starting colours are police red and blue, fire and EMS red and white; set the real ones below.</div>
+    <div class="dim small">Police, fire and EMS units flash when their lights are on. Starting colours are police red and blue, fire and EMS red and white; set the real ones for a state below.</div>
     <hr class="sep" />
-    <div class="sub-h">Colours for a place</div>
-    <select class="input sm" value=${scope} onChange=${e => { setScope(e.target.value); setCounty(''); }}><option value="">Choose a state…</option>${states.map(s => html`<option value=${s.id}>${s.name}</option>`)}</select>
-    ${scope && html`<select class="input sm" value=${county} onChange=${e => setCounty(e.target.value)}><option value="">Whole state</option>${counties.map(c => html`<option value=${c.id}>${c.name}</option>`)}</select>
-      <div class="row wrap">${Object.entries(LIGHT_SERVICES).map(([k, l]) => html`<button class=${cls('btn sm', svc === k && 'on')} onClick=${() => setSvc(k)}>${l}</button>`)}</div>
-      <div class="row">${cur.map(swatch)}<span class="dim small">${u.lightColors[`${id}:${svc}`] ? 'set by you' : 'starting colours'}</span></div>
+    <div class="sub-h">Colours for a state</div>
+    <select class="input sm" value=${scope} onChange=${e => setScope(e.target.value)}><option value="">Choose a state…</option>${states.map(s => html`<option value=${s.id}>${s.name}</option>`)}</select>
+    ${scope && html`<div class="row wrap">${Object.entries(LIGHT_SERVICES).map(([k, l]) => html`<button class=${cls('btn sm', svc === k && 'on')} onClick=${() => setSvc(k)}>${l}</button>`)}</div>
+      <div class="row">${cur.map(swatch)}<span class="dim small">${u.lightColors[`${scope}:${svc}`] ? 'set by you' : 'starting colours'}</span></div>
       <div class="dim small">Pick one to three colours in order:</div>
       <${ColorPick} onSet=${set} />
-      ${u.lightColors[`${id}:${svc}`] && html`<button class="btn sm ghost" onClick=${() => set(null)}>Clear this setting</button>`}`}
+      ${u.lightColors[`${scope}:${svc}`] && html`<button class="btn sm ghost" onClick=${() => set(null)}>Clear this setting</button>`}`}
   </div></div>`;
 }
 

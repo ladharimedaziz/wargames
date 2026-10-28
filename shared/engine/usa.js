@@ -4,20 +4,7 @@ import { STATES, FEDERAL } from '../data/usa-units.js';
 
 const err = error => ({ ok: false, error });
 const ok = (r = {}) => ({ ok: true, ...r });
-export const USA_LAYERS = ['states', 'counties', 'cities', 'highways', 'labels', 'military', 'hospital', 'police', 'fire', 'ambulance', 'prison', 'power', 'uGov', 'uFed', 'uAgency', 'uGuard', 'uState', 'uCustom'];
-// The dot layers: what each one shows, its colour, the zoom at which its dots appear and the zoom at which they carry a label.
-export const USA_DOTS = {
-  military: { name: 'Military sites', color: '#7fbf6a', dot: 1, label: 3.5 },
-  power: { name: 'Power plants', color: '#f5d34a', dot: 2, label: 7 },
-  hospital: { name: 'Hospitals', color: '#ffffff', dot: 4, label: 12 },
-  prison: { name: 'Prisons', color: '#a9a9b8', dot: 6, label: 12 },
-  police: { name: 'Police stations', color: '#4f9bff', dot: 8, label: 22 },
-  fire: { name: 'Fire stations', color: '#ff5a4a', dot: 10, label: 26 },
-  ambulance: { name: 'Ambulance services', color: '#ffb347', dot: 12, label: 26 },
-};
-// Military dots take the colour of their service.
-export const MIL_COLORS = { usa: '#7fbf6a', usar: '#7fbf6a', armyNationalGuard: '#b9a66a', airNationalGuard: '#8fc6ff', usaf: '#6aa8ff', afr: '#6aa8ff', usn: '#4a78e0', usnr: '#4a78e0', usmc: '#ff6a5a', usmcr: '#ff6a5a', whs: '#d0d0d8', other: '#d0d0d8' };
-export const MIL_NAMES = { usa: 'Army', usar: 'Army Reserve', armyNationalGuard: 'Army National Guard', airNationalGuard: 'Air National Guard', usaf: 'Air Force', afr: 'Air Force Reserve', usn: 'Navy', usnr: 'Navy Reserve', usmc: 'Marine Corps', usmcr: 'Marine Corps Reserve', whs: 'Washington HQ Services', other: 'Other' };
+export const USA_LAYERS = ['states', 'cities', 'highways', 'labels', 'neighbors', 'uGov', 'uFed', 'uAgency', 'uGuard', 'uState', 'uCustom'];
 
 // ---- Emergency lightbars ----
 export const LIGHT_SERVICES = { police: 'Police', fire: 'Fire', ambulance: 'EMS' };
@@ -25,7 +12,7 @@ export const LIGHT_PALETTE = { red: '#ff2a2a', blue: '#2a5bff', white: '#ffffff'
 const R = LIGHT_PALETTE.red, Bl = LIGHT_PALETTE.blue, W = LIGHT_PALETTE.white, A = LIGHT_PALETTE.amber;
 // Starting colours, used where nothing more specific is set. Police run red and blue, fire and EMS red and white. Only the cases
 // below are written down: Maine (statute: police blue, fire and ambulances red) and Arizona (police red forward and blue, fire red
-// and white, volunteers amber or white). Everything else is an approximation the Zeus can correct per state or county.
+// and white, volunteers amber or white). Everything else is an approximation the Zeus can correct per state.
 export const LIGHT_DEFAULT = { police: [R, Bl], fire: [R, W], ambulance: [R, W] };
 export const LIGHT_STATE = { 'ME:police': [Bl, W], 'ME:fire': [R, W], 'ME:ambulance': [R, W] };
 // Flash patterns: steps of [colour index, milliseconds]; -1 is dark. Index 0 and 1 are the two colours of the bar.
@@ -40,14 +27,14 @@ export const LIGHT_PATTERNS = {
 };
 export const LIGHT_PATTERN_IDS = Object.keys(LIGHT_PATTERNS);
 const isColors = c => Array.isArray(c) && c.length >= 1 && c.length <= 3 && c.every(x => /^#[0-9a-fA-F]{6}$/.test(x));
-// A county's colours: a county setting wins, then a state setting, then the written-down state cases, then the default.
-export function lightColors(usa, service, state, geoid) {
+// A state's colours: a setting by the Zeus wins, then the written-down state cases, then the default.
+export function lightColors(usa, service, state) {
   const o = usa.lightColors || {};
-  return o[`${geoid}:${service}`] || o[`${state}:${service}`] || LIGHT_STATE[`${state}:${service}`] || LIGHT_DEFAULT[service];
+  return o[`${state}:${service}`] || LIGHT_STATE[`${state}:${service}`] || LIGHT_DEFAULT[service];
 }
 
 export const USA_VIEW = { lon: -96.5, lat: 38.5, k: 1 }; // k = zoom, 1 shows the whole lower 48
-export const USA_MAX_ZOOM = 60;
+export const USA_MAX_ZOOM = 24;
 
 // ---- Units: governors, state forces and federal formations. Every one is a dot with a small badge above it. ----
 // kind -> the layer that shows it, what it is called, and the zoom at which its dot and its badge appear.
@@ -89,13 +76,13 @@ export function getUnits(usa) {
 // Fills in anything a save made by an older version lacks.
 export function migrateUsa(s) {
   const u = s.usa; if (!u) return s;
-  u.layers = { ...DEFAULT_LAYERS, ...u.layers };
+  u.layers = { ...DEFAULT_LAYERS, ...Object.fromEntries(Object.entries(u.layers || {}).filter(([k]) => USA_LAYERS.includes(k))) };
   u.mods ||= {}; u.custom ||= {};
   u.lightbars ||= { police: false, fire: false, ambulance: false }; u.lightPattern ||= 'mixed'; u.lightColors ||= {};
   return s;
 }
 
-const DEFAULT_LAYERS = { states: true, counties: true, cities: true, highways: true, labels: true, military: true, hospital: true, police: false, fire: false, ambulance: false, prison: false, power: false, uGov: true, uFed: true, uAgency: true, uGuard: true, uState: true, uCustom: true };
+const DEFAULT_LAYERS = { states: true, cities: true, highways: true, labels: true, neighbors: true, uGov: true, uFed: true, uAgency: true, uGuard: true, uState: true, uCustom: true };
 
 export function createUsaFields(s) {
   s.display.scene = 'usa';
@@ -139,12 +126,12 @@ export const usaActions = {
     s.usa.lightPattern = a.pattern;
     return ok();
   } },
-  // Colours for one service in a state ("TX") or a county (its five-digit FIPS code); no colours clears the setting.
+  // Colours for one service in a state ("TX"); no colours clears the setting.
   usaLightColors: { perm: 'zeus', run(s, a) {
     migrateUsa(s);
     if (!(a.service in LIGHT_SERVICES)) return err('Unknown service.');
     const id = String(a.id || '');
-    if (!/^([A-Z]{2}|\d{5})$/.test(id)) return err('Name a state (like TX) or a county code.');
+    if (!/^[A-Z]{2}$/.test(id)) return err('Name a state, like TX.');
     const key = `${id}:${a.service}`;
     if (a.colors == null) delete s.usa.lightColors[key];
     else if (isColors(a.colors)) s.usa.lightColors[key] = a.colors.map(c => c.toLowerCase());

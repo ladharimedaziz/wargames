@@ -1,27 +1,28 @@
-// The continental US map: states, counties and highways drawn on a canvas. The stage follows the Zeus's view;
+// The continental US map: states, cities, highways and the land beside the border drawn on a canvas. The stage follows the Zeus's view;
 // on the Zeus panel it can be dragged and zoomed (`interactive`).
 import { feature, mesh } from 'topojson-client';
 import { geoAlbers, geoPath, geoCentroid } from 'd3-geo';
 import { html, useRef, useEffect, useMemo, cls } from '../lib.js';
 import { drawSil, getImage, sealUrl } from './art.js';
-import { USA_VIEW, USA_MAX_ZOOM, USA_DOTS, USA_UNIT_KINDS, MIL_COLORS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors, getUnits } from '/shared/engine/usa.js';
+import { USA_VIEW, USA_MAX_ZOOM, USA_UNIT_KINDS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors, getUnits } from '/shared/engine/usa.js';
 
 let loading = null;
-// Loads and indexes the two map files once.
+// Loads and indexes the map files once: the states, the roads, and the Canadian and Mexican regions beside them.
 export function loadUsa() {
-  loading ||= Promise.all([fetch('/client/data/us-counties.json').then(r => r.json()), fetch('/client/data/us-roads.json').then(r => r.json())]).then(([topo, rd]) => {
+  loading ||= Promise.all(['us-states', 'us-roads', 'us-neighbors'].map(n => fetch(`/client/data/${n}.json`).then(r => r.json()))).then(([topo, rd, nb]) => {
     const states = feature(topo, topo.objects.states).features.map(f => ({ f, id: f.id, name: f.properties.name, centroid: geoCentroid(f) }));
-    const counties = feature(topo, topo.objects.counties).features.map(f => ({ f, id: f.id, name: f.properties.name, state: f.properties.state, centroid: geoCentroid(f) }));
     const lines = (list, type) => list.flatMap(([name, ls]) => ls.map(d => {
       let x = d[0], y = d[1]; const coordinates = [[x / 1000, y / 1000]];
       for (let i = 2; i < d.length; i += 2) { x += d[i]; y += d[i + 1]; coordinates.push([x / 1000, y / 1000]); }
       return { type, name, coordinates };
     }));
+    const regions = feature(nb, nb.objects.regions).features.map(f => ({ f, id: f.id, c: f.properties.c, name: f.properties.n, centroid: geoCentroid(f) }));
     return {
-      states, counties,
+      states, regions,
       byState: new Map(states.map(s => [s.id, s])),
       nation: { type: 'FeatureCollection', features: states.map(s => s.f) },
-      countyMesh: mesh(topo, topo.objects.counties, (a, b) => a !== b),
+      neighbors: { type: 'FeatureCollection', features: regions.map(r => r.f) },
+      regionMesh: mesh(nb, nb.objects.regions, (a, b) => a !== b),
       stateMesh: mesh(topo, topo.objects.states, (a, b) => a !== b),
       outline: mesh(topo, topo.objects.states, (a, b) => a === b),
       interstates: lines(rd.i, 'i'), highways: lines(rd.u, 'u'),
@@ -53,7 +54,7 @@ function basePaths(S) {
   if (!B.paths) {
     const roads = list => { const p = new Path2D(), path = geoPath(proj, p); for (const l of list) path({ type: 'LineString', coordinates: l.coordinates }); return p; };
     B.paths = {
-      nation: mk(S.data.nation), counties: mk(S.data.countyMesh), states: mk(S.data.stateMesh), outline: mk(S.data.outline),
+      nation: mk(S.data.nation), neighbors: mk(S.data.neighbors), regions: mk(S.data.regionMesh), states: mk(S.data.stateMesh), outline: mk(S.data.outline),
       highways: roads(S.data.highways), interstates: roads(S.data.interstates),
       byState: new Map(S.data.states.map(s => [s.id, mk(s.f)])),
     };
@@ -90,15 +91,7 @@ export function loadCities() {
   return cityLoading;
 }
 
-// One file per dot layer, fetched the first time a layer is shown. Rows: [lon, lat, name, city, county index, extra].
-const pts = new Map(), ptsLoading = new Map();
-export function loadPoints(kind) {
-  if (pts.has(kind)) return Promise.resolve(pts.get(kind));
-  if (!ptsLoading.has(kind)) ptsLoading.set(kind, fetch(`/client/data/us-points-${kind}.json`).then(r => r.json()).then(list => { pts.set(kind, list); return list; }));
-  return ptsLoading.get(kind);
-}
-
-const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', county: 'rgba(120,160,215,.16)', state: 'rgba(190,215,255,.7)', coast: 'rgba(190,215,255,.85)', i: '#f3b24a', u: 'rgba(200,170,120,.7)', label: '#dfe9fb', hover: 'rgba(255,255,255,.14)' };
+const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', neighbor: '#0d1b31', region: 'rgba(150,180,230,.22)', state: 'rgba(190,215,255,.7)', coast: 'rgba(190,215,255,.85)', i: '#f3b24a', u: 'rgba(200,170,120,.7)', label: '#dfe9fb', hover: 'rgba(255,255,255,.14)' };
 
 // `view` is the view to show, `onView` is called as the viewer drags or zooms, `onPick` with a state code on click.
 // What a unit's badge says.
@@ -121,17 +114,17 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
     const geo = fn => { ctx.save(); ctx.transform(k, 0, 0, k, S.w / 2 - k * o[0], S.h / 2 - k * o[1]); fn(); ctx.restore(); };
     const line = (p, color, wd) => geo(() => { ctx.strokeStyle = color; ctx.lineWidth = wd / k; ctx.stroke(p); });
     ctx.fillStyle = COL.sea; ctx.fillRect(0, 0, S.w, S.h);
+    if (L.neighbors) geo(() => { ctx.fillStyle = COL.neighbor; ctx.fill(P.neighbors); ctx.lineWidth = 2 / k; ctx.strokeStyle = COL.neighbor; ctx.stroke(P.neighbors); });
+    if (L.neighbors) line(P.regions, COL.region, 0.7);
     geo(() => {
       ctx.fillStyle = COL.land; ctx.fill(P.nation);
       ctx.fillStyle = COL.hi; for (const id of new Set(S.usa.highlight || [])) { const p = P.byState.get(id); if (p) ctx.fill(p); }
       if (S.hover && P.byState.has(S.hover)) { ctx.fillStyle = COL.hover; ctx.fill(P.byState.get(S.hover)); }
     });
-    if (L.counties) line(P.counties, COL.county, k < 2 ? 0.4 : k < 8 ? 0.6 : 0.9);
     if (L.cities && k >= 2) {
       if (!cityData) loadCities().then(() => { S.baseKey = null; redraw(); });
       else {
-        geo(() => { ctx.fillStyle = 'rgba(255,196,120,.10)'; ctx.fill(P.cities); });
-        line(P.cities, 'rgba(255,196,120,.7)', k < 6 ? 0.6 : 1.1);
+        line(P.cities, 'rgba(255,196,120,.8)', k < 6 ? 0.7 : 1.2); // hollow: the outline only
         if (L.labels && k >= 5) {
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `500 ${Math.round(Math.min(14, 9 + k * 0.1))}px "IBM Plex Sans", sans-serif`;
           const placed = [];
@@ -158,9 +151,13 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
         ctx.font = `600 ${Math.round(Math.min(26, 11 + k * 1.2))}px "IBM Plex Sans Condensed", sans-serif`;
         for (const s of S.data.states) { const p = proj(s.centroid); if (p && p[0] > 0 && p[0] < S.w && p[1] > 0 && p[1] < S.h) ctx.fillText(s.id, p[0], p[1]); }
       }
-      if (k >= 7) {
-        ctx.font = `500 ${Math.round(Math.min(15, 9 + k * 0.12))}px "IBM Plex Sans", sans-serif`; ctx.fillStyle = 'rgba(223,233,251,.82)';
-        for (const co of S.data.counties) { const p = proj(co.centroid); if (p && p[0] > 20 && p[0] < S.w - 20 && p[1] > 10 && p[1] < S.h - 10) ctx.fillText(co.name, p[0], p[1]); }
+      if (L.neighbors) {
+        ctx.fillStyle = 'rgba(160,185,225,.55)';
+        ctx.font = `600 ${Math.round(Math.min(22, 10 + k * 1.1))}px "IBM Plex Sans Condensed", sans-serif`;
+        for (const r of S.data.regions) {
+          if (k < 2 && r.c === 'CAN' && r.name !== 'Ontario' && r.name !== 'Quebec' && r.name !== 'British Columbia' && r.name !== 'Alberta') continue;
+          const p = proj(r.centroid); if (p && p[0] > 0 && p[0] < S.w && p[1] > 0 && p[1] < S.h) ctx.fillText(r.name.toUpperCase(), p[0], p[1]);
+        }
       }
     }
   };
@@ -181,7 +178,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
     }
     if (!S.bp || S.bp.w !== S.w || S.bp.h !== S.h) S.bp = { w: S.w, h: S.h, p: baseProjection(S.data, S.w, S.h) };
     const proj = viewProjection(S.bp.p, v, S.w, S.h), k = v.k, L = S.usa.layers;
-    const rest = [S.w, S.h, dpr, L.states, L.counties, L.cities, L.highways, L.labels, (S.usa.highlight || []).join(), S.hover].join('|');
+    const rest = [S.w, S.h, dpr, L.states, L.neighbors, L.cities, L.highways, L.labels, (S.usa.highlight || []).join(), S.hover].join('|');
     const key = [v.lon.toFixed(5), v.lat.toFixed(5), k.toFixed(4), rest].join('|'), now = performance.now();
     // The map itself lives on the bottom canvas and is repainted only when the view or layers change; the dots live on a canvas
     // above it, cleared and redrawn every frame, so flashing never repaints the map.
@@ -212,66 +209,17 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
     else if (flashing && !S.raf) S.raf = setTimeout(() => { S.raf = 0; requestAnimationFrame(draw); }, 33); // about 25 flashes a second is plenty
   };
 
-  // Dots for every shown layer, with a small label above each once zoomed in far enough. Labels never overlap.
-  // Police, fire and EMS dots flash like lightbars when theirs are on. Returns true while something is flashing.
-  // Kept cheap on purpose: dots are batched into one path per colour, at most MAX_BAR flashing dots are drawn (thinned evenly when
-  // more are in view), the glow is dropped when crowded, and the label layout is reused until the view or layers change.
-  const MAX_BAR = 1000;
+  // Every unit is a dot with a badge above it once zoomed in far enough; badges never overlap. A unit that is a police, fire or EMS
+  // service flashes like a lightbar when that service's lights are on. Returns true while something is flashing.
+  // Kept cheap on purpose: the label layout is reused until the view, the layers or a unit changes.
+  const svcOf = u => u.svc || (u.kind === 'police' ? 'police' : null);
   const drawDots = (ctx, S, proj, k, now) => {
     const L = S.usa.layers, LB = S.usa.lightbars || {}, pat = S.usa.lightPattern || 'mixed';
     const lo = proj.invert([-30, S.h + 30]), hi = proj.invert([S.w + 30, -30]);
     const [x0, x1] = [Math.min(lo[0], hi[0]) - 0.2, Math.max(lo[0], hi[0]) + 0.2], [y0, y1] = [Math.min(lo[1], hi[1]) - 0.2, Math.max(lo[1], hi[1]) + 0.2];
-    const sig = JSON.stringify(S.usa.lightColors || {});
-    if (S.lbSig !== sig) { S.lbSig = sig; S.lbCache = new Map(); }
-    const layout = `${pts.size}|${S.baseKey}|${Object.entries(L).join()}|${Object.entries(LB).join()}|${S.unitSig}|${S.selUnit}`;
+    const layout = `${S.baseKey}|${Object.entries(L).join()}|${S.unitSig}|${S.selUnit}`;
     const wantLabels = S.labelKey !== layout, labels = [];
     let flashing = false;
-    for (const [kind, d] of Object.entries(USA_DOTS)) {
-      const bar = !!LB[kind];
-      if (!(L[kind] || bar) || k < (bar ? Math.min(d.dot, 3) : d.dot)) continue;
-      const list = pts.get(kind);
-      if (!list) { loadPoints(kind).then(redraw); continue; }
-      const r = Math.min(7, 2 + k * 0.12) + (bar ? 1 : 0), withLabel = k >= d.label;
-      let stride = 1;
-      if (bar) {
-        let n = 0; for (const row of list) if (row[0] >= x0 && row[0] <= x1 && row[1] >= y0 && row[1] <= y1) n++;
-        stride = Math.max(1, Math.ceil(n / MAX_BAR));
-      }
-      const groups = new Map(); // colour -> screen points
-      for (const row of list) {
-        const lon = row[0], lat = row[1];
-        if (lon < x0 || lon > x1 || lat < y0 || lat > y1) continue;
-        const h = ((Math.round(lon * 1e4) * 31 + Math.round(lat * 1e4)) >>> 0) % 9973;
-        if (bar && h % stride) continue;
-        const p = proj([lon, lat]); if (!p) continue;
-        let fill = kind === 'military' ? MIL_COLORS[row[5]] || d.color : d.color;
-        if (bar) {
-          flashing = true;
-          const cc = S.data.counties[row[4]], ck = `${kind}|${row[4]}`;
-          let cols = S.lbCache.get(ck);
-          if (!cols) S.lbCache.set(ck, cols = lightColors(S.usa, kind, cc.state, cc.id));
-          const def = LIGHT_PATTERNS[pat] || LIGHT_PATTERNS[LIGHT_PATTERN_IDS[h % LIGHT_PATTERN_IDS.length]];
-          let total = 0; for (const st of def.steps) total += st[1];
-          let t = (now + h * 37) % total, ci = -1;
-          for (const st of def.steps) { if (t < st[1]) { ci = st[0]; break; } t -= st[1]; }
-          fill = ci >= 0 ? cols[ci % cols.length] : '#2a3144';
-        }
-        (groups.get(fill) || groups.set(fill, []).get(fill)).push(p);
-        if (wantLabels && withLabel && row[2]) labels.push([p[0], p[1] - r - 3, row[2]]);
-      }
-      const crowded = bar && stride > 1 || [...groups.values()].reduce((n, g) => n + g.length, 0) > 400;
-      for (const [fill, g] of groups) {
-        if (bar && !crowded && fill !== '#2a3144') { // glow
-          ctx.globalAlpha = 0.28; ctx.fillStyle = fill; ctx.beginPath();
-          for (const p of g) { ctx.moveTo(p[0] + r * 2.4, p[1]); ctx.arc(p[0], p[1], r * 2.4, 0, 6.2832); }
-          ctx.fill(); ctx.globalAlpha = 1;
-        }
-        ctx.fillStyle = fill; ctx.beginPath();
-        for (const p of g) { ctx.moveTo(p[0] + r, p[1]); ctx.arc(p[0], p[1], r, 0, 6.2832); }
-        ctx.fill();
-        if (!crowded) { ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.stroke(); }
-      }
-    }
     // Units: governors, federal forces, agencies, Guard and state police. Their badges are placed before any dot label.
     const ulabels = [];
     S.hits = [];
@@ -282,7 +230,16 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, selected
       const p = proj([u.lon, u.lat]); if (!p) continue;
       const r = Math.min(8, 3.5 + k * 0.1), chosen = u.id === S.selUnit;
       if (chosen) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p[0], p[1], r + 6, 0, 6.2832); ctx.stroke(); }
-      ctx.fillStyle = u.federal ? '#ff6b5a' : kd.color; ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 6.2832); ctx.fill();
+      let fill = u.federal ? '#ff6b5a' : kd.color; const svc = svcOf(u);
+      if (svc && LB[svc]) {
+        flashing = true;
+        const h = (u.id.length * 131 + u.id.charCodeAt(u.id.length - 1) * 17) % 9973, def = LIGHT_PATTERNS[pat] || LIGHT_PATTERNS[LIGHT_PATTERN_IDS[h % LIGHT_PATTERN_IDS.length]], cols = lightColors(S.usa, svc, u.owner);
+        let total = 0; for (const st of def.steps) total += st[1];
+        let t = (now + h * 37) % total, ci = -1;
+        for (const st of def.steps) { if (t < st[1]) { ci = st[0]; break; } t -= st[1]; }
+        fill = ci >= 0 ? cols[ci % cols.length] : '#2a3144';
+      }
+      ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 6.2832); ctx.fill();
       ctx.lineWidth = 2; ctx.strokeStyle = u.control === 'delegate' ? '#ffd166' : 'rgba(0,0,0,.75)'; ctx.stroke();
       S.hits.push([p[0], p[1], u.id]);
       if (k >= kd.label || chosen) ulabels.push([p[0], p[1] - r - 4, unitLabel(u), u]);

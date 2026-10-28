@@ -1,7 +1,6 @@
 // The stage for the continental US committee: the map, following whatever the Zeus shows.
 import { html, cls } from '../lib.js';
 import { UsMap } from '../usa/map.js';
-import { USA_DOTS } from '/shared/engine/usa.js';
 
 export function UsaDisplay({ state }) {
   const u = state.usa;
@@ -12,7 +11,6 @@ export function UsaDisplay({ state }) {
     ${u.note && html`<div class="us-note">${u.note}</div>`}
     <div class="us-key">
       ${u.layers.highways && html`<span><i style="background:#f3b24a"></i>Interstate</span><span><i style="background:#c8aa78"></i>US highway</span>`}
-      ${Object.entries(USA_DOTS).filter(([k]) => u.layers[k]).map(([k, d]) => html`<span><i class="us-dot" style=${`background:${d.color}`}></i>${d.name}</span>`)}
     </div>
     ${Object.values(u.lightbars || {}).some(Boolean) && html`<div class="us-lights">EMERGENCY LIGHTS ON</div>`}
   </div>`;

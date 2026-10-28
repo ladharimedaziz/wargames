@@ -1,5 +1,5 @@
-// Builds client/data/us-counties.json and us-roads.json for the continental US committee from Census files.
-// Usage: node scripts/build-us-map.mjs <dir holding the unzipped cb_2024_us_county_500k, cb_2024_us_state_500k and tl_2024_us_primaryroads folders>
+// Builds client/data/us-states.json and us-roads.json for the continental US committee from Census files.
+// Usage: node scripts/build-us-map.mjs <dir holding the unzipped cb_2024_us_state_500k and tl_2024_us_primaryroads folders>
 import { open } from 'shapefile';
 import { topology } from 'topojson-server';
 import { presimplify, simplify, quantile } from 'topojson-simplify';
@@ -22,15 +22,13 @@ async function read(name, keep) {
 const round = (n, p) => Math.round(n * 10 ** p) / 10 ** p;
 
 const states = await read('cb_2024_us_state_500k', f => !OUT.has(f.properties.STATEFP));
-const counties = await read('cb_2024_us_county_500k', f => !OUT.has(f.properties.STATEFP));
 const fp2abbr = Object.fromEntries(states.map(f => [f.properties.STATEFP, f.properties.STUSPS]));
 const topo = topology({
   states: { type: 'FeatureCollection', features: states.map(f => ({ type: 'Feature', id: f.properties.STUSPS, properties: { name: f.properties.NAME, fips: f.properties.STATEFP }, geometry: f.geometry })) },
-  counties: { type: 'FeatureCollection', features: counties.map(f => ({ type: 'Feature', id: f.properties.GEOID, properties: { name: f.properties.NAME, state: fp2abbr[f.properties.STATEFP] }, geometry: f.geometry })) },
 }, 1e6);
 const simple = simplify(presimplify(topo), quantile(presimplify(topo), 0.2));
-writeFileSync(join(out, 'us-counties.json'), JSON.stringify(quantize(simple, 1e5)));
-console.log('states', states.length, 'counties', counties.length);
+writeFileSync(join(out, 'us-states.json'), JSON.stringify(quantize(simple, 1e5)));
+console.log('states', states.length);
 
 // Interstates and US highways only. Coordinates are rounded to 3 decimals (about 100 m).
 const roads = await read('tl_2024_us_primaryroads', f => ['I', 'U'].includes(f.properties.RTTYP) && f.geometry);
