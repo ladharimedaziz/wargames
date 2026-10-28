@@ -17,3 +17,6 @@
 .us-sw { display: inline-block; width: 10px; height: 10px; border-radius: 50%; border: 1px solid rgba(0,0,0,.6); }
 .us-key i.us-dot { width: 1.3vh; height: 1.3vh; border-radius: 50%; margin-bottom: .2vh; }
 .us-key { flex-wrap: wrap; justify-content: flex-end; max-width: 55vw; }
+.us-sw.big { width: 18px; height: 18px; }
+.us-lights { position: absolute; right: 2vw; top: 2vh; font-size: 1.6vh; letter-spacing: .14em; padding: .6vh 1vw; border-radius: 8px; background: rgba(6,16,31,.8); border: 1px solid #2a5bff; color: #ff6a5a; animation: usl .5s steps(2) infinite; }
+@keyframes usl { 50% { color: #6a8dff; border-color: #ff2a2a; } }

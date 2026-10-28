@@ -14,5 +14,6 @@ export function UsaDisplay({ state }) {
       ${u.layers.highways && html`<span><i style="background:#f3b24a"></i>Interstate</span><span><i style="background:#c8aa78"></i>US highway</span>`}
       ${Object.entries(USA_DOTS).filter(([k]) => u.layers[k]).map(([k, d]) => html`<span><i class="us-dot" style=${`background:${d.color}`}></i>${d.name}</span>`)}
     </div>
+    ${Object.values(u.lightbars || {}).some(Boolean) && html`<div class="us-lights">EMERGENCY LIGHTS ON</div>`}
   </div>`;
 }
