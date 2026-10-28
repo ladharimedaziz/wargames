@@ -18,7 +18,7 @@ export function GovPanel({ u, act }) {
     ${Object.entries(OFFICE_BRANCH).map(([br, label]) => html`<div class="dim small" style="margin:6px 0 2px">${label}</div>
       <div class="us-unitlist">${OFFICES.filter(o => o[2] === br).map(([id]) => { const o = officeState(u, id); return html`<div>
         <button class=${cls('us-urow', open === id && 'on')} onClick=${() => { setOpen(open === id ? null : id); setOffice(id); }}><i class="us-sw" style=${`background:${o.control === 'delegate' ? '#ffd166' : '#6b7a99'}`}></i><span>${o.title}</span><em>${o.person || (o.control === 'delegate' ? 'Delegate' : 'AI')}</em></button>
-        ${open === id && html`<${OfficeEdit} key=${id} o=${o} act=${act} />`}</div>`; })}</div>`)}
+        ${open === id && html`<${OfficeEdit} key=${id + o.person + o.control} o=${o} act=${act} />`}</div>`; })}</div>`)}
     <div class="sub-h">Queued</div>
     ${g.pending.length ? html`<div class="us-unitlist">${[...g.pending].sort((a, b) => a.at - b.at).map(p => html`<div class="row between small" style="gap:6px"><span class="mono dim">${simClock(p.at).replace('Day ', 'D')}</span><span class="grow">${p.act === 'vote' ? `Vote: ${p.title}` : p.text}</span><button class="btn xs ghost" onClick=${() => act({ type: 'usaGov', cancel: p.id })}>✕</button></div>`)}</div>` : html`<p class="pane-hint">Nothing queued.</p>`}
     <div class="sub-h">Make them act</div>
@@ -40,8 +40,8 @@ export function GovPanel({ u, act }) {
 
 function OfficeEdit({ o, act }) {
   const [name, setName] = useState(o.person);
-  return html`<div class="us-bside"><div class="row"><input class="input sm grow" placeholder="Name of the person" value=${name} onInput=${e => setName(e.target.value)} onBlur=${() => name !== o.person && act({ type: 'usaGov', office: o.id, person: name })} />
-    </div><div class="row wrap"><button class=${cls('btn sm', o.control !== 'delegate' && 'on')} onClick=${() => act({ type: 'usaGov', office: o.id, control: 'ai' })}>AI plays</button><button class=${cls('btn sm gold', o.control === 'delegate' && 'on')} onClick=${() => act({ type: 'usaGov', office: o.id, control: 'delegate' })}>Delegate plays</button></div></div>`;
+  return html`<div class="us-bside"><div class="row"><input class="input sm grow" placeholder="Name of the person" disabled=${o.control !== 'delegate'} value=${name} onInput=${e => setName(e.target.value)} onBlur=${() => name !== o.person && act({ type: 'usaGov', office: o.id, person: name })} />
+    </div><div class="row wrap"><button class=${cls('btn sm', o.control !== 'delegate' && 'on')} onClick=${() => act({ type: 'usaGov', office: o.id, control: 'ai' })}>AI plays</button><button class=${cls('btn sm gold', o.control === 'delegate' && 'on')} onClick=${() => act({ type: 'usaGov', office: o.id, control: 'delegate' })}>Delegate plays</button></div>${o.control !== 'delegate' && html`<div class="dim small">The real office holder plays while the AI does. Give the office to a delegate to type their name.</div>`}</div>`;
 }
 
 // Sandbox for Zeus and Kronos: set off something at a state or a border crossing and watch the government deal with it.

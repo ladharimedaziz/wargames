@@ -597,6 +597,9 @@ test('a US committee steers its map and refuses world actions', async () => {
   const { getUnits } = await import('../../shared/engine/usa.js');
   assert.ok(Object.keys(getUnits(s.usa)).length > 180 && getUnits(s.usa)['gov-TX'].person === 'Greg Abbott' && getUnits(s.usa)['ng-TX'].owner === 'TX' && getUnits(s.usa)['f-82nd'].lat > 35);
   assert.ok(z({ type: 'usaGovernor', state: 'tx', name: 'Alex Student', control: 'delegate' }).ok && getUnits(s.usa)['gov-TX'].person === 'Alex Student' && getUnits(s.usa)['gov-TX'].control === 'delegate');
+  assert.ok(z({ type: 'usaGovernor', state: 'TX', control: 'ai' }).ok && getUnits(s.usa)['gov-TX'].person === 'Greg Abbott', 'handing it back restores the real governor');
+  assert.equal(z({ type: 'usaGovernor', state: 'TX', name: 'Nope' }).ok, false, 'a name needs a delegate');
+  assert.ok(z({ type: 'usaGovernor', state: 'TX', control: 'delegate' }).ok);
   assert.equal(z({ type: 'usaGovernor', state: 'TX', photo: 'javascript:alert(1)' }).ok, false);
   assert.equal(z({ type: 'usaGovernor', state: 'TX', photo: 'data:image/jpeg;base64,' + 'A'.repeat(50000) }).ok, false, 'photos stay small');
   // Zeus controls every unit
@@ -754,6 +757,10 @@ test('the US government answers a war, and the Zeus can make it act or vote', as
   // Peace brings a release, and offices can be edited.
   assert.ok(z({ type: 'usaGov', office: 'pres', person: 'Pat Delegate', control: 'delegate' }).ok);
   assert.equal(z({ type: 'usaGov', office: 'nobody', person: 'x' }).ok, false);
+  const { officeState } = await import('../../shared/engine/usa-gov.js');
+  assert.equal(officeState(s.usa, 'pres').person, 'Pat Delegate');
+  assert.equal(z({ type: 'usaGov', office: 'vp', person: 'Nope' }).ok, false, 'only a delegate can rename an office');
+  assert.ok(z({ type: 'usaGov', office: 'pres', control: 'ai' }).ok && officeState(s.usa, 'pres').person === 'Donald Trump', 'the real holder is back');
   assert.ok(z({ type: 'usaGovAct', office: 'defense', text: 'Stand down.', effect: 'release_all' }).ok && !getUnits(s.usa)['ng-TX'].federal);
   assert.equal(z({ type: 'usaGovAct', office: 'defense', text: '', effect: 'none' }).ok, false);
   assert.ok(z({ type: 'usaBill', title: 'Border Act', effect: 'border_closed', force: 'pass', delay: 5 }).ok);
