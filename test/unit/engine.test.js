@@ -927,3 +927,46 @@ test('units use special abilities with rest times', async () => {
   assert.equal(U()[grunt].carry, null, 'set down');
   assert.ok(Math.abs(U()[grunt].lon + 98.5) < 0.1, 'at the landing point');
 });
+
+test('usa sandbox: bulk spawn, designed units, clone, bulk edit, teleport, scenarios, save points and undo', async () => {
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const { getUnits } = await import('../../shared/engine/usa.js');
+  const { typeOf } = await import('../../shared/engine/usa-sim.js');
+  const s = createUsaState({ id: 'u', name: 'US', seed: 5 });
+  const z = a => applyAction(s, a, { role: 'zeus', user: 'z', now: 1_000_000 });
+  const C = () => Object.keys(s.usa.custom).length;
+  // a crowd of 20 spread around one point, each named
+  const r = z({ type: 'usaSpawn', utype: 'militia_sq', side: 'mil', name: 'Cell', lon: -99, lat: 35, count: 20, spread: 30 });
+  assert.ok(r.ok && r.ids.length === 20 && C() === 20);
+  assert.ok(new Set(r.ids.map(id => `${s.usa.custom[id].lon},${s.usa.custom[id].lat}`)).size === 20, 'not stacked');
+  assert.equal(s.usa.custom[r.ids[3]].name, 'Cell 4');
+  // a designed unit keeps its own numbers
+  const d = z({ type: 'usaSpawn', utype: 'arm_bct', side: 'fed', name: 'Super tank', lon: -100, lat: 36, stats: { def: 999, speed: 120, atk: { ground: 500 }, men: 'x' } });
+  const du = getUnits(s.usa)[d.id], ty = typeOf(du);
+  assert.ok(ty.def === 999 && ty.speed === 120 && ty.atk.ground === 500 && ty.atk.air > 0 && ty.men === 4500);
+  assert.ok(z({ type: 'usaUnit', id: d.id, stats: null }).ok && typeOf(getUnits(s.usa)[d.id]).def !== 999);
+  // clone, bulk edit, teleport
+  const c = z({ type: 'usaClone', ids: [d.id], copies: 3 });
+  assert.ok(c.ok && c.ids.length === 3 && C() === 24);
+  assert.ok(z({ type: 'usaBulk', ids: r.ids, set: { strength: 40, roe: 'free', side: 'foreign' } }).ok);
+  assert.ok(r.ids.every(id => getUnits(s.usa)[id].strength === 40 && getUnits(s.usa)[id].roe === 'free'));
+  assert.equal(z({ type: 'usaBulk', ids: r.ids, set: { roe: 'nope' } }).ok, false);
+  assert.ok(z({ type: 'usaTeleport', ids: r.ids, lon: -90, lat: 40 }).ok && Math.abs(getUnits(s.usa)[r.ids[0]].lon + 90) < 0.3);
+  assert.equal(z({ type: 'usaTeleport', ids: r.ids, lon: 0, lat: 0 }).ok, false);
+  // a scenario, and one undo takes all of it back
+  const before = C();
+  assert.ok(z({ type: 'usaScenario', id: 'unrest' }).ok && C() > before);
+  assert.ok(z({ type: 'usaUndo' }).ok && C() === before, 'the scenario undid in one step');
+  // save points
+  assert.ok(z({ type: 'usaSnap', name: 'Before the crowd' }).ok);
+  assert.ok(z({ type: 'usaClear' }).ok && C() === 0);
+  assert.ok(z({ type: 'usaSnapLoad', id: s.usa.snaps[0].id }).ok && C() === before);
+  for (let i = 0; i < 3; i++) z({ type: 'usaSnap' });
+  assert.equal(z({ type: 'usaSnap' }).ok, false, 'four at most');
+  assert.ok(z({ type: 'usaSnapDelete', id: s.usa.snaps[0].id }).ok && s.usa.snaps.length === 3);
+  // the undo stack stays small
+  for (let i = 0; i < 6; i++) z({ type: 'usaSpawn', name: `m${i}`, lon: -95, lat: 38 });
+  assert.ok(s.usa.undo.length <= 3);
+  // built-in units can be edited in bulk, but not deleted
+  assert.ok(z({ type: 'usaBulk', ids: ['f-fbi'], set: { hidden: true } }).ok && getUnits(s.usa)['f-fbi'].hidden);
+});

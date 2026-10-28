@@ -1,5 +1,6 @@
 // The continental US committee. Step one is the map: a layered view of the lower 48 that the Zeus steers and the stage shows.
 import { clamp } from './core.js';
+import { SCENARIOS } from '../data/usa-scenarios.js';
 import { STATES, FEDERAL, STATE_INFO } from '../data/usa-units.js';
 import { CROSSINGS } from '../data/usa-border.js';
 import { UNIT_TYPES } from '../data/usa-types.js';
@@ -204,6 +205,44 @@ function addHostile(usa, a, b) {
   return true;
 }
 
+const CUSTOM_MAX = 500;
+// A designed unit's numbers, kept only when sane: men, speed (km/h), defence, range (km) and attack against ground, air and sea.
+function cleanStats(st) {
+  if (!st || typeof st !== 'object') return null;
+  const out = {}, num = (v, hi) => (Number.isFinite(Number(v)) && v !== '' && v !== null ? clamp(Math.round(Number(v)), 0, hi) : undefined);
+  for (const [k, hi] of [['men', 100000], ['speed', 3000], ['def', 5000], ['range', 2000]]) { const v = num(st[k], hi); if (v !== undefined) out[k] = v; }
+  const atk = {}; for (const k of ['ground', 'air', 'sea']) { const v = num(st.atk?.[k], 5000); if (v !== undefined) atk[k] = v; }
+  if (Object.keys(atk).length) out.atk = atk;
+  return Object.keys(out).length ? out : null;
+}
+// Sandbox safety net: what a Zeus can lose by a slip. Undo keeps the last 3 states of the units, wars and states; named saves keep 4.
+const capture = u => JSON.parse(JSON.stringify({ custom: u.custom, mods: u.mods, hostile: u.hostile, states: u.states, crossings: u.crossings, border: u.border }));
+function pushUndo(u) { (u.undo ||= []).push({ at: Math.round(u.sim?.t || 0), data: capture(u) }); while (u.undo.length > 3) u.undo.shift(); }
+function restore(u, data) { const d = JSON.parse(JSON.stringify(data)); for (const k of Object.keys(d)) u[k] = d[k]; u.fx = []; }
+// One unit of Zeus's own.
+function spawnOne(s, a) {
+    if (Object.keys(s.usa.custom).length >= CUSTOM_MAX) return err(`That is the most custom units (${CUSTOM_MAX}).`);
+    const ty = a.utype === undefined ? null : UNIT_TYPES[a.utype];
+    if (a.utype !== undefined && !ty) return err('Unknown kind of unit.');
+    const name = String(a.name || ty?.name || '').trim().slice(0, 80);
+    if (!name) return err('Give the unit a name.');
+    let lon = Number(a.lon), lat = Number(a.lat);
+    if (a.at === 'capital') { const row = STATES.find(r => r[0] === String(a.state || '').toUpperCase()); if (!row) return err('No such state.'); lon = row[3]; lat = row[4]; }
+    const baseU = a.base ? getUnits(s.usa)[a.base] : null;
+    if (a.base) { if (!baseU || baseU.type !== 'airbase') return err('Pick an air base.'); if (ty?.domain !== 'air') return err('Only aircraft can be based on an air base.'); lon = baseU.lon; lat = baseU.lat; }
+    if (!inBox(lon, lat)) return err('Place it on the map.');
+    const side = a.side === undefined ? (baseU ? effSide(baseU) : 'mil') : a.side;
+    if (!validSide(side) || (side.startsWith('st:') && !STATE_INFO[side.slice(3)])) return err('Unknown side.');
+    const sil = a.sil === undefined ? ty?.sil || 'infantry' : a.sil;
+    if (!SILS.includes(sil)) return err('Unknown picture.');
+    let n = (s.usa.nextCustom || 1); while (s.usa.custom[`x-${n}`]) n++;
+    const id = `x-${n}`; s.usa.nextCustom = n + 1;
+    const st = Number(a.strength);
+    lon = +lon.toFixed(3); lat = +lat.toFixed(3);
+    s.usa.custom[id] = { id, kind: 'custom', type: a.utype || 'militia_sq', side, roe: a.roe in ROES ? a.roe : ty?.group === 'Civilians' ? 'hold' : 'defend', home: [lon, lat], name, short: String(a.short || name).trim().slice(0, 40),
+      owner: side.startsWith('st:') ? side.slice(3) : 'US', lon, lat, sil, img: null, photo: null, desc: String(a.desc ?? ty?.desc ?? '').slice(0, 300), strength: Number.isFinite(st) ? clamp(Math.round(st), 0, 100) : 100, control: a.control === 'delegate' ? 'delegate' : 'ai', hidden: false, ...(cleanStats(a.stats) ? { stats: cleanStats(a.stats) } : {}), order: null, ...(baseU ? { base: baseU.id, air: 'parked' } : {}) };
+    return ok({ id });
+}
 export const usaActions = {
   // The game clock: start or stop it, and how fast it runs (game seconds per real second).
   usaSim: { perm: 'zeus', run(s, a, ctx) {
@@ -454,6 +493,7 @@ export const usaActions = {
     if (a.revive) Object.assign(g, { strength: 100, destroyed: false, routed: false, order: null, mv: null, eng: null, hitAt: null });
     if (a.federal !== undefined) { if (!['guard', 'police'].includes(base.kind)) return err('Only a Guard or police unit can be federalized.'); g.federal = !!a.federal; }
     if (a.sil !== undefined) { if (!SILS.includes(a.sil)) return err('Unknown picture.'); g.sil = a.sil; }
+    if (a.stats !== undefined) { if (a.stats === null) delete g.stats; else { const st = cleanStats(a.stats); if (!st) return err('Give at least one number.'); g.stats = st; } }
     if (a.lon !== undefined || a.lat !== undefined) {
       const lon = Number(a.lon ?? base.lon), lat = Number(a.lat ?? base.lat);
       if (!inBox(lon, lat)) return err('That place is not on the map.');
@@ -480,27 +520,20 @@ export const usaActions = {
   // A unit of Zeus's own: a militia, a task force, a protest, a convoy. It sits on the map like any other.
   usaSpawn: { perm: 'zeus', run(s, a) {
     migrateUsa(s);
-    if (Object.keys(s.usa.custom).length >= 300) return err('That is the most custom units (300).');
-    const ty = a.utype === undefined ? null : UNIT_TYPES[a.utype];
-    if (a.utype !== undefined && !ty) return err('Unknown kind of unit.');
-    const name = String(a.name || ty?.name || '').trim().slice(0, 80);
-    if (!name) return err('Give the unit a name.');
+    const n = clamp(Math.round(Number(a.count) || 1), 1, 50);
+    if (Object.keys(s.usa.custom).length + n > CUSTOM_MAX) return err(`That would be more than ${CUSTOM_MAX} custom units.`);
+    pushUndo(s.usa);
+    if (n === 1) return spawnOne(s, a);
     let lon = Number(a.lon), lat = Number(a.lat);
     if (a.at === 'capital') { const row = STATES.find(r => r[0] === String(a.state || '').toUpperCase()); if (!row) return err('No such state.'); lon = row[3]; lat = row[4]; }
-    const baseU = a.base ? getUnits(s.usa)[a.base] : null;
-    if (a.base) { if (!baseU || baseU.type !== 'airbase') return err('Pick an air base.'); if (ty?.domain !== 'air') return err('Only aircraft can be based on an air base.'); lon = baseU.lon; lat = baseU.lat; }
-    if (!inBox(lon, lat)) return err('Place it on the map.');
-    const side = a.side === undefined ? (baseU ? effSide(baseU) : 'mil') : a.side;
-    if (!validSide(side) || (side.startsWith('st:') && !STATE_INFO[side.slice(3)])) return err('Unknown side.');
-    const sil = a.sil === undefined ? ty?.sil || 'infantry' : a.sil;
-    if (!SILS.includes(sil)) return err('Unknown picture.');
-    let n = (s.usa.nextCustom || 1); while (s.usa.custom[`x-${n}`]) n++;
-    const id = `x-${n}`; s.usa.nextCustom = n + 1;
-    const st = Number(a.strength);
-    lon = +lon.toFixed(3); lat = +lat.toFixed(3);
-    s.usa.custom[id] = { id, kind: 'custom', type: a.utype || 'militia_sq', side, roe: a.roe in ROES ? a.roe : ty?.group === 'Civilians' ? 'hold' : 'defend', home: [lon, lat], name, short: String(a.short || name).trim().slice(0, 40),
-      owner: side.startsWith('st:') ? side.slice(3) : 'US', lon, lat, sil, img: null, photo: null, desc: String(a.desc ?? ty?.desc ?? '').slice(0, 300), strength: Number.isFinite(st) ? clamp(Math.round(st), 0, 100) : 100, control: a.control === 'delegate' ? 'delegate' : 'ai', hidden: false, order: null, ...(baseU ? { base: baseU.id, air: 'parked' } : {}) };
-    return ok({ id });
+    const r = clamp(Number(a.spread) || 15, 1, 300) / 111, ids = [];
+    for (let i = 0; i < n; i++) {
+      const ang = i * 2.4, d = r * Math.sqrt((i + 0.5) / n);
+      const res = spawnOne(s, { ...a, at: undefined, lon: lon + Math.cos(ang) * d * 1.25, lat: lat + Math.sin(ang) * d, name: a.name ? `${a.name} ${i + 1}` : undefined });
+      if (!res.ok) { if (ids.length) break; return res; }
+      ids.push(res.id);
+    }
+    return ok({ ids, id: ids[0] });
   } },
   // Sets off an incident at a state capital, a border crossing or a point on the map: units appear, the state's status may change,
   // and the government answers it.
@@ -513,7 +546,8 @@ export const usaActions = {
     else { lon = Number(a.lon); lat = Number(a.lat); if (!inBox(lon, lat)) return err('Pick a place on the map.'); }
     if (!code) { let best = 1e9; for (const r of STATES) { const d = distKm({ lon, lat }, { lon: r[3], lat: r[4] }); if (d < best) { best = d; code = r[0]; } } }
     const total = inc.units.reduce((n, u) => n + u[3], 0);
-    if (Object.keys(s.usa.custom).length + total > 300) return err('That would be more than 300 custom units. Delete some first.');
+    if (Object.keys(s.usa.custom).length + total > CUSTOM_MAX) return err(`That would be more than ${CUSTOM_MAX} custom units. Delete some first.`);
+    pushUndo(s.usa);
     const where = cross ? cross.name : STATES.find(r => r[0] === code)?.[1] || code;
     let k = 0; const ids = [];
     for (const [utype, name, sideKey, n, how] of inc.units) for (let i = 0; i < n; i++, k++) {
@@ -522,7 +556,7 @@ export const usaActions = {
       if (how === 'line') { x = lon + 0.06 * (i - n / 2); y = lat; }
       const side = sideKey === 'st' ? `st:${code}` : sideKey;
       if (how === 'inward' && cross) y = lat + (cross.side === 'CAN' ? -0.05 : 0.05) * (1 + k % 3); // just on the far side, then they drive in
-      const res = usaActions.usaSpawn.run(s, { utype, name: `${name} (${where})`, short: name, side, lon: x, lat: y });
+      const res = spawnOne(s, { utype, name: `${name} (${where})`, short: name, side, lon: x, lat: y });
       if (!res.ok) return res;
       ids.push(res.id);
       if (how === 'inward' && cross) {
@@ -538,9 +572,115 @@ export const usaActions = {
     if (s.usa.events.length > 100) s.usa.events.shift();
     return ok({ ids });
   } },
+  // ---- Sandbox: many units at once, copies, teleports, scenarios, save points and undo ----
+  usaClone: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const all = getUnits(s.usa), ids = [...new Set(a.ids || [])].filter(id => all[id]).slice(0, 50);
+    if (!ids.length) return err('Pick a unit to copy.');
+    const copies = clamp(Math.round(Number(a.copies) || 1), 1, 10);
+    if (Object.keys(s.usa.custom).length + ids.length * copies > CUSTOM_MAX) return err(`That would be more than ${CUSTOM_MAX} custom units.`);
+    pushUndo(s.usa);
+    const out = [];
+    for (let c = 1; c <= copies; c++) for (const id of ids) {
+      const u = all[id], d = 0.04 * c;
+      const res = spawnOne(s, { utype: u.type, name: `${u.name} (copy)`, short: u.short, side: u.side, lon: u.lon + d, lat: u.lat - d * 0.6, strength: u.strength ?? 100, roe: u.roe, sil: u.sil, desc: u.desc, control: u.control, stats: u.stats, base: u.base });
+      if (!res.ok) return out.length ? ok({ ids: out }) : res;
+      out.push(res.id);
+    }
+    return ok({ ids: out });
+  } },
+  // One edit for many units. Built-in units can be changed or hidden; only your own can be deleted.
+  usaBulk: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const all = getUnits(s.usa), ids = [...new Set(a.ids || [])].filter(id => all[id]);
+    if (!ids.length) return err('Pick some units first.');
+    const set = a.set || {};
+    if (set.strength !== undefined && !Number.isFinite(Number(set.strength))) return err('Strength is 0 to 100.');
+    if (set.roe !== undefined && !(set.roe in ROES)) return err('Unknown rules of engagement.');
+    if (set.side !== undefined && !validSide(set.side)) return err('Unknown side.');
+    if (set.control !== undefined && !['ai', 'delegate'].includes(set.control)) return err('Control is ai or delegate.');
+    pushUndo(s.usa);
+    let n = 0;
+    for (const id of ids) {
+      if (a.delete) { if (s.usa.custom[id]) { delete s.usa.custom[id]; n++; } continue; }
+      const g = CATALOG[id] ? (s.usa.mods[id] ||= {}) : s.usa.custom[id];
+      if (set.strength !== undefined) g.strength = Math.round(clamp(Number(set.strength), 0, 100));
+      if (set.roe !== undefined) g.roe = set.roe;
+      if (set.side !== undefined) g.side = set.side;
+      if (set.control !== undefined) g.control = set.control;
+      if (set.hidden !== undefined) g.hidden = !!set.hidden;
+      if (set.revive) Object.assign(g, { strength: 100, destroyed: false, routed: false, order: null, mv: null, eng: null, hitAt: null });
+      if (set.stop) Object.assign(g, { order: null, mv: null, eng: null });
+      n++;
+    }
+    return ok({ n });
+  } },
+  // Moves a group to one place, spread out so they do not stack.
+  usaTeleport: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const all = getUnits(s.usa), ids = [...new Set(a.ids || [])].filter(id => all[id] && all[id].type !== 'airbase' && !(all[id].kind === 'air' && all[id].air && all[id].air !== 'parked')).slice(0, 200);
+    const lon = Number(a.lon), lat = Number(a.lat);
+    if (!ids.length) return err('Pick some units first.');
+    if (!inBox(lon, lat)) return err('Pick a place on the map.');
+    pushUndo(s.usa);
+    ids.forEach((id, i) => {
+      const ang = i * 2.4, d = ids.length > 1 ? 0.03 * Math.sqrt(i + 1) : 0;
+      putUnit(s.usa, id, { lon: +(lon + Math.cos(ang) * d * 1.25).toFixed(3), lat: +(lat + Math.sin(ang) * d).toFixed(3), order: null, mv: null, eng: null });
+    });
+    return ok({ n: ids.length });
+  } },
+  // Removes every unit Zeus made (or only a kind of them).
+  usaClear: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const ids = Object.keys(s.usa.custom).filter(id => !a.utype || s.usa.custom[id].type === a.utype);
+    if (!ids.length) return err('There are none to remove.');
+    pushUndo(s.usa);
+    for (const id of ids) delete s.usa.custom[id];
+    return ok({ n: ids.length });
+  } },
+  usaScenario: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const sc = SCENARIOS[a.id]; if (!sc) return err('Pick a scenario.');
+    const before = capture(s.usa), prev = (s.usa.undo || []).slice(), ids = [];
+    for (const step of sc.steps) {
+      const res = usaActions.usaIncident.run(s, step);
+      if (!res.ok) { restore(s.usa, before); return res; }
+      ids.push(...(res.ids || []));
+    }
+    s.usa.undo = [...prev, { at: Math.round(s.usa.sim.t), data: before }].slice(-3); // the whole scenario undoes in one step
+    s.usa.events.push({ t: Math.round(s.usa.sim.t), text: `Scenario: ${sc.name}.`, kind: 'incident', grp: 'war', id: ids[0] });
+    return ok({ ids });
+  } },
+  usaUndo: { perm: 'zeus', run(s) {
+    migrateUsa(s);
+    const last = s.usa.undo?.pop(); if (!last) return err('Nothing to undo.');
+    restore(s.usa, last.data);
+    return ok();
+  } },
+  usaSnap: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const snaps = (s.usa.snaps ||= []);
+    if (snaps.length >= 4) return err('Four save points is the most. Delete one first.');
+    const name = String(a.name || '').trim().slice(0, 40) || `Save ${snaps.length + 1}`;
+    snaps.push({ id: `sv${Date.now().toString(36)}`, name, at: Math.round(s.usa.sim.t), n: Object.keys(s.usa.custom).length, data: capture(s.usa) });
+    return ok();
+  } },
+  usaSnapLoad: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    const sv = s.usa.snaps?.find(x => x.id === a.id); if (!sv) return err('No such save point.');
+    pushUndo(s.usa);
+    restore(s.usa, sv.data);
+    return ok();
+  } },
+  usaSnapDelete: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    s.usa.snaps = (s.usa.snaps || []).filter(x => x.id !== a.id);
+    return ok();
+  } },
   usaDeleteUnit: { perm: 'zeus', run(s, a) {
     migrateUsa(s);
     if (!s.usa.custom[a.id]) return err('Only units you made can be deleted. Hide the others.');
+    pushUndo(s.usa);
     delete s.usa.custom[a.id];
     return ok();
   } },

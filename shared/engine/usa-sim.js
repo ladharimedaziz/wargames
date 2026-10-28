@@ -13,7 +13,7 @@ export const SIDE_COLORS = { fed: '#7fbf6a', mil: '#ff8a5a', foreign: '#ff4a6a',
 export const sideColor = side => (side.startsWith('st:') ? SIDE_COLORS.st : SIDE_COLORS[side] || '#ff8a5a');
 // A federalized Guard or police unit answers to the President.
 export const effSide = u => (u.federal ? 'fed' : u.side || 'fed');
-export const typeOf = u => UNIT_TYPES[u.type] || UNIT_TYPES.hq;
+export const typeOf = u => (u.stats ? { ...(UNIT_TYPES[u.type] || UNIT_TYPES.hq), ...u.stats, atk: { ...(UNIT_TYPES[u.type] || UNIT_TYPES.hq).atk, ...u.stats.atk } } : UNIT_TYPES[u.type] || UNIT_TYPES.hq);
 export const menNow = u => Math.round(typeOf(u).men * (u.strength ?? 100) / 100);
 
 const KM_LAT = 110.57, KM_LON = lat => 111.32 * Math.cos(lat * Math.PI / 180);

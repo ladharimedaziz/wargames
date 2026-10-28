@@ -2,8 +2,8 @@
 import { html, useState, useEffect, useRef, run, useMemo, cls, toast } from '../lib.js';
 import { TimerControls } from '../world/display-tab.js';
 import { DMDrawer, useUnread } from '../views/dm.js';
+import { Sandbox } from './sandbox.js';
 import { UnitCard, StateInspector, NationOverview, CrossingCard, GroupCard, SideOptions } from './inspector.js';
-import { UNIT_TYPES, TYPE_GROUPS } from '/shared/data/usa-types.js';
 import { effSide, typeOf, simClock, simSeconds, SIM_SPEEDS } from '/shared/engine/usa-sim.js';
 import { UsMap, loadUsa, viewFor, unitLabel } from './map.js';
 import { USA_VIEW, USA_UNIT_KINDS, UNIT_LAYERS, LIGHT_SERVICES, LIGHT_PALETTE, LIGHT_PATTERNS, lightColors, getUnits, SILS } from '/shared/engine/usa.js';
@@ -94,6 +94,7 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
     if (p.incident) { setPlacing(null); act({ type: 'usaIncident', kind: p.incident, lon, lat }); return; }
     if (p.order) { setPlacing(null); act({ type: 'usaOrder', ids: selIds, order: { type: p.order, to: [lon, lat] } }); return; }
     if (p.id) { setPlacing(null); act({ type: 'usaUnit', id: p.id, lon, lat }); return; }
+    if (p.teleport) { setPlacing(null); act({ type: 'usaTeleport', ids: selIds, lon, lat }); return; }
     if (!p.keep) setPlacing(null);
     act({ type: 'usaSpawn', ...p.spawn, lon, lat }).then(r => { if (!p.keep && r.result?.id) setSel(r.result.id); });
   };
@@ -120,7 +121,7 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
       </header>
       <div class="us-body">
         <aside class="us-side">
-          <nav class="us-tabs">${[['map', 'Map'], ['units', 'Units'], ['stage', 'Stage']].map(([k, l]) => html`<button class=${cls('btn sm', tab === k && 'on')} onClick=${() => setTab(k)}>${l}</button>`)}</nav>
+          <nav class="us-tabs">${[['map', 'Map'], ['units', 'Units'], ['sandbox', 'Sandbox'], ['stage', 'Stage']].map(([k, l]) => html`<button class=${cls('btn sm', tab === k && 'on')} onClick=${() => setTab(k)}>${l}</button>`)}</nav>
           ${tab === 'map' && html`<div class="card"><div class="card-h"><h3>Map</h3></div><div class="card-b col">
             ${LAYERS.map(([k, l]) => html`<label class="row"><input type="checkbox" checked=${u.layers[k]} onChange=${() => act({ type: 'usaLayer', layer: k })} /> ${l}</label>`)}
             <hr class="sep" />
@@ -139,8 +140,8 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
             ${Object.entries(UNIT_LAYERS).map(([k, l]) => html`<label class="row"><input type="checkbox" checked=${!!u.layers[k]} onChange=${() => act({ type: 'usaLayer', layer: k })} /> ${l}</label>`)}
             <div class="dim small">Every unit is a dot with a badge above it. Click one to see it on the right.</div>
             <select class="input sm" value="" onChange=${e => e.target.value && pickUnit(e.target.value)}><option value="">Find a governor…</option>${Object.values(units).filter(x => x.kind === 'governor').sort((a, b) => a.owner.localeCompare(b.owner)).map(x => html`<option value=${x.id}>${x.owner} · ${x.person}${x.control === 'delegate' ? ' (delegate)' : ''}</option>`)}</select>
-          </div></div>
-          <${SpawnCard} placing=${placing} setPlacing=${setPlacing} count=${Object.keys(u.custom || {}).length} act=${act} states=${states} />`}
+          </div></div>`}
+          ${tab === 'sandbox' && html`<${Sandbox} u=${u} units=${units} selIds=${selIds} act=${act} placing=${placing} setPlacing=${setPlacing} states=${states} />`}
           ${tab === 'stage' && html`<div class="card"><div class="card-h"><h3>Stage</h3></div><div class="card-b col">
             <input class="input sm" placeholder="Title" value=${topic.title} onInput=${e => setTopic({ ...topic, title: e.target.value })} />
             <input class="input sm" placeholder="Subtitle" value=${topic.subtitle} onInput=${e => setTopic({ ...topic, subtitle: e.target.value })} />
@@ -205,23 +206,3 @@ function SimBar({ u, act }) {
   </div>`;
 }
 
-// Bring in units: pick a kind, a side, and click the map (or send it to a state capital).
-function SpawnCard({ placing, setPlacing, count, act, states }) {
-  const [f, setF] = useState({ utype: 'ng_bct', name: '', side: 'fed', strength: 100, keep: true, state: 'TX' });
-  const arming = placing?.spawn;
-  const ty = UNIT_TYPES[f.utype], spawn = { utype: f.utype, name: f.name.trim() || undefined, side: f.side, strength: Number(f.strength) };
-  return html`<div class="card"><div class="card-h"><h3>New unit</h3></div><div class="card-b col">
-    <select class="input sm" value=${f.utype} onChange=${e => setF({ ...f, utype: e.target.value, side: UNIT_TYPES[e.target.value].group === 'National Guard' ? `st:${f.state}` : f.side })}>
-      ${TYPE_GROUPS.map(g => html`<optgroup label=${g}>${Object.values(UNIT_TYPES).filter(t => t.group === g).map(t => html`<option value=${t.id}>${t.name}</option>`)}</optgroup>`)}</select>
-    <div class="dim small">${ty.desc} ${ty.men.toLocaleString('en-US')} people${ty.speed ? `, ${ty.speed} km/h` : ''}.</div>
-    <input class="input sm" placeholder=${`Name (default: ${ty.name})`} value=${f.name} onInput=${e => setF({ ...f, name: e.target.value })} />
-    <select class="input sm" value=${f.side} onChange=${e => setF({ ...f, side: e.target.value })}><${SideOptions} /></select>
-    <label class="row small">Strength <input type="range" min="0" max="100" value=${f.strength} onInput=${e => setF({ ...f, strength: e.target.value })} /> <b>${f.strength}%</b></label>
-    <label class="row small"><input type="checkbox" checked=${f.keep} onChange=${e => setF({ ...f, keep: e.target.checked })} /> Keep placing (press Esc to stop)</label>
-    <button class=${cls('btn sm gold', arming && 'on')} onClick=${() => setPlacing(arming ? null : { spawn, keep: f.keep })}>${arming ? 'Click the map to place it…' : 'Place on the map'}</button>
-    <div class="row wrap"><select class="input sm grow" value=${f.state} onChange=${e => setF({ ...f, state: e.target.value })}>${states.map(s => html`<option value=${s.id}>${s.name}</option>`)}</select>
-      <button class="btn sm" onClick=${() => act({ type: 'usaSpawn', ...spawn, at: 'capital', state: f.state })}>At the capital</button></div>
-    <div class="row wrap"><button class="btn sm" onClick=${() => act({ type: 'usaFederalize', state: 'all', on: true })}>Federalize every Guard</button><button class="btn sm ghost" onClick=${() => act({ type: 'usaFederalize', state: 'all', on: false })}>Release them</button></div>
-    <div class="dim small">${count} unit${count === 1 ? '' : 's'} made by you. Click a dot to see it; Shift-drag on the map picks many.</div>
-  </div></div>`;
-}
