@@ -595,6 +595,14 @@ test('a US committee steers its map and refuses world actions', async () => {
   assert.ok(z({ type: 'usaLightColors', id: 'TX', service: 'fire', colors: null }).ok);
   assert.ok(z({ type: 'usaLightPattern', pattern: 'triple' }).ok && s.usa.lightPattern === 'triple');
   assert.equal(z({ type: 'usaLightPattern', pattern: 'nope' }).ok, false);
+  const { getUnits } = await import('../../shared/engine/usa.js');
+  assert.ok(Object.keys(getUnits(s.usa)).length > 180 && getUnits(s.usa)['gov-TX'].person === 'Greg Abbott' && getUnits(s.usa)['ng-TX'].owner === 'TX' && getUnits(s.usa)['f-82nd'].lat > 35);
+  assert.ok(z({ type: 'usaGovernor', state: 'tx', name: 'Alex Student', control: 'delegate' }).ok && getUnits(s.usa)['gov-TX'].person === 'Alex Student' && getUnits(s.usa)['gov-TX'].control === 'delegate');
+  assert.equal(z({ type: 'usaGovernor', state: 'TX', photo: 'javascript:alert(1)' }).ok, false);
+  assert.equal(z({ type: 'usaGovernor', state: 'TX', photo: 'data:image/jpeg;base64,' + 'A'.repeat(50000) }).ok, false, 'photos stay small');
+  assert.ok(z({ type: 'usaGovernor', state: 'TX', photo: 'data:image/png;base64,iVBORw0KGgo=' }).ok && getUnits(s.usa)['gov-TX'].photo.startsWith('data:image/png'));
+  assert.ok(z({ type: 'usaGovernor', state: 'TX', photo: null }).ok && getUnits(s.usa)['gov-TX'].photo === null);
+  assert.equal(z({ type: 'usaGovernor', state: 'ZZ', name: 'x' }).ok, false);
   assert.ok(z({ type: 'usaHighlight', states: ['tx', 'CA', 'texas', 'TX'] }).ok && s.usa.highlight.join() === 'TX,CA');
   assert.equal(z({ type: 'forceWar', a: '643', b: '804' }).ok, false, 'world actions are not available here');
 });

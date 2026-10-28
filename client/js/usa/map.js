@@ -2,8 +2,9 @@
 // on the Zeus panel it can be dragged and zoomed (`interactive`).
 import { feature, mesh } from 'topojson-client';
 import { geoAlbers, geoPath, geoCentroid, geoContains } from 'd3-geo';
-import { html, useRef, useEffect, cls } from '../lib.js';
-import { USA_VIEW, USA_MAX_ZOOM, USA_DOTS, MIL_COLORS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors } from '/shared/engine/usa.js';
+import { html, useRef, useEffect, useMemo, cls } from '../lib.js';
+import { drawSil, getImage, sealUrl } from './art.js';
+import { USA_VIEW, USA_MAX_ZOOM, USA_DOTS, USA_UNIT_KINDS, MIL_COLORS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors, getUnits } from '/shared/engine/usa.js';
 
 let loading = null;
 // Loads and indexes the two map files once.
@@ -71,9 +72,14 @@ export function loadPoints(kind) {
 const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', county: 'rgba(120,160,215,.16)', state: 'rgba(190,215,255,.7)', coast: 'rgba(190,215,255,.85)', i: '#f3b24a', u: 'rgba(200,170,120,.7)', label: '#dfe9fb', hover: 'rgba(255,255,255,.14)' };
 
 // `view` is the view to show, `onView` is called as the viewer drags or zooms, `onPick` with a state code on click.
-export function UsMap({ usa, view, onView, onPick, interactive = false, className = '' }) {
+// What a unit's badge says.
+export const unitLabel = u => (u.kind === 'governor' ? `${u.owner === 'DC' ? 'Mayor' : 'Gov.'} ${u.person}${u.party ? ` (${u.party})` : ''}` : u.short);
+const roundRect = (ctx, x, y, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); };
+
+export function UsMap({ usa, view, onView, onPick, onPickUnit, selectedUnit = null, interactive = false, className = '' }) {
   const cv = useRef(), ov = useRef(), st = useRef({ data: null, w: 0, h: 0, cur: { ...USA_VIEW }, want: { ...USA_VIEW }, hover: null, raf: 0, onView, onPick, usa });
-  st.current.onView = onView; st.current.onPick = onPick; st.current.usa = usa;
+  st.current.onView = onView; st.current.onPick = onPick; st.current.onPickUnit = onPickUnit; st.current.usa = usa; st.current.selUnit = selectedUnit;
+  st.current.units = useMemo(() => getUnits(usa), [usa.mods, usa.custom]);
 
   // The terrain, roads, borders and names are painted into an off-screen canvas that is reused while the view and layers stay the
   // same, so flashing lightbars only repaint the dots on top.
@@ -162,7 +168,7 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
     const [x0, x1] = [Math.min(lo[0], hi[0]) - 0.2, Math.max(lo[0], hi[0]) + 0.2], [y0, y1] = [Math.min(lo[1], hi[1]) - 0.2, Math.max(lo[1], hi[1]) + 0.2];
     const sig = JSON.stringify(S.usa.lightColors || {});
     if (S.lbSig !== sig) { S.lbSig = sig; S.lbCache = new Map(); }
-    const layout = `${pts.size}|${S.baseKey}|${Object.entries(L).join()}|${Object.entries(LB).join()}`;
+    const layout = `${pts.size}|${S.baseKey}|${Object.entries(L).join()}|${Object.entries(LB).join()}|${JSON.stringify(S.usa.mods)}|${Object.keys(S.usa.custom || {}).length}|${S.selUnit}`;
     const wantLabels = S.labelKey !== layout, labels = [];
     let flashing = false;
     for (const [kind, d] of Object.entries(USA_DOTS)) {
@@ -211,28 +217,53 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
         if (!crowded) { ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(0,0,0,.6)'; ctx.stroke(); }
       }
     }
-    // Labels go in priority order (the order of the layers); one that would overlap a placed label is dropped.
+    // Units: governors, federal forces, agencies, Guard and state police. Their badges are placed before any dot label.
+    const ulabels = [];
+    S.hits = [];
+    for (const u of Object.values(S.units || {})) {
+      const kd = USA_UNIT_KINDS[u.kind];
+      if (!kd || u.hidden || !L[kd.layer] || k < kd.dot) continue;
+      if (u.lon < x0 || u.lon > x1 || u.lat < y0 || u.lat > y1) continue;
+      const p = proj([u.lon, u.lat]); if (!p) continue;
+      const r = Math.min(8, 3.5 + k * 0.1), chosen = u.id === S.selUnit;
+      if (chosen) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p[0], p[1], r + 6, 0, 6.2832); ctx.stroke(); }
+      ctx.fillStyle = kd.color; ctx.beginPath(); ctx.arc(p[0], p[1], r, 0, 6.2832); ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = u.control === 'delegate' ? '#ffd166' : 'rgba(0,0,0,.75)'; ctx.stroke();
+      S.hits.push([p[0], p[1], u.id]);
+      if (k >= kd.label || chosen) ulabels.push([p[0], p[1] - r - 4, unitLabel(u), u]);
+    }
+    // Labels go in priority order (units first, then the layers in order); one that would overlap a placed label is dropped.
     if (wantLabels) {
       const placed = [], grid = new Map(), G = 64;
       ctx.font = '500 11px "IBM Plex Sans", sans-serif';
-      for (const [x, y, text] of labels) {
-        if (placed.length >= 600) break;
-        const w = ctx.measureText(text).width + 6, rx = x - w / 2, ry = y - 13;
+      for (const [x, y, text, u] of [...ulabels, ...labels]) {
+        if (placed.length >= 700) break;
+        const w = ctx.measureText(text).width + (u ? 32 : 6), hh = u ? 22 : 14, rx = x - w / 2, ry = y - hh + 1;
         let clash = false;
-        for (let gx = Math.floor(rx / G); gx <= Math.floor((rx + w) / G) && !clash; gx++) for (let gy = Math.floor(ry / G); gy <= Math.floor((ry + 14) / G) && !clash; gy++) {
-          for (const q of grid.get(`${gx},${gy}`) || []) if (rx < q[0] + q[2] && rx + w > q[0] && ry < q[1] + q[3] && ry + 14 > q[1]) { clash = true; break; }
+        for (let gx = Math.floor(rx / G); gx <= Math.floor((rx + w) / G) && !clash; gx++) for (let gy = Math.floor(ry / G); gy <= Math.floor((ry + hh) / G) && !clash; gy++) {
+          for (const q of grid.get(`${gx},${gy}`) || []) if (rx < q[0] + q[2] && rx + w > q[0] && ry < q[1] + q[3] && ry + hh > q[1]) { clash = true; break; }
         }
         if (clash) continue;
-        const rect = [rx, ry, w, 14];
-        for (let gx = Math.floor(rx / G); gx <= Math.floor((rx + w) / G); gx++) for (let gy = Math.floor(ry / G); gy <= Math.floor((ry + 14) / G); gy++) { const k2 = `${gx},${gy}`; (grid.get(k2) || grid.set(k2, []).get(k2)).push(rect); }
-        placed.push([rx, ry, w, x, y, text]);
+        const rect = [rx, ry, w, hh];
+        for (let gx = Math.floor(rx / G); gx <= Math.floor((rx + w) / G); gx++) for (let gy = Math.floor(ry / G); gy <= Math.floor((ry + hh) / G); gy++) { const k2 = `${gx},${gy}`; (grid.get(k2) || grid.set(k2, []).get(k2)).push(rect); }
+        placed.push([rx, ry, w, hh, x, y, text, u]);
       }
       S.labelKey = layout; S.labelDraw = placed;
     }
     ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; ctx.font = '500 11px "IBM Plex Sans", sans-serif';
-    for (const [rx, ry, w, x, y, text] of S.labelDraw || []) {
-      ctx.fillStyle = 'rgba(6,16,31,.78)'; ctx.fillRect(rx, ry, w, 14);
-      ctx.fillStyle = '#eef2fa'; ctx.fillText(text, x, y);
+    for (const [rx, ry, w, hh, x, y, text, u] of S.labelDraw || []) {
+      if (!u) { ctx.fillStyle = 'rgba(6,16,31,.78)'; ctx.fillRect(rx, ry, w, hh); ctx.fillStyle = '#eef2fa'; ctx.fillText(text, x, y); continue; }
+      // A unit badge: its seal, flag or photo (or a drawn silhouette) and its name.
+      const kd = USA_UNIT_KINDS[u.kind], live = S.units?.[u.id] || u;
+      roundRect(ctx, rx, ry, w, hh, 6); ctx.fillStyle = 'rgba(8,18,36,.92)'; ctx.fill();
+      ctx.lineWidth = live.control === 'delegate' ? 2 : 1; ctx.strokeStyle = live.control === 'delegate' ? '#ffd166' : kd.color; ctx.stroke();
+      const cx = rx + 13, cy = ry + hh / 2, redraw2 = () => { S.labelKey = null; redraw(); };
+      const photo = live.photo && getImage(live.photo, redraw2), seal = !photo && live.img && getImage(sealUrl(live.img), redraw2);
+      if (photo) { ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, 9, 0, 6.2832); ctx.clip(); ctx.drawImage(photo, cx - 9, cy - 9, 18, 18); ctx.restore(); }
+      else if (seal) { const s = Math.min(18 / seal.width, 18 / seal.height); ctx.drawImage(seal, cx - seal.width * s / 2, cy - seal.height * s / 2, seal.width * s, seal.height * s); }
+      else drawSil(ctx, live.sil, cx, cy, 16, kd.color);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.fillStyle = '#eef2fa'; ctx.fillText(text, rx + 25, cy + 0.5);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
     }
     return flashing;
   };
@@ -251,7 +282,7 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
     return () => { dead = true; ro.disconnect(); cancelAnimationFrame(st.current.raf); clearTimeout(st.current.raf); };
   }, []);
   useEffect(() => { st.current.want = { ...USA_VIEW, ...view }; if (!st.current.data) return; redraw(); }, [view?.lon, view?.lat, view?.k]);
-  useEffect(redraw, [Object.entries(usa.layers).join(), Object.entries(usa.lightbars || {}).join(), usa.lightPattern, JSON.stringify(usa.lightColors || {}), (usa.highlight || []).join(',')]);
+  useEffect(redraw, [selectedUnit, usa.mods, usa.custom, Object.entries(usa.layers).join(), Object.entries(usa.lightbars || {}).join(), usa.lightPattern, JSON.stringify(usa.lightColors || {}), (usa.highlight || []).join(',')]);
 
   // Pointer handling for the Zeus panel: drag to pan, wheel to zoom around the cursor, click to pick a state.
   useEffect(() => {
@@ -276,11 +307,15 @@ export function UsMap({ usa, view, onView, onPick, interactive = false, classNam
       if (!st.current.data) return;
       const m = pos(e);
       if (drag) { moved += Math.abs(e.movementX) + Math.abs(e.movementY); if (drag.g) commit(anchor(drag.g, m, cur().k)); return; }
+      let uh = null, ud = 12;
+      for (const h of st.current.hits || []) { const d = Math.hypot(h[0] - m[0], h[1] - m[1]); if (d < ud) { ud = d; uh = h[2]; } }
+      if (uh !== st.current.hoverUnit) { st.current.hoverUnit = uh; const u = uh && st.current.units[uh]; c.title = u ? `${u.name}${u.person ? ` — ${u.person}` : ''}` : ''; c.style.cursor = uh ? 'pointer' : ''; }
+      if (uh) return;
       const g = geoAt(m); let hit = null;
       if (g) for (const s of st.current.data.states) if (geoContains(s.f, g)) { hit = s.id; break; }
       if (hit !== st.current.hover) { st.current.hover = hit; c.title = hit ? st.current.data.byState.get(hit).name : ''; redraw(); }
     };
-    const up = e => { if (drag && moved < 4 && st.current.hover) st.current.onPick?.(st.current.hover); drag = null; try { c.releasePointerCapture(e.pointerId); } catch {} };
+    const up = e => { if (drag && moved < 4) { if (st.current.hoverUnit) st.current.onPickUnit?.(st.current.hoverUnit); else if (st.current.hover) st.current.onPick?.(st.current.hover); } drag = null; try { c.releasePointerCapture(e.pointerId); } catch {} };
     const wheel = e => {
       e.preventDefault();
       if (!st.current.data) return;
