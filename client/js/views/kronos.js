@@ -105,7 +105,7 @@ function CommitteeCard({ conn, c, enter, dm }) {
     </div>`;
 }
 
-const PRESETS = [['modern', 'World crisis · today'], ['cold85', 'World crisis · Cold War 1985'], ['latam', 'World crisis · Americas detail'], ['usa', 'United States · governors'], ['court', 'Court of justice'], ['who', 'WHO · Human genetic editing'], ['disec', 'DISEC · Chemical weapons'], ['unhcr', 'UNHCR · Sea-level statelessness'], ['gotham', 'Gotham · Arkham has fallen']];
+const PRESETS = [['modern', 'World crisis · today'], ['cold85', 'World crisis · Cold War 1985'], ['usa', 'United States · governors'], ['court', 'Court of justice'], ['who', 'WHO · Human genetic editing'], ['disec', 'DISEC · Chemical weapons'], ['unhcr', 'UNHCR · Sea-level statelessness'], ['gotham', 'Gotham · Arkham has fallen']];
 
 function GlobalControls({ conn }) {
   const [g, setG] = useState(conn.global);
