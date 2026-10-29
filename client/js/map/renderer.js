@@ -89,7 +89,7 @@ export class WorldMap {
     this.ro.observe(this.el);
     if (this.opts.interactive || this.opts.stageControl) this.bindInput();
     if (this.opts.stageControl) {
-      this.onKey = e => { if (e.key === 'Escape' && this.localFocus) { this.localFocus = null; this.applyFocus(); } };
+      this.onKey = e => { if (e.key === 'Escape' && this.localFocus) { this.localFocus = null; this.coatOff = false; this.applyFocus(); } };
       window.addEventListener('keydown', this.onKey);
     }
     this.t0 = performance.now();
@@ -227,7 +227,7 @@ export class WorldMap {
     this.syncControl(state, !prev);
     this.battles = null;
     this.syncFronts(state, !prev);
-    if (!prev || JSON.stringify(prev.display?.focus) !== JSON.stringify(state.display?.focus)) this.applyFocus();
+    if (!prev || JSON.stringify(prev.display?.focus) !== JSON.stringify(state.display?.focus)) { this.coatOff = false; this.applyFocus(); }
   }
   // --- territorial control ---
   // Ground changes hands cell by cell. When it does, the new line sweeps outward from where each side already
@@ -550,8 +550,10 @@ export class WorldMap {
   setSelected(id) {
     // 'bloc:X' selects a whole faction (Faction view).
     this.faction = typeof id === 'string' && id.startsWith('bloc:') ? id.slice(5) : null;
-    this.selected = this.faction ? null : id; this.multi.clear(); this.dirty = true;
+    this.selected = this.faction ? null : id; if (!this.opts.onMulti) this.multi.clear(); this.dirty = true;
   }
+  // The Zeus panel owns its multi-selection (shift+click) and hands it back here to draw.
+  setMulti(ids) { this.multi = new Set(ids || []); this.dirty = true; }
   setLang(lang) { this.opts.lang = lang; this.dirty = true; }
 
   // --- camera ---
@@ -589,8 +591,10 @@ export class WorldMap {
   }
   // On the stage display, clicking a country zooms to it. Clicks never zoom out (a double-click for full screen
   // would otherwise bounce the camera in and out): Escape or the scroll wheel does that.
+  // A click on the sea or on the country already shown lets go of it: its coat of arms fades, the camera stays.
   stageClick(id) {
-    if (!id || !this.bounds.get(id) || this.localFocus?.id === id) return;
+    if (!id || !this.bounds.get(id) || this.focusedCountry() === id) { this.coatOff = !!this.focusedCountry() && (!id || !this.coatOff); this.dirty = true; return; }
+    this.coatOff = false;
     this.localFocus = { kind: 'country', id };
     this.userAt = performance.now();
     this.applyFocus();
@@ -607,7 +611,7 @@ export class WorldMap {
       this.camTarget = this.clampView({ k, x: mx - (mx - t.x) * (k / t.k), y: my - (my - t.y) * (k / t.k) });
       this.userAt = performance.now();
       // Scrolling all the way out on the stage lets go of the clicked country.
-      if (this.opts.stageControl && k <= 1.05 && this.localFocus) this.localFocus = null;
+      if (this.opts.stageControl && k <= 1.05 && this.localFocus) { this.localFocus = null; this.coatOff = false; }
     }, { passive: false });
     fx.addEventListener('pointerdown', e => {
       // With a brush, the left button paints; any other button still pans the map.
@@ -672,6 +676,7 @@ export class WorldMap {
         const ll = this.screenToLonLat(mx, my);
         if (ll && isOOB(this.rawCountryAt(ll[0], ll[1]))) { drag = null; return; }
         const id = ll ? this.countryAt(ll[0], ll[1]) : null;
+        if (e.shiftKey && id && this.state?.countries?.[id] && this.opts.onMulti) { this.opts.onMulti(id); drag = null; return; }
         if (e.shiftKey && id && this.state?.countries?.[id]) { this.multi.has(id) ? this.multi.delete(id) : this.multi.add(id); this.dirty = true; drag = null; return; }
         if (this.multi.size) { this.multi.clear(); this.dirty = true; }
         if (this.opts.stageControl) this.stageClick(id && this.state?.countries?.[id] ? id : null);
@@ -1287,7 +1292,7 @@ export class WorldMap {
   drawCoat(ctx, time) {
     const on = this.state?.display?.arms !== false;
     const ids = new Set(on ? [...this.multi] : []);
-    const f = on ? this.focusedCountry() : null; if (f) ids.add(f);
+    const f = on && !this.coatOff ? this.focusedCountry() : null; if (f) ids.add(f);
     this.coatAts ||= new Map(); this.coatImgs ||= new Map();
     for (const id of [...this.coatAts.keys()]) if (!ids.has(id)) this.coatAts.delete(id);
     for (const id of ids) {

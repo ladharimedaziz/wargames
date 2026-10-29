@@ -28,7 +28,9 @@ const TABS = [
 export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
   const kronos = user.role === 'kronos';
   const [tab, setTab] = useState(() => (user.role === 'stage' ? 'display' : 'review'));
-  const [selected, setSelected] = useState(null);
+  const [selected, setSelectedOne] = useState(null);
+  const [multi, setMulti] = useState([]); // more countries picked with shift+click, beside the selected one
+  const setSelected = useCallback(id => { setSelectedOne(id); setMulti([]); }, []);
   const [selZone, setSelZone] = useState(null);
   const [draft, setDraft] = useState(null); // order being composed
   const [picking, setPicking] = useState(null); // 'target' | 'zone' while choosing on the map
@@ -48,6 +50,12 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
     if (viewMode === 'factions') { const c = id && state.countries[id]; setSelected(c ? `bloc:${c.bloc}` : null); setSelZone(null); return; }
     setSelected(id || null); setSelZone(null);
   }, [picking, viewMode, state]);
+  // Shift+click adds a country to the selection or takes it out; the first one picked stays the main one.
+  const onMapMulti = useCallback(id => {
+    if (picking || viewMode === 'factions' || !selected || !state.countries[selected]) { onMapSelect({ id }); return; }
+    if (id === selected) { setSelectedOne(multi[0] || null); setMulti(multi.slice(1)); return; }
+    setMulti(multi.includes(id) ? multi.filter(x => x !== id) : [...multi, id]);
+  }, [picking, viewMode, selected, multi, state, onMapSelect]);
   const setView = v => { setViewMode(v); setSelected(null); setSelZone(null); };
 
   const startOrder = (type, extra = {}) => { setDraft({ type, country: selected, counts: {}, category: 'military', ...extra }); setTab('orders'); };
@@ -89,13 +97,13 @@ export function WorldPanel({ conn, user, state, committee, logout, onBack }) {
           ${tab === 'sandbox' && html`<${SandboxTab} conn=${conn} state=${state} selected=${selected} selZone=${selZone} />`}
         </aside>
         <main class="mid">
-          <${MapView} conn=${conn} state=${state} selected=${selected} onSelect=${onMapSelect} layers=${layers} picking=${picking} draft=${draft} brush=${brush} setBrush=${setBrush} />
+          <${MapView} conn=${conn} state=${state} selected=${selected} multi=${multi} onSelect=${onMapSelect} onMulti=${onMapMulti} layers=${layers} picking=${picking} draft=${draft} brush=${brush} setBrush=${setBrush} />
           <${MapOverlay} state=${state} conn=${conn} layers=${layers} setLayers=${setLayers} picking=${picking} cancelPick=${() => setPicking(null)} viewMode=${viewMode} setView=${setView} setSelected=${setSelected} />
           ${brush && html`<${DrawBar} conn=${conn} state=${state} brush=${brush} setBrush=${setBrush} />`}
           <${CommandBar} conn=${conn} state=${state} role=${user.role} />
         </main>
         <aside class="right">
-          <${Inspector} conn=${conn} state=${state} selected=${selected} selZone=${selZone} setSelected=${setSelected} startOrder=${startOrder} kronos=${kronos} setBrush=${setBrush} />
+          <${Inspector} conn=${conn} state=${state} selected=${selected} multi=${multi} setMulti=${setMulti} selZone=${selZone} setSelected=${setSelected} startOrder=${startOrder} kronos=${kronos} setBrush=${setBrush} />
         </aside>
       </div>
       ${state.kronos.locked && !kronos && html`<div class="lock-veil"><div class="lock-card"><div class="lock-ico">⌛</div><h2>Kronos has frozen this panel</h2><p>You can still watch, but nothing can be changed until Kronos unlocks it.</p></div></div>`}
@@ -145,16 +153,17 @@ function TopBar({ conn, user, state, logout, onBack, pending, unread, openDm, co
     </header>`;
 }
 
-function MapView({ conn, state, selected, onSelect, layers, picking, brush, setBrush }) {
+function MapView({ conn, state, selected, multi, onSelect, onMulti, layers, picking, brush, setBrush }) {
   const ref = useRef(), mapRef = useRef(), tipRef = useRef();
   const [tip, setTip] = useState(null);
   const onSelectRef = useRef(onSelect); onSelectRef.current = onSelect;
+  const onMultiRef = useRef(onMulti); onMultiRef.current = onMulti;
   const stateRef = useRef(state); stateRef.current = state;
   // Painted cells go to the server in one action; the map keeps the preview until the new state lands.
   const onPaint = (keys, b) => run(conn, { type: 'paintControl', owner: b.owner, keys, mode: b.mode });
   const onPaintRef = useRef(onPaint); onPaintRef.current = onPaint;
   useEffect(() => {
-    const m = new WorldMap(ref.current, { split: stateSplit(stateRef.current), interactive: true, onSelect: (...a) => onSelectRef.current(...a), onHover: (h, x, y) => setTip(h ? { ...h, x, y } : null), onPaint: (...a) => onPaintRef.current(...a), onBorder: ring => setBrush(b => (b && b.mode === 'border' ? { ...b, ring } : b)), onFleetMove: f => run(conn, { type: 'queueOrder', order: { country: f.owner, type: f.type, zone: f.zone, point: f.point, units: f.units }, now: true }, f.type === 'force' ? 'Forcing the strait' : 'Fleet under way') });
+    const m = new WorldMap(ref.current, { split: stateSplit(stateRef.current), interactive: true, onSelect: (...a) => onSelectRef.current(...a), onMulti: id => onMultiRef.current(id), onHover: (h, x, y) => setTip(h ? { ...h, x, y } : null), onPaint: (...a) => onPaintRef.current(...a), onBorder: ring => setBrush(b => (b && b.mode === 'border' ? { ...b, ring } : b)), onFleetMove: f => run(conn, { type: 'queueOrder', order: { country: f.owner, type: f.type, zone: f.zone, point: f.point, units: f.units }, now: true }, f.type === 'force' ? 'Forcing the strait' : 'Fleet under way') });
     mapRef.current = m;
     m.ready.then(() => m.setState(stateRef.current, { layers }));
     window.__map = m;
@@ -162,6 +171,7 @@ function MapView({ conn, state, selected, onSelect, layers, picking, brush, setB
   }, []);
   useEffect(() => { mapRef.current?.setState(state); }, [state]);
   useEffect(() => { mapRef.current?.setSelected(selected); }, [selected]);
+  useEffect(() => { mapRef.current?.setMulti(multi); }, [multi]);
   useEffect(() => { mapRef.current?.setLayers(layers); }, [layers]);
   useEffect(() => { mapRef.current?.ready.then(() => mapRef.current?.setBrush(brush)); }, [brush]);
   const c = tip?.id && state.countries[tip.id];
