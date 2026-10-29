@@ -1,6 +1,7 @@
 // A canvas film for each ending of the simulation, so no two endings look alike. Abstract by design: light, shapes and
 // numbers, never people or scenes of harm. Each film is a function of time since the ending began.
 import { html, useEffect, useRef } from '../lib.js';
+import { COLD_FILMS } from './cold-endings-fx.js';
 
 const TAU = Math.PI * 2;
 const clamp = (v, a = 0, b = 1) => Math.max(a, Math.min(b, v));
@@ -185,7 +186,7 @@ function custom(c, W, H, t) {
   c.restore();
 }
 
-const FILMS = { custom, peace, ceasefire, victory, collapse, stalemate, neworder };
+const FILMS = { custom, peace, ceasefire, victory, collapse, stalemate, neworder, ...COLD_FILMS };
 export const hasEndingFilm = type => !!FILMS[type];
 
 export function EndingFilm({ state, type }) {

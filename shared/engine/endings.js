@@ -1,9 +1,16 @@
 // Watches the world and suggests ending screens to the Stage Zeus. Nothing ends without a Zeus choosing to play it.
 import { ENDINGS } from './core.js';
+import { isColdEra, endingsFor, detectColdEndings, coldEndingDetail } from './cold-endings.js';
 
 export function detectEndings(state, ev) {
   const g = state.global, out = [];
-  const add = (type, why) => out.push({ type, en: `Ending available: ${ENDINGS[type].title}. ${why}`, ar: `نهاية متاحة: ${ENDINGS[type].ar}` });
+  const E = endingsFor(state);
+  const add = (type, why) => out.push({ type, en: `Ending available: ${E[type].title}. ${why}`, ar: `نهاية متاحة: ${E[type].ar}` });
+  if (isColdEra(state)) {
+    if (ev.some(e => e.kind === 'nuke')) add('nuclear', 'A nuclear weapon was used.');
+    detectColdEndings(state, ev, add);
+    return out;
+  }
   const hadWar = state.history.some(h => h.wars > 0) || ev.some(e => e.kind === 'war');
   if (ev.some(e => e.kind === 'nuke')) add('nuclear', 'A nuclear weapon was used.');
   if (hadWar && state.wars.length === 0 && ev.some(e => e.kind === 'peace')) add('peace', 'Every war has ended in a peace treaty.');
@@ -35,6 +42,7 @@ export function endingDetail(state, type) {
   const fronts = all.filter(c => c.front).map(c => c.id);
   const facts = [{ k: weeks, v: weeks === 1 ? 'week' : 'weeks' }];
   const d = { facts };
+  if (type.startsWith('cw_')) return coldEndingDetail(state, type, d);
   if (type === 'victory') {
     const gdp = b => all.filter(c => c.bloc === b).reduce((s, c) => s + c.base.gdp, 0);
     const lost = ['A', 'B', 'C'].find(b => { const m = all.filter(c => c.bloc === b && c.major && c.base.gdp > 300); return m.length && m.every(c => c.capitulated || c.occupiedBy || c.stability < 5); });

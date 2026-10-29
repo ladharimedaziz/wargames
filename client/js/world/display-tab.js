@@ -1,6 +1,6 @@
 // Stage controls: what the projected/streamed display shows, the timer, language and endings.
 import { html, useState, useEffect, run, toast, fmt, useNow, timerRemaining, cls } from '../lib.js';
-import { ENDINGS } from '/shared/engine/core.js';
+import { endingsFor } from '/shared/engine/cold-endings.js';
 import { CountrySelect, ZoneSelect } from './tabs.js';
 
 const SCENES = [
@@ -115,7 +115,7 @@ export function DisplayTab({ conn, state, committee }) {
 
       <div class="sub-h">Endings</div>
       <p class="pane-hint">Any ending can be played at any time. Suggestions also appear on the news desk when the world reaches one.</p>
-      <div class="ending-grid">${Object.entries(ENDINGS).filter(([k]) => k !== 'custom').map(([k, e]) => html`<button class=${cls('ending-btn', e.tone)} onClick=${() => run(conn, { type: 'playEnding', ending: k })}><b>${e.title}</b><span>${e.line}</span></button>`)}</div>
+      <div class="ending-grid">${Object.entries(endingsFor(state)).filter(([k]) => k !== 'custom').map(([k, e]) => html`<button class=${cls('ending-btn', e.tone)} onClick=${() => run(conn, { type: 'playEnding', ending: k })}><b>${e.title}</b><span>${e.line}</span></button>`)}</div>
       <div class="col" style="margin-top:8px">
         <input class="input" placeholder="Custom ending title" value=${endingCustom.title} onInput=${e => setEndingCustom({ ...endingCustom, title: e.target.value })} />
         <textarea class="input" rows="2" placeholder="What happened, in one or two sentences" value=${endingCustom.line} onInput=${e => setEndingCustom({ ...endingCustom, line: e.target.value })}></textarea>

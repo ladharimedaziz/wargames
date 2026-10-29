@@ -14,6 +14,7 @@ import { Unthinkable } from './unthinkable.js';
 import { EndingFilm, hasEndingFilm } from './endings-fx.js';
 import { stateSplit } from '/shared/data/german-split.js';
 import { ColdWarIntro, COLD_INTRO_MS, isColdIntro } from './cold-intro.js';
+import { endingsFor } from '/shared/engine/cold-endings.js';
 
 const committee = new URLSearchParams(location.search).get('c');
 
@@ -426,7 +427,7 @@ function Report({ state, lang }) {
 // ---------- Endings ----------
 function Ending({ state, lang, now }) {
   const e = state.display.ending || { type: 'custom', title: 'The End', line: '' };
-  const tone = ENDINGS[e.type]?.tone || 'neutral';
+  const tone = endingsFor(state)[e.type]?.tone || 'neutral';
   const el = (now - state.display.endingAt) / 1000;
   if (e.type === 'nuclear') return html`<${Unthinkable} state=${state} now=${now} />`;
   return html`<div class=${cls('ending', `end-${tone}`, `end-${e.type}`)}>

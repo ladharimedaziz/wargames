@@ -998,3 +998,24 @@ test('usa ships keep to water: routed around land, snapped off the shore, refuse
   z({ type: 'usaSim', running: true, speed: 300 }); s.usa.sim.at = 1_000_000;
   for (let i = 1; i <= 120; i++) { tickUsa(s, 1_000_000 + i * 1000); const u = getUnits(s.usa)[d.id]; assert.ok(!isLand(u.lon, u.lat), `afloat at tick ${i}`); }
 });
+
+test('a cold war committee has its own endings, detected from what happens in 1985', async () => {
+  const { detectEndings } = await import('../../shared/engine/endings.js');
+  const { endingsFor } = await import('../../shared/engine/cold-endings.js');
+  const cold = geo.coldIndex();
+  const info = { ids: cold.atlasCountryIds(), name: cold.atlasName, anchor: cold.anchorOf, neighbors: cold.neighborsOf };
+  const s = createWorldState({ id: 'cw', name: 'Cold', seed: 4 }, info);
+  applyScenario(s, 'cold85', info);
+  const z = a => applyAction(s, a, { role: 'stage', user: 't-stage', now: 9_000_000, geo });
+  assert.ok(endingsFor(s).cw_wall && endingsFor(s).nuclear && !endingsFor(s).peace, 'cold endings replace the modern ones');
+  assert.equal(z({ type: 'playEnding', ending: 'peace' }).ok, false);
+  assert.ok(z({ type: 'playEnding', ending: 'cw_proxy' }).ok);
+  assert.equal(s.display.ending.title, 'The Proxy Wars');
+  assert.ok(s.display.ending.facts.some(f => f.v === 'proxy wars'));
+  s.countries['278'].bloc = 'A';
+  s.countries['643'].stability = 4;
+  const found = detectEndings(s, []).map(e => e.type);
+  assert.ok(found.includes('cw_wall') && found.includes('cw_dissolve'), found.join());
+  const modern = createWorldState({ id: 'm', name: 'Modern', seed: 4 }, gi);
+  assert.ok(endingsFor(modern).peace && !endingsFor(modern).cw_wall, 'other committees keep their endings');
+});
