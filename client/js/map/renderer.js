@@ -6,6 +6,7 @@ import { SEA_ZONES } from '/shared/data/places.js';
 import { CITIES } from '/shared/data/cities.js';
 import { AIRCRAFT } from '/shared/data/militaries.js';
 import { stateSplit } from '/shared/data/german-split.js';
+import { coatUrl, flagUrl } from '/shared/data/era-images.js';
 import { relation, fullWarTheaters, theaterOf, THEATERS, isOOB, OUT_OF_BOUNDS, sameSide } from '/shared/engine/core.js';
 import { distanceKm, seaRoute, zonesTouching } from '/shared/geo.js';
 import { loadAtlas, makeCountryAt, makeLandAt, pairBorder } from './atlas.js';
@@ -793,12 +794,12 @@ export class WorldMap {
   // until the image has loaded (it asks for a redraw when it does).
   flagFill(id, k) {
     this.flagImgs ||= new Map();
-    const alt = this.state?.countries?.[id]?.altFlag, key = alt ? `${id}|${flagSig(alt)}` : id;
+    const alt = this.state?.countries?.[id]?.altFlag, src = alt ? altFlagUrl(alt) : flagUrl(id, this.state?.settings?.era), key = alt ? `${id}|${flagSig(alt)}` : src;
     let e = this.flagImgs.get(key);
     if (!e) {
       const img = new Image(); e = { img, pat: null };
       img.onload = () => { e.pat = this.bctx.createPattern(img, 'repeat'); this.dirty = true; };
-      img.src = alt ? altFlagUrl(alt) : `/client/img/flags/${id}.webp`; this.flagImgs.set(key, e);
+      img.src = src; this.flagImgs.set(key, e);
     }
     if (!e.pat) return null;
     e.pat.setTransform(new DOMMatrix().scale(240 / k / 192));
@@ -835,12 +836,12 @@ export class WorldMap {
     if (String(id).startsWith('bloc:')) return this.blocFlag(id.slice(5));
     this.flagImgs ||= new Map();
     // A government installed by a coup flies a made-up flag in place of the real one.
-    const alt = this.state?.countries?.[id]?.altFlag, key = alt ? `${id}|${flagSig(alt)}` : id;
+    const alt = this.state?.countries?.[id]?.altFlag, src = alt ? altFlagUrl(alt) : flagUrl(id, this.state?.settings?.era), key = alt ? `${id}|${flagSig(alt)}` : src;
     let e = this.flagImgs.get(key);
     if (!e) {
       const img = new Image(); e = { img, ok: false, pat: null };
       img.onload = () => { e.ok = true; e.pat = this.bctx.createPattern(img, 'repeat'); this.dirty = true; };
-      img.src = alt ? altFlagUrl(alt) : `/client/img/flags/${id}.webp`; this.flagImgs.set(key, e);
+      img.src = src; this.flagImgs.set(key, e);
     }
     return e.ok ? e.img : null;
   }
@@ -1308,8 +1309,10 @@ export class WorldMap {
         const out = this.coatOuts.get(id), back = out ? out.from * (1 - ease(clamp((now - out.at) / 600, 0, 1))) : 0;
         this.coatOuts.delete(id); this.coatAts.set(id, now - back * 900);
       }
+      // Cold War committees show the coat the country bore in 1985.
+      const src = coatUrl(id, this.state.settings?.era);
       let img = this.coatImgs.get(id);
-      if (!img) { img = new Image(); img.onload = () => { this.coatAts.has(id) && this.coatAts.set(id, performance.now()); this.dirty = true; }; img.src = `/client/img/coats/${id}.webp`; this.coatImgs.set(id, img); }
+      if (!img || img.dataset.src !== src) { img = new Image(); img.dataset.src = src; img.onload = () => { this.coatAts.has(id) && this.coatAts.set(id, performance.now()); this.dirty = true; }; img.src = src; this.coatImgs.set(id, img); }
       const t = (now - this.coatAts.get(id)) / 1000;
       this.paintCoat(ctx, id, img, riseOf(id), 14);
       if (t < 1) this.dirty = true;
