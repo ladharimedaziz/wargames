@@ -1116,7 +1116,7 @@ test('only NATO against the Warsaw Pact starts the nuclear exchange; other strik
   const ex = s.display.ending?.exchange;
   assert.equal(s.display.scene, 'ending'); assert.equal(s.meta.phase, 'ended');
   assert.ok(ex.strikes > 60000 && ex.tracks.length === ex.drawn && ex.firingIds.includes(US) && ex.firingIds.includes(RU), 'both superpowers fire their whole 1985 arsenals');
-  assert.ok(s.display.endingAt > s.lastResolution.at + 5000, 'the stage keeps the map up while every country fires');
+  assert.ok(s.display.endingAt > s.lastResolution.at + 3000 && ex.mapLead > 3, 'the stage keeps the map up while every country fires');
   // China (non-aligned in 1985) on the Soviet Union, and the US on Cuba (no bomb): one detonation, no ending.
   for (const [a, b] of [['156', RU], [US, '192']]) {
     const w = fresh();

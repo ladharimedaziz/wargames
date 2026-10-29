@@ -1,5 +1,5 @@
 // Watches the world and suggests ending screens to the Stage Zeus. Nothing ends without a Zeus choosing to play it.
-import { ENDINGS, sameSide } from './core.js';
+import { ENDINGS } from './core.js';
 import { isColdEra, endingsFor, detectColdEndings, coldEndingDetail } from './cold-endings.js';
 import { launchSite } from '../data/launch-sites.js';
 import { isBlocExchange, planExchange, exchangeSummary, likelyExchange } from './nuclear.js';
@@ -85,10 +85,10 @@ export function endingDetail(state, type) {
 function nuclearDetail(state) {
   const log = state.global.nukeLog || [];
   if (state.global.exchange) {
+    // The exchange already happened: show it whole, every arsenal of both camps (as the turn resolved it).
     const { first, hit } = state.global.exchange;
-    const strikes = log.filter(s => !(s.owner === first && s.target === hit)).slice(-48).map((s, i) => ({ ...s, from: launchSite(state, s.owner, i + 1), to: state.countries[s.target] }));
-    const answer = strikes.filter(s => !sameSide(state, s.owner, first)).length;
-    return exchangeSummary(state, first, hit, strikes, [...new Set([hit, ...strikes.map(s => s.target)])], answer, state.global.exchange.strikes);
+    const plan = planExchange(state, first, hit);
+    if (plan) return exchangeSummary(state, first, hit, plan.strikes, plan.struck, plan.answer, plan.total);
   }
   const camp = log.find(s => isBlocExchange(state, s.owner, s.target));
   if (!camp && log.length) {

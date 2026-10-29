@@ -79,12 +79,15 @@ function nuclearExchange(state, o, ev, ctx) {
     line: `${N(first)} used a nuclear weapon on ${N(hit)}. It was detected at once, and within minutes every nuclear weapon on both sides was in the air.`,
     exchange: exchangeSummary(state, first, hit, strikes, struck, plan.answer, plan.total),
   };
-  // The stage keeps the map up while every arsenal launches (0.8 s after the first missile, all within about three
-  // seconds), and the ending cuts in once they are all in the air.
-  state.display.endingAt = ctx.now + Math.round((EXCHANGE_LEAD_S + strikes.length * 0.02) * 1000);
+  // The stage keeps the map up while every arsenal launches (the first missile 1.2 s into the turn, every salvo 0.8 s
+  // later, 0.02 s apart), then the ending dissolves in with the missiles still in the air: the film picks each one up
+  // where the map left it (`mapLead`) as the flat map bends into a globe.
+  const lead = EXCHANGE_LEAD_S + strikes.length * 0.02;
+  state.display.ending.exchange.mapLead = lead;
+  state.display.endingAt = ctx.now + Math.round(lead * 1000);
   state.display.scene = 'ending'; state.meta.phase = 'ended';
 }
-export const EXCHANGE_LEAD_S = 7;
+export const EXCHANGE_LEAD_S = 2;
 
 function interceptPower(state, cid, attackerOwner) {
   const c = state.countries[cid];
