@@ -8,6 +8,9 @@ const TAU = Math.PI * 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ease = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
 import { altFlagUrl, flagSig } from './altflag.js';
+
+// Icons and sprites keep one on-screen size at every zoom, so nothing grows or shrinks as the camera moves.
+const ICON = 1.3;
 const fade = (u, a = 0.12, b = 0.82) => (u < a ? u / a : u > b ? (1 - u) / (1 - b) : 1);
 const rnd = seed => { let x = seed | 0 || 1; return () => ((x = (x * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff); };
 
@@ -130,7 +133,7 @@ export const ACT_FX = {
   fx_act(ctx, fx, u, now) {
     const e = fx.e, q = this.pt(e.at) || this.countryPoint(e.country);
     if (!q || !this.state?.countries?.[e.country]) return;
-    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.6);
+    const sc = ICON;
     this[`act_${e.act}`]?.(ctx, fx, u, now, q, sc);
   },
 
@@ -414,7 +417,7 @@ export const ACT_FX = {
   // Forces conjured by Kronos: a column of gold light lands, rings spread and unit markers pop into place.
   fx_spawn(ctx, fx, u, now) {
     const e = fx.e, q = this.pt(e.at); if (!q) return;
-    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.6), f = fade(u, 0.06, 0.8);
+    const sc = ICON, f = fade(u, 0.06, 0.8);
     const H = 160 * sc, w = (7 - ease(u / 0.3) * 3) * sc;
     const g = ctx.createLinearGradient(q[0], q[1] - H, q[0], q[1]);
     g.addColorStop(0, 'rgba(255,214,120,0)'); g.addColorStop(0.7, `rgba(255,226,150,${0.55 * f})`); g.addColorStop(1, `rgba(255,248,220,${0.95 * f})`);
@@ -448,7 +451,7 @@ export const ACT_FX = {
   // Kronos's unstoppable strike: a lance of light falls from the sky onto the target.
   fx_divine(ctx, fx, u, now) {
     const e = fx.e, q = this.pt(e.to); if (!q) return;
-    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.6), HIT = 0.32;
+    const sc = ICON, HIT = 0.32;
     // Warning sigil while the light gathers.
     if (u < HIT) {
       const v = u / HIT;

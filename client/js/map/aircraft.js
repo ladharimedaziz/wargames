@@ -3,6 +3,9 @@
 // and CH-47 shapes for the US, paratroopers drop from transports, and every diplomatic or covert order has a
 // short animation. Nothing graphic: light, motion and labels.
 import { AIRCRAFT, aircraftFor } from '/shared/data/militaries.js';
+
+// Icons and sprites keep one on-screen size at every zoom, so nothing grows or shrinks as the camera moves.
+const ICON = 1.3;
 const TAU = Math.PI * 2;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const ease = t => 1 - Math.pow(1 - clamp(t, 0, 1), 3);
@@ -80,7 +83,7 @@ export const AIRCRAFT_FX = {
     const ids = new Set((s.ops || []).filter(o => o.kind === 'patrol').map(o => o.country));
     for (const u of Object.values(s.units || {})) if (u.cap && u.type === 'fighter') ids.add(u.owner);
     if (!ids.size) return;
-    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
+    const sc = ICON;
     for (const id of ids) {
       const c = s.countries[id], box = this.screenBox(id), at = this.countryPoint(id);
       if (!c || !box || !at || c.control === 'inactive') continue;
@@ -132,7 +135,7 @@ export const AIRCRAFT_FX = {
     const e = fx.e, model = e.model, moab = e.payload === 'moab';
     const a = this.pt(e.from) || this.countryPoint(e.owner), b = this.pt(e.to) || this.countryPoint(e.target);
     if (!a || !b) return;
-    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
+    const sc = ICON;
     let dx = b[0] - a[0], dy = b[1] - a[1]; const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
     const nx = -dy, ny = dx;
     const over = [b[0] + dx * 12 * sc, b[1] + dy * 12 * sc], exit = [b[0] + dx * 60 * sc + nx * 30 * sc, b[1] + dy * 60 * sc + ny * 30 * sc];
@@ -245,7 +248,7 @@ export const AIRCRAFT_FX = {
   fx_drone(ctx, fx, u, now) {
     const e = fx.e, a = this.pt(e.from) || this.countryPoint(e.owner), b = this.pt(e.to) || this.countryPoint(e.target);
     if (!a || !b) return;
-    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
+    const sc = ICON;
     const owner = this.state.countries[e.owner];
     const col = owner && owner.bloc !== 'N' ? this.state.blocs[owner.bloc].color : '#cfd6df';
     let dx = b[0] - a[0], dy = b[1] - a[1]; const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
@@ -281,7 +284,7 @@ export const AIRCRAFT_FX = {
   fx_airdrop(ctx, fx, u, now) {
     const e = fx.e, b = this.pt(e.to) || this.countryPoint(e.country); if (!b) return;
     const a0 = this.pt(e.from) || this.countryPoint(e.owner);
-    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
+    const sc = ICON;
     let dx = a0 ? b[0] - a0[0] : 1, dy = a0 ? b[1] - a0[1] : 0; const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
     const nx = -dy, ny = dx, span = 120 * sc;
     const p0 = [b[0] - dx * span, b[1] - dy * span], p1 = [b[0] + dx * span, b[1] + dy * span];
@@ -318,7 +321,7 @@ export const AIRCRAFT_FX = {
     const e = fx.e, S = this.state, ar = this.opts.lang === 'ar';
     const A = this.countryPoint(e.a || e.owner), B = (e.b || e.target) ? this.countryPoint(e.b || e.target) : null;
     if (!A) return;
-    const f = fade(u, 0.1, 0.82), sc = clamp(Math.sqrt(this.cam.k), 1, 2);
+    const f = fade(u, 0.1, 0.82), sc = ICON;
     const blocCol = id => { const c = S.countries[id]; return c && c.bloc !== 'N' ? S.blocs[c.bloc].color : '#c8d2e0'; };
     const arc = (col, dash, w = 1.4, bend = 0.2, upto = 1) => {
       if (!B) return; ctx.strokeStyle = col; ctx.lineWidth = w; ctx.setLineDash(dash || []); ctx.lineDashOffset = -now / 40;

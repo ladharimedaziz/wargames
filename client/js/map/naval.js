@@ -5,6 +5,9 @@
 import { SEA_ZONES } from '/shared/data/places.js';
 import { navalLabel, hasNamedNavy } from '/shared/data/militaries.js';
 
+// Icons and sprites keep one on-screen size at every zoom, so nothing grows or shrinks as the camera moves.
+const ICON = 1.3;
+
 const TAU = Math.PI * 2;
 const hexA = (hex, a) => `rgba(${hexRgb(hex)},${a})`;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -20,18 +23,47 @@ function hull(ctx, x, y, len, beam) {
   ctx.quadraticCurveTo(x + len * 0.22, y + beam / 2, x + len / 2, y);
   ctx.closePath();
 }
-function wake(ctx, x, y, len, a, time, seed) {
-  const L = len * (0.7 + 0.15 * Math.sin(time * 2 + seed));
-  ctx.strokeStyle = `rgba(220,235,255,${0.2 * a})`; ctx.lineWidth = 0.7;
-  ctx.beginPath(); ctx.moveTo(x - len / 2, y - 0.7); ctx.lineTo(x - len / 2 - L, y - 1.8); ctx.moveTo(x - len / 2, y + 0.7); ctx.lineTo(x - len / 2 - L, y + 1.8); ctx.stroke();
+// A V of churned water behind a hull. `speed` (0 at rest, 1 at full speed) stretches it out and widens it.
+function wake(ctx, x, y, len, a, time, seed, speed = 0) {
+  const L = len * (0.7 + 0.15 * Math.sin(time * 2 + seed)) * (1 + speed * 1.2), spread = 1.8 + speed * 2;
+  ctx.strokeStyle = `rgba(220,235,255,${(0.2 + speed * 0.25) * a})`; ctx.lineWidth = 0.7;
+  ctx.beginPath(); ctx.moveTo(x - len / 2, y - 0.7); ctx.lineTo(x - len / 2 - L, y - spread); ctx.moveTo(x - len / 2, y + 0.7); ctx.lineTo(x - len / 2 - L, y + spread); ctx.stroke();
+  if (speed > 0.05) {
+    // Under way: a band of foam down the middle of the wake and a bow wave curling off the stem.
+    const g = ctx.createLinearGradient(x - len / 2, 0, x - len / 2 - L, 0);
+    g.addColorStop(0, `rgba(235,245,255,${0.45 * speed * a})`); g.addColorStop(1, 'rgba(235,245,255,0)');
+    ctx.strokeStyle = g; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(x - len / 2, y); ctx.lineTo(x - len / 2 - L * 0.8, y); ctx.stroke();
+    const b = 0.5 + 0.5 * Math.sin(time * 6 + seed);
+    ctx.strokeStyle = `rgba(240,248,255,${(0.35 + 0.25 * b) * speed * a})`; ctx.lineWidth = 0.6;
+    ctx.beginPath(); ctx.moveTo(x + len / 2 + 0.4, y); ctx.quadraticCurveTo(x + len * 0.25, y - 1.6 - b * 0.6, x, y - 2.2 - b); ctx.moveTo(x + len / 2 + 0.4, y); ctx.quadraticCurveTo(x + len * 0.25, y + 1.6 + b * 0.6, x, y + 2.2 + b); ctx.stroke();
+  }
 }
+const wrapAng = a => Math.atan2(Math.sin(a), Math.cos(a));
 
 export const NAVAL_FX = {
-  // One marker per owner, type and sea zone. Called inside drawUnits with the origin at the marker.
-  drawNavalGroup(ctx, g, time, color, scale) {
+  // Turns a fleet smoothly towards the heading it wants, like a ship coming about, and remembers where it points so it
+  // keeps facing its last course once it has dropped anchor. Returns { heading, speed, turn }.
+  helm(key, want, moving, seed) {
+    const H = (this._helm ||= new Map()), now = performance.now() / 1000;
+    let h = H.get(key);
+    if (!h) { h = { a: want ?? (seed % 628) / 100, v: 0, w: 0, t: now }; H.set(key, h); }
+    const dt = Math.min(0.1, Math.max(0, now - h.t)); h.t = now;
+    const prev = h.a;
+    if (want != null) { const d = wrapAng(want - h.a); h.a = wrapAng(h.a + Math.sign(d) * Math.min(Math.abs(d), Math.max(0.4, Math.abs(d) * 2.2) * dt)); }
+    h.v += ((moving ? 1 : 0) - h.v) * Math.min(1, dt * (moving ? 1.6 : 0.8));
+    h.w += (wrapAng(h.a - prev) / (dt || 1) - h.w) * Math.min(1, dt * 5);
+    return { heading: h.a, speed: h.v, turn: h.w };
+  },
+
+  // One marker per owner, type and sea zone. Called inside drawUnits with the origin at the marker. `nav` is the fleet's
+  // heading and speed from helm(); without one the group swings at anchor on a heading of its own.
+  drawNavalGroup(ctx, g, time, color, scale, nav) {
     const s = this.state, owner = s.countries[g.owner], us = ['USA', 'CHN', 'RUS'].includes(owner?.a3), named = hasNamedNavy(owner?.a3), a3 = owner?.a3;
     const carrier = g.type === 'carrier', count = g.units.length, blockade = g.units.some(u => u.blockade);
-    const seed = hash(g.loc.id + g.owner + g.type), heading = (seed % 628) / 100 + Math.sin(time * 0.15 + seed) * 0.08;
+    const seed = hash(g.loc.id + g.owner + g.type), sp = nav?.speed || 0;
+    // At anchor the group swings gently on its cable; under way it holds its course and swings its bows a little into a turn.
+    const heading = (nav ? nav.heading : (seed % 628) / 100) + Math.sin(time * 0.15 + seed) * 0.08 * (1 - sp);
+    const heel = clamp((nav?.turn || 0) * 0.35, -0.25, 0.25);
     scale *= 1.2;
     ctx.save(); ctx.scale(scale, scale);
     if (blockade) {
@@ -51,14 +83,20 @@ export const NAVAL_FX = {
     ctx.lineJoin = 'round';
     if (carrier) {
       // Escorts circle the carrier: a full screen of cruisers, destroyers and a submarine for an American group.
-      const n = us ? 4 : 2;
+      // Under way they leave the circle and take station: one ahead, one on each beam, one astern.
+      const n = us ? 4 : 2, station = us ? [[13, 0], [0, -10], [0, 10], [-14, 0]] : [[0, -10], [0, 10]];
       for (let i = 0; i < n; i++) {
-        const a = (i / n) * TAU + time * 0.12, x = Math.cos(a) * 12, y = Math.sin(a) * 9;
-        wake(ctx, x, y, 5, 0.8, time, i);
-        hull(ctx, x, y, 5.5, 1.8); ctx.fillStyle = 'rgba(4,6,11,0.9)'; ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 0.9; ctx.stroke();
+        const a = (i / n) * TAU + time * 0.12, x = Math.cos(a) * 12 * (1 - sp) + station[i][0] * sp, y = Math.sin(a) * 9 * (1 - sp) + station[i][1] * sp;
+        // Circling, an escort points along its orbit; on station it points along the carrier's course.
+        const orbit = wrapAng(a + Math.PI / 2), own = orbit + wrapAng(-orbit) * sp;
+        ctx.save(); ctx.translate(x, y); ctx.rotate(own);
+        wake(ctx, 0, 0, 5, 0.8, time, i, Math.max(sp, 0.25));
+        hull(ctx, 0, 0, 5.5, 1.8); ctx.fillStyle = 'rgba(4,6,11,0.9)'; ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 0.9; ctx.stroke();
+        ctx.restore();
       }
+      ctx.rotate(heel);
       if (us) { ctx.fillStyle = `rgba(${hexRgb(color)},0.55)`; ctx.beginPath(); ctx.ellipse(-13, 4, 2.2, 0.9, 0, 0, TAU); ctx.fill(); }
-      wake(ctx, 0, 0, 16, 1, time, 3);
+      wake(ctx, 0, 0, 16, 1, time, 3, sp);
       // Flat-top: straight deck, angled landing deck and the island on the starboard side.
       ctx.beginPath(); ctx.moveTo(9, -1.6); ctx.lineTo(6, -3.4); ctx.lineTo(-8, -3.4); ctx.lineTo(-8.5, 2.6); ctx.lineTo(5, 2.6); ctx.lineTo(9, 1.2); ctx.closePath();
       ctx.fillStyle = 'rgba(4,6,11,0.92)'; ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 1.3; ctx.stroke();
@@ -68,9 +106,12 @@ export const NAVAL_FX = {
       if (us) { ctx.fillStyle = 'rgba(230,240,255,0.85)'; ctx.beginPath(); ctx.moveTo(-3, -1.8); ctx.lineTo(-5, -2.7); ctx.lineTo(-4.4, -1.8); ctx.lineTo(-5, -0.9); ctx.closePath(); ctx.fill(); }
     } else {
       // A surface group in wedge formation; American fleets sail four Aegis ships.
+      // Under way the wedge opens out a little so each ship sails clear of the wake ahead.
       const slots = us ? [[5, 0], [-1, -4.5], [-1, 4.5], [-7, 0]] : [[4, 0], [-3, -4.2], [-3, 4.2]];
-      slots.forEach(([x, y], i) => {
-        wake(ctx, x, y, 7, 1, time, i);
+      ctx.rotate(heel);
+      slots.forEach(([x, y0], i) => {
+        const y = y0 * (1 + sp * 0.25);
+        wake(ctx, x, y, 7, 1, time, i, sp);
         hull(ctx, x, y, 8, 2.4); ctx.fillStyle = 'rgba(4,6,11,0.9)'; ctx.fill(); ctx.strokeStyle = color; ctx.lineWidth = 1.1; ctx.stroke();
         ctx.fillStyle = color; ctx.fillRect(x - 0.8, y - 0.5, 1.6, 1);
       });
@@ -191,7 +232,7 @@ export const NAVAL_FX = {
     const pts = ring.map(([lo, la]) => this.p(lo, la)).filter(Boolean); if (pts.length < 8) return;
     const cen = this.p(T.lon, T.lat) || pts[0];
     const zq = this.p(zone.lon, zone.lat) || pts[0];
-    const off = 7 + 5 * Math.min(2.2, Math.sqrt(this.cam.k));
+    const off = 7 + 5 * ICON;
     // Pushed out from the land, away from the country's centre.
     const out = pts.map(q => { const dx = q[0] - cen[0], dy = q[1] - cen[1], d = Math.hypot(dx, dy) || 1; return [q[0] + dx / d * off, q[1] + dy / d * off]; });
     let near = 0, best = Infinity; out.forEach((q, i) => { const d = Math.hypot(q[0] - zq[0], q[1] - zq[1]); if (d < best) { best = d; near = i; } });
@@ -204,7 +245,7 @@ export const NAVAL_FX = {
     ctx.strokeStyle = 'rgba(255,170,150,0.45)'; ctx.lineWidth = 1; ctx.setLineDash([1.5, 5]);
     ctx.beginPath(); arc.forEach((q, i) => (i ? ctx.lineTo(q[0], q[1]) : ctx.moveTo(q[0], q[1]))); ctx.stroke(); ctx.setLineDash([]);
     const at = d => { let i = 1; while (i < cum.length - 1 && cum[i] < d) i++; const f = (d - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1); return [arc[i - 1][0] + (arc[i][0] - arc[i - 1][0]) * f, arc[i - 1][1] + (arc[i][1] - arc[i - 1][1]) * f, Math.atan2(arc[i][1] - arc[i - 1][1], arc[i][0] - arc[i - 1][0])]; };
-    const sc = clamp(Math.sqrt(this.cam.k), 1, 2);
+    const sc = ICON;
     for (let n = 0; n < 3; n++) {
       // Ping-pong along the arc at a steady pace, ships spaced out so they cover it between them.
       const speed = 9 + n * 1.5, ph = ((time * speed + n * total / 3) % (total * 2)), d = ph < total ? ph : total * 2 - ph, fwd = ph < total;
@@ -223,7 +264,7 @@ export const NAVAL_FX = {
   // Hits start fires, ships that were sunk break up and go under, and the loser's survivors turn away.
   fx_naval(ctx, fx, u, now) {
     const e = fx.e, q = this.pt(e.at); if (!q) return;
-    const S = this.state, sc = clamp(Math.sqrt(this.cam.k), 1, 2.2) * 1.6;
+    const S = this.state, sc = ICON * 1.6;
     const colOf = id => this.colorOf(S.countries[id], '#c8d2e0');
     if (!fx.geo) {
       const ang = (hash(e.zone) % 628) / 100 + Math.random() * 0.4, gap = 30 * sc, sp = 10 * sc;
@@ -306,7 +347,7 @@ export const NAVAL_FX = {
     let ax = [1, 0];
     if (nb.length >= 2) ax = [nb[0][0] - nb[nb.length - 1][0], nb[0][1] - nb[nb.length - 1][1]]; else if (nb.length) ax = [nb[0][0] - q[0], nb[0][1] - q[1]];
     const d = Math.hypot(ax[0], ax[1]) || 1; ax = [ax[0] / d, ax[1] / d];
-    return { q, ax, bar: [-ax[1], ax[0]], sc: clamp(Math.sqrt(this.cam.k), 1, 2.2) };
+    return { q, ax, bar: [-ax[1], ax[0]], sc: ICON };
   },
   // The barrier itself: a chain of buoys and mines strung between two picket ships, blinking, with a radar sweep.
   // `open` runs 0..1 for the chain closing across the strait, `tone` is the rgb of the warning colour.

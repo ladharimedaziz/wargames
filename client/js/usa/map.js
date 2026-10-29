@@ -5,7 +5,7 @@ import { geoAlbers, geoPath, geoCentroid } from 'd3-geo';
 import { html, useRef, useEffect, useMemo, cls } from '../lib.js';
 import { drawSil, getImage, sealUrl } from './art.js';
 import { USA_VIEW, USA_MAX_ZOOM, USA_UNIT_KINDS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors, getUnits, CROSSING_LIST, crossingState } from '/shared/engine/usa.js';
-import { sideColor, effSide, glidePos } from '/shared/engine/usa-sim.js';
+import { sideColor, effSide, glidePos, typeOf } from '/shared/engine/usa-sim.js';
 import { detect, drawFx, drawTrails } from './fx.js';
 
 let loading = null;
@@ -110,6 +110,52 @@ const COL = { sea: '#06101f', land: '#142640', hi: '#2a4f86', neighbor: '#0f2038
 export const unitLabel = u => (u.kind === 'governor' ? `${u.owner === 'DC' ? 'Mayor' : 'Gov.'} ${u.person}${u.party ? ` (${u.party})` : ''}` : u.federal ? `${u.short} · federal` : u.short);
 const roundRect = (ctx, x, y, w, h, r) => { ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, y, w, h, r); else ctx.rect(x, y, w, h); };
 
+// Warships are drawn from above as hulls that point the way they sail. Lengths are in screen pixels and never change with zoom.
+const HULL_LEN = { carrier: 24, ship: 18, destroyer: 17, sub: 15 };
+const wrapAng = a => Math.atan2(Math.sin(a), Math.cos(a));
+// Turns a ship smoothly towards its course: where its order takes it next, or the way it last moved. It keeps that heading
+// when it stops. Returns true while it is still turning or under way, so the overlay keeps animating.
+function shipHeading(S, u, p, proj, now, glide) {
+  const H = (S.helm ||= {}), h = H[u.id] ||= { a: null, p, t: now, v: 0 };
+  let want = null;
+  if (u.mv && (u.mv[0] || u.mv[1])) {
+    // `mv` is the way the ship is sailing right now (towards its next waypoint), in degrees a second.
+    const at = glide ? glidePos(u, S.units, glide) : [u.lon, u.lat], f = 0.05 / Math.hypot(u.mv[0], u.mv[1]), a = proj(at), q = proj([at[0] + u.mv[0] * f, at[1] + u.mv[1] * f]);
+    if (a && q) want = Math.atan2(q[1] - a[1], q[0] - a[0]);
+  }
+  if (want == null && Math.hypot(p[0] - h.p[0], p[1] - h.p[1]) > 1.5 && Math.hypot(p[0] - h.p[0], p[1] - h.p[1]) < 80 && h.k === S.cur.k) want = Math.atan2(p[1] - h.p[1], p[0] - h.p[0]);
+  const dt = Math.min(0.1, Math.max(0, (now - h.t) / 1000));
+  if (h.a == null) h.a = want ?? ((u.id.length * 131 + u.id.charCodeAt(0) * 17) % 628) / 100;
+  else if (want != null) { const d = wrapAng(want - h.a); h.a = wrapAng(h.a + Math.sign(d) * Math.min(Math.abs(d), Math.max(0.5, Math.abs(d) * 2.4) * dt)); }
+  const going = !!(u.mv && glide);
+  h.v += ((going ? 1 : 0) - h.v) * Math.min(1, dt * (going ? 1.6 : 0.8));
+  h.p = p; h.t = now; h.k = S.cur.k;
+  return { a: h.a, v: h.v, busy: going || h.v > 0.02 || (want != null && Math.abs(wrapAng(want - h.a)) > 0.01) };
+}
+function drawShip(ctx, S, u, p, proj, now, fill, glide, edge) {
+  const { a, v, busy } = shipHeading(S, u, p, proj, now, glide), L = HULL_LEN[u.sil] || 14, B = L * (u.sil === 'carrier' ? 0.34 : 0.26), t = now / 1000;
+  ctx.save(); ctx.translate(p[0], p[1]); ctx.rotate(a + Math.sin(t * 0.7 + u.id.length) * 0.03 * (1 - v));
+  if (v > 0.05) {
+    // Under way: a bow wave curling off the stem.
+    const b = 0.5 + 0.5 * Math.sin(t * 6 + u.id.length);
+    ctx.strokeStyle = `rgba(240,248,255,${(0.45 + 0.3 * b) * v})`; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(L / 2 + 1, 0); ctx.quadraticCurveTo(L * 0.3, -B * 0.9 - b, L * 0.05, -B - 1.5 - b); ctx.moveTo(L / 2 + 1, 0); ctx.quadraticCurveTo(L * 0.3, B * 0.9 + b, L * 0.05, B + 1.5 + b); ctx.stroke();
+  }
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(1, 1.5, L / 2, B / 2 + 0.5, 0, 0, 6.2832); ctx.fill(); // shadow on the water
+  ctx.fillStyle = fill; ctx.beginPath();
+  if (u.sil === 'carrier') { ctx.moveTo(L / 2, -B * 0.15); ctx.lineTo(L * 0.32, -B / 2); ctx.lineTo(-L / 2, -B / 2); ctx.lineTo(-L / 2, B * 0.4); ctx.lineTo(L * 0.3, B * 0.4); ctx.lineTo(L / 2, B * 0.1); }
+  else if (u.sil === 'sub') ctx.ellipse(0, 0, L / 2, B / 2, 0, 0, 6.2832);
+  else { ctx.moveTo(L / 2, 0); ctx.quadraticCurveTo(L * 0.2, -B / 2, -L * 0.2, -B / 2); ctx.lineTo(-L / 2, -B * 0.38); ctx.lineTo(-L / 2, B * 0.38); ctx.lineTo(-L * 0.2, B / 2); ctx.quadraticCurveTo(L * 0.2, B / 2, L / 2, 0); }
+  ctx.closePath(); ctx.fill(); ctx.lineWidth = 1.4; ctx.strokeStyle = edge; ctx.stroke();
+  // Deck detail: the carrier's island and angled deck, a sail on a submarine, a bridge on anything else.
+  ctx.fillStyle = 'rgba(6,16,31,.75)';
+  if (u.sil === 'carrier') { ctx.fillRect(L * 0.02, B * 0.12, L * 0.14, B * 0.26); ctx.strokeStyle = 'rgba(6,16,31,.55)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(-L * 0.45, B * 0.25); ctx.lineTo(L * 0.15, -B * 0.4); ctx.stroke(); }
+  else if (u.sil === 'sub') { ctx.beginPath(); ctx.ellipse(L * 0.1, 0, L * 0.09, B * 0.22, 0, 0, 6.2832); ctx.fill(); }
+  else ctx.fillRect(-L * 0.12, -B * 0.22, L * 0.22, B * 0.44);
+  ctx.restore();
+  return busy;
+}
+
 export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder, onBox, selectedUnit = null, selectedUnits = null, selectedState = null, selectedCrossing = null, interactive = false, className = '', onMapClick = null }) {
   const cv = useRef(), ov = useRef(), st = useRef({ data: null, w: 0, h: 0, cur: { ...USA_VIEW }, want: { ...USA_VIEW }, hover: null, raf: 0, onView, onPick, usa });
   st.current.onView = onView; st.current.onPick = onPick; st.current.onPickUnit = onPickUnit; st.current.onPlace = onPlace; st.current.usa = usa; st.current.selUnit = selectedUnit; st.current.selSet = new Set(selectedUnits || (selectedUnit ? [selectedUnit] : [])); st.current.onOrder = onOrder; st.current.onBox = onBox;
@@ -141,7 +187,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
       else {
         line(P.cities, 'rgba(255,196,120,.8)', k < 6 ? 0.7 : 1.2); // hollow: the outline only
         if (L.labels && k >= 5) {
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `500 ${Math.round(Math.min(14, 9 + k * 0.1))}px "IBM Plex Sans", sans-serif`;
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '500 11px "IBM Plex Sans", sans-serif';
           const placed = [];
           cityData.fs.forEach((f, i) => {
             const p = proj(cityData.centroids[i]); if (!p || p[0] < 10 || p[0] > S.w - 10 || p[1] < 10 || p[1] > S.h - 10) return;
@@ -164,12 +210,12 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
     if (L.labels) {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillStyle = COL.label;
       if (k < 9) {
-        ctx.font = `600 ${Math.round(Math.min(26, 11 + k * 1.2))}px "IBM Plex Sans Condensed", sans-serif`;
+        ctx.font = '600 15px "IBM Plex Sans Condensed", sans-serif';
         for (const s of S.data.states) { const p = proj(s.centroid); if (p && p[0] > 0 && p[0] < S.w && p[1] > 0 && p[1] < S.h) ctx.fillText(s.id, p[0], p[1]); }
       }
       if (L.neighbors) {
         ctx.fillStyle = 'rgba(160,185,225,.55)';
-        ctx.font = `600 ${Math.round(Math.min(22, 10 + k * 1.1))}px "IBM Plex Sans Condensed", sans-serif`;
+        ctx.font = '600 14px "IBM Plex Sans Condensed", sans-serif';
         for (const r of S.data.regions) {
           if (k < 2 && r.c === 'CAN' && r.name !== 'Ontario' && r.name !== 'Quebec' && r.name !== 'British Columbia' && r.name !== 'Alberta') continue;
           const p = proj(r.centroid); if (p && p[0] > 0 && p[0] < S.w && p[1] > 0 && p[1] < S.h) ctx.fillText(r.name.toUpperCase(), p[0], p[1]);
@@ -240,13 +286,13 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
     // Border crossings: a gate marker coloured by its status, and vehicles driving through. Vehicles fade in as they arrive and fade
     // out once they have crossed, in both directions. Positions come from the clock alone, so every screen shows the same traffic.
     if (L.border && k >= 1.6) {
-      const t = now / 1000, len = Math.max(24, Math.min(110, 10 + k * 6)), ring = k >= 2.4;
+      const t = now / 1000, len = 40, ring = k >= 2.4;
       for (const cx of CROSSING_LIST) {
         if (cx.lon < x0 || cx.lon > x1 || cx.lat < y0 || cx.lat > y1) continue;
         const cs = S.crossings[cx.id], p = proj([cx.lon, cx.lat]); if (!p || !cs) continue;
         const b = cx.bearing * Math.PI / 180, dx = Math.sin(b), dy = -Math.cos(b), ang = Math.atan2(dy, dx);
         if (ring && cs.status !== 'closed' && cs.traffic > 0) {
-          const n = Math.max(1, Math.round(cs.traffic / 100 * (2 + cx.size * 2))), T = cs.status === 'slow' ? 22 : 11, w = Math.min(6.5, 3.2 + k * 0.14);
+          const n = Math.max(1, Math.round(cs.traffic / 100 * (2 + cx.size * 2))), T = cs.status === 'slow' ? 22 : 11, w = 4.5;
           flashing = true;
           for (let i = 0; i < n; i++) {
             const into = i % 3 !== 2, u = ((t / T + i / n - cx.lon * 0.37) % 1 + 1) % 1;
@@ -258,7 +304,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
           }
           if (cs.status === 'slow') { ctx.fillStyle = 'rgba(255,170,60,.85)'; for (let i = 1; i <= 4; i++) ctx.fillRect(p[0] - dx * len * i * 0.18 - 2, p[1] - dy * len * i * 0.18 - 1.2, 4, 2.4); }
         }
-        const col = cs.status === 'closed' ? '#f87171' : cs.status === 'slow' ? '#fbbf24' : '#4ade80', r = Math.min(7, 3.5 + k * 0.25);
+        const col = cs.status === 'closed' ? '#f87171' : cs.status === 'slow' ? '#fbbf24' : '#4ade80', r = 5;
         if (cx.id === S.selX) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p[0], p[1], r + 6, 0, 6.2832); ctx.stroke(); }
         ctx.fillStyle = col; ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.lineWidth = 1.5;
         ctx.beginPath(); ctx.moveTo(p[0], p[1] - r); ctx.lineTo(p[0] + r, p[1]); ctx.lineTo(p[0], p[1] + r); ctx.lineTo(p[0] - r, p[1]); ctx.closePath(); ctx.fill(); ctx.stroke();
@@ -281,7 +327,8 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
       posOf.set(u.id, [lon, lat]);
       if (lon < x0 || lon > x1 || lat < y0 || lat > y1) continue;
       const p = proj([lon, lat]); if (!p) continue;
-      const r = Math.min(8, 3.5 + k * 0.1), chosen = S.selSet.has(u.id);
+      // Every dot and hull keeps the same size on screen at every zoom.
+      const ship = !u.destroyed && typeOf(u).domain === 'sea', r = ship ? HULL_LEN[u.sil] / 2 || 6 : 5, chosen = S.selSet.has(u.id);
       if (chosen) { ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p[0], p[1], r + 6, 0, 6.2832); ctx.stroke(); }
       let fill = u.destroyed ? '#5b6378' : u.federal ? '#ff6b5a' : u.kind === 'custom' ? sideColor(effSide(u)) : kd.color; const svc = svcOf(u);
       if (svc && LB[svc] && !u.destroyed) {
@@ -294,9 +341,11 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
       }
       if (u.air === 'flying' && !u.destroyed) { ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.arc(p[0] + 4, p[1] + 7, r * 0.9, 0, 6.2832); ctx.fill(); } // its shadow on the ground
       if (u.air === 'takeoff' || u.air === 'landing') { const ph = (now / 500) % 1; ctx.strokeStyle = `rgba(143,224,255,${1 - ph})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p[0], p[1], r + 3 + ph * 12, 0, 6.2832); ctx.stroke(); }
-      if (u.type === 'airbase') { ctx.fillStyle = fill; ctx.fillRect(p[0] - r, p[1] - r, r * 2, r * 2); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.strokeRect(p[0] - r, p[1] - r, r * 2, r * 2); ctx.strokeStyle = '#06101f'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(p[0] - r + 1, p[1] + r - 1); ctx.lineTo(p[0] + r - 1, p[1] - r + 1); ctx.stroke(); }
+      const edge = u.routed ? '#ffffff' : u.control === 'delegate' ? '#ffd166' : 'rgba(0,0,0,.75)';
+      if (ship) { if (drawShip(ctx, S, u, p, proj, now, fill, glide, edge)) flashing = true; }
+      else if (u.type === 'airbase') { ctx.fillStyle = fill; ctx.fillRect(p[0] - r, p[1] - r, r * 2, r * 2); ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(0,0,0,.75)'; ctx.strokeRect(p[0] - r, p[1] - r, r * 2, r * 2); ctx.strokeStyle = '#06101f'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(p[0] - r + 1, p[1] + r - 1); ctx.lineTo(p[0] + r - 1, p[1] - r + 1); ctx.stroke(); }
       else { ctx.fillStyle = fill; ctx.beginPath(); ctx.arc(p[0], p[1], u.air === 'flying' ? r + 1 : r, 0, 6.2832); ctx.fill(); }
-      ctx.lineWidth = 2; ctx.strokeStyle = u.routed ? '#ffffff' : u.control === 'delegate' ? '#ffd166' : 'rgba(0,0,0,.75)'; ctx.stroke();
+      if (!ship) { ctx.lineWidth = 2; ctx.strokeStyle = edge; ctx.stroke(); }
       if (u.destroyed) { ctx.strokeStyle = '#ff6a5a'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(p[0] - r, p[1] - r); ctx.lineTo(p[0] + r, p[1] + r); ctx.moveTo(p[0] + r, p[1] - r); ctx.lineTo(p[0] - r, p[1] + r); ctx.stroke(); }
       else if (k >= 2 && (u.strength < 100 || chosen)) {
         const w = 16, f = Math.max(0, u.strength) / 100;
