@@ -14,6 +14,7 @@ import { councilActions } from './council.js';
 import { usaActions } from './usa.js';
 import { joinText } from './ai.js';
 import { endingDetail } from './endings.js';
+import { endingsFor } from './cold-endings.js';
 
 const SCENES = ['map', 'disguise', 'intro', 'reveal', 'ending', 'report', 'blank', 'pause', 'vote', 'treaty', 'polls', 'web', 'court', 'council', 'usa'];
 const STAT_FIELDS = { gdp: [0.5, 1e6], treasury: [-1e5, 1e5], support: [0, 100], stability: [0, 100], industry: [0.05, 1.2], energy: [0.05, 1.2], damage: [0, 1], inflation: [-2, 80], airDefense: [0, 12], influence: [0, 100] };
@@ -294,9 +295,10 @@ const WORLD = {
   setBrand: { perm: 'zeus', run(s, a) { s.display.brand = !!a.on; return ok(); } },
   setCoat: { perm: 'zeus', run(s, a) { s.display.arms = !!a.on; return ok(); } },
   playEnding: { perm: 'zeus', run(s, a, ctx) {
-    if (!ENDINGS[a.ending]) return err('Unknown ending.');
+    const E = endingsFor(s);
+    if (!E[a.ending]) return err('Unknown ending.');
     const det = endingDetail(s, a.ending);
-    s.display.ending = { type: a.ending, title: String(a.title || det.title || ENDINGS[a.ending].title).slice(0, 80), line: String(a.line || det.line || ENDINGS[a.ending].line).slice(0, 400), scene: det.scene, bloc: det.bloc, facts: det.facts };
+    s.display.ending = { type: a.ending, title: String(a.title || det.title || E[a.ending].title).slice(0, 80), line: String(a.line || det.line || E[a.ending].line).slice(0, 400), scene: det.scene, bloc: det.bloc, facts: det.facts };
     s.display.endingAt = ctx.now; s.display.scene = 'ending'; s.meta.phase = 'ended';
     log(s, ctx, `Ending played: ${s.display.ending.title}`);
     return ok();
