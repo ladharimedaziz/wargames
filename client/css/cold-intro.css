@@ -1,0 +1,75 @@
+/* The Cold War committee's opening newsreel (client/js/display/cold-intro.js). */
+.ci { position: absolute; inset: 0; z-index: 32; background: #0a0704; overflow: hidden; color: #f3e6c8; font-family: 'IBM Plex Mono', 'JetBrains Mono', ui-monospace, monospace; transition: opacity 2.4s ease; animation: ci-weave 0.18s steps(2) infinite; }
+.ci.fade { opacity: 0; }
+@keyframes ci-weave { 0% { transform: translate(0, 0); } 50% { transform: translate(0.6px, -0.8px); } }
+
+.ci-grain { position: absolute; inset: -50%; z-index: 5; pointer-events: none; opacity: .14; background-image: radial-gradient(rgba(255,255,255,.9) 0.6px, transparent 0.8px), radial-gradient(rgba(0,0,0,.9) 0.6px, transparent 0.8px); background-size: 3px 3px, 5px 5px; animation: ci-grain 0.4s steps(4) infinite; mix-blend-mode: overlay; }
+@keyframes ci-grain { 0% { transform: translate(0, 0); } 25% { transform: translate(-3%, 2%); } 50% { transform: translate(2%, -3%); } 75% { transform: translate(-1%, -1%); } }
+.ci-vignette { position: absolute; inset: 0; z-index: 6; pointer-events: none; background: radial-gradient(120% 100% at 50% 50%, transparent 50%, rgba(0,0,0,.85) 100%); animation: ci-flicker 3.2s steps(1) infinite; }
+@keyframes ci-flicker { 0%, 100% { opacity: 1; } 31% { opacity: .82; } 33% { opacity: 1; } 67% { opacity: .9; } 69% { opacity: 1; } }
+.ci-scratches i { position: absolute; top: 0; bottom: 0; width: 1px; z-index: 6; background: rgba(255,240,210,.18); animation: ci-scratch 2.7s linear infinite; }
+.ci-scratches i:nth-child(1) { left: 22%; } .ci-scratches i:nth-child(2) { left: 61%; animation-duration: 3.9s; animation-delay: -1s; } .ci-scratches i:nth-child(3) { left: 83%; animation-duration: 1.9s; animation-delay: -.4s; }
+@keyframes ci-scratch { 0%, 60% { opacity: 0; } 62% { opacity: 1; transform: translateX(0); } 70% { opacity: .6; transform: translateX(14px); } 72%, 100% { opacity: 0; } }
+.ci-bars::before, .ci-bars::after { content: ''; position: absolute; left: 0; right: 0; height: 9%; background: #000; z-index: 7; }
+.ci-bars::before { top: 0; } .ci-bars::after { bottom: 0; }
+
+/* Film leader */
+.ci-leader { position: absolute; inset: 0; display: grid; place-items: center; background: radial-gradient(circle, #3a2c18, #120d07 70%); }
+.ci-leader-svg { width: 62vh; height: 62vh; }
+.ci-leader-svg .ring { fill: none; stroke: #f3e6c8; stroke-width: 2.5; }
+.ci-leader-svg .ring.thin { stroke-width: 1; opacity: .6; }
+.ci-leader-svg .cross { stroke: #f3e6c8; stroke-width: 1; opacity: .5; }
+.ci-leader-svg .sweep { fill: rgba(243,230,200,.16); }
+.ci-leader-svg .num { fill: #f3e6c8; font: 700 96px 'IBM Plex Mono', monospace; text-anchor: middle; }
+.ci-leader-cap { position: absolute; bottom: 14%; letter-spacing: .4em; font-size: 1.05em; color: #c9b48a; }
+
+/* Teletype */
+.ci-wire { position: absolute; inset: 0; display: grid; place-items: center; }
+.ci-paper { width: min(78vw, 1100px); padding: 2.2em 2.6em; background: linear-gradient(180deg, #e9dcbc, #d8c89f); color: #1d160c; box-shadow: 0 30px 80px rgba(0,0,0,.6); transform: rotate(-.6deg); animation: ci-paper-in 1s cubic-bezier(.2,.8,.2,1); font-size: 1.55em; line-height: 1.75; }
+@keyframes ci-paper-in { from { transform: translateY(40px) rotate(-2deg); opacity: 0; } }
+.ci-paper-head { display: flex; justify-content: space-between; border-bottom: 2px solid #1d160c; padding-bottom: .4em; margin-bottom: .8em; font-size: .7em; letter-spacing: .3em; font-weight: 600; }
+.ci-wline { letter-spacing: .06em; white-space: pre; }
+.ci-wline.hot { color: #8e1e12; font-weight: 600; }
+.ci-wline.big { font-size: 1.7em; font-weight: 700; margin-top: .3em; }
+.ci-caret { font-style: normal; animation: ci-blink .5s steps(1) infinite; }
+@keyframes ci-blink { 50% { opacity: 0; } }
+.ci-stamp { position: absolute; right: 14%; top: 22%; padding: .15em .6em; border: 6px solid #b0261a; color: #b0261a; font: 800 3.2em/1 'IBM Plex Sans Condensed', sans-serif; letter-spacing: .12em; transform: rotate(-12deg); mix-blend-mode: multiply; animation: ci-stamp .35s cubic-bezier(.3,1.6,.5,1); }
+@keyframes ci-stamp { from { transform: rotate(-12deg) scale(2.4); opacity: 0; } }
+
+/* Divided globe */
+.ci-divided { position: absolute; inset: 0; animation: ci-fade-in 1.2s ease; transition: opacity .8s; }
+.ci-divided.out { opacity: 0; }
+@keyframes ci-fade-in { from { opacity: 0; } }
+.ci-globe { position: absolute; inset: 0; width: 100%; height: 100%; filter: sepia(.25) contrast(1.05); }
+.ci-legend { position: absolute; left: 5%; top: 50%; transform: translateY(-50%); display: grid; gap: 1.2em; }
+.ci-leg { display: flex; gap: .8em; align-items: center; animation: ci-leg-in .8s cubic-bezier(.2,.8,.2,1); }
+.ci-leg i { width: 1.4em; height: 1.4em; background: var(--c); box-shadow: 0 0 18px var(--c); }
+.ci-leg b { display: block; font-size: 1.25em; letter-spacing: .08em; text-transform: uppercase; }
+.ci-leg span { color: #c9b48a; font-size: .95em; }
+@keyframes ci-leg-in { from { transform: translateX(-30px); opacity: 0; } }
+.ci-caption { position: absolute; left: 0; right: 0; bottom: 13%; text-align: center; z-index: 8; font: 500 1.9em/1.3 'Newsreader', Georgia, serif; font-style: italic; color: #f3e6c8; text-shadow: 0 2px 12px #000; animation: ci-fade-in .9s ease; }
+
+/* Doomsday Clock */
+.ci-clock { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; gap: 5vw; animation: ci-fade-in 1s ease; padding: 0 6vw; }
+.ci-clock-svg { width: 56vh; height: 56vh; flex: none; }
+.ci-clock-svg .face { fill: #120d07; stroke: #f3e6c8; stroke-width: 2; }
+.ci-clock-svg .tick { stroke: #8a7650; stroke-width: 1; }
+.ci-clock-svg .tick.big { stroke: #f3e6c8; stroke-width: 3; }
+.ci-clock-svg .danger { fill: rgba(217,80,63,.35); }
+.ci-clock-svg .hand { stroke: #f3e6c8; stroke-linecap: round; }
+.ci-clock-svg .hand.hour { stroke-width: 6; }
+.ci-clock-svg .hand.min { stroke-width: 3.5; stroke: #ffb64d; filter: drop-shadow(0 0 6px #ffb64d); }
+.ci-clock-svg .pin { fill: #d9503f; }
+.ci-clock-text { max-width: 40vw; }
+.ci-clock-kicker { letter-spacing: .4em; text-transform: uppercase; color: #c9b48a; font-size: 1.1em; }
+.ci-clock-big { margin: .3em 0; font: 700 3.6em/1.05 'IBM Plex Sans Condensed', sans-serif; text-transform: uppercase; color: #ffb64d; animation: ci-fade-in .6s ease; }
+.ci-clock-sub { color: #f3e6c8; font-size: 1.15em; line-height: 1.5; }
+
+/* Title */
+.ci-title { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; background: radial-gradient(circle at 50% 45%, #2a1e10, #0a0704 65%); }
+.ci-title-date { letter-spacing: .5em; text-transform: uppercase; color: #c9b48a; font-size: 1.3em; animation: ci-fade-in 1s ease; }
+.ci-title-name { margin: .25em 0 .2em; font: 800 6.2em/1 'IBM Plex Sans Condensed', sans-serif; letter-spacing: .1em; text-transform: uppercase; color: #f3e6c8; text-shadow: 0 0 40px rgba(255,182,77,.35); animation: ci-slam 1.1s cubic-bezier(.2,.9,.2,1); }
+@keyframes ci-slam { 0% { transform: scale(1.6); opacity: 0; letter-spacing: .5em; filter: blur(8px); } 60% { opacity: 1; filter: blur(0); } }
+.ci-title-rule { width: 0; height: 3px; background: linear-gradient(90deg, #6a9ccf, #f3e6c8 50%, #d9503f); animation: ci-rule 1.4s .5s cubic-bezier(.2,.8,.2,1) forwards; }
+@keyframes ci-rule { to { width: min(60vw, 900px); } }
+.ci-title-line { margin-top: 1.2em; font: 500 1.8em/1.3 'Newsreader', Georgia, serif; font-style: italic; color: #ffb64d; animation: ci-fade-in 1.2s ease; }
