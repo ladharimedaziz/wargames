@@ -137,7 +137,7 @@ export function migrateUsa(s) {
   u.mods ||= {}; u.custom ||= {}; u.states ||= {}; u.border ||= { CAN: 'open', MEX: 'open' }; u.crossings ||= {};
   u.sim ||= { running: false, speed: 60, t: 0, at: 0 }; u.hostile ||= []; u.events ||= []; u.fx ||= [];
   for (const c of Object.values(u.custom)) { c.type ||= 'militia_sq'; c.side ||= 'mil'; c.roe ||= 'defend'; c.home ||= [c.lon, c.lat]; }
-  getGov(u); u.stageAuto ??= true; u.forces ||= 'all';
+  getGov(u); u.stageAuto = false; u.forces ||= 'all';
   u.lightbars ||= { police: false, fire: false, ambulance: false }; u.lightPattern ||= 'mixed'; u.lightColors ||= {};
   return s;
 }
@@ -154,7 +154,7 @@ export function createUsaFields(s) {
     mods: {}, custom: {}, states: {}, border: { CAN: 'open', MEX: 'open' }, crossings: {}, sim: { running: false, speed: 60, t: 0, at: 0 }, hostile: [], events: [], fx: [],
     lightbars: { police: false, fire: false, ambulance: false }, lightPattern: 'mixed', lightColors: {},
     forces: 'all', // which forces the stage shows: all, naval, ground or air (the Zeus map always shows everything)
-    stageAuto: true, // the stage frames the action by itself until the Zeus shows a view on it
+    stageAuto: false, // automatic stage framing was removed at Dan's request; the stage holds the Zeus's view
     highlight: [], // state postal codes marked on the stage
     note: '',
   };
