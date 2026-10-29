@@ -3,6 +3,7 @@ import { html, useState, useEffect, run, fmt, cls } from '../lib.js';
 import { SEA_ZONES } from '/shared/data/places.js';
 import { UNIT_TYPES, ROE, BLOCS, tensionLevel, TENSION_LEVELS, relation, isOOB, OOB_ERROR, THEATERS, theaterOf } from '/shared/engine/core.js';
 import { ALLIANCE_NAMES } from '/shared/data/countries.js';
+import { coatUrl } from '/shared/data/era-images.js';
 import { navalLabel, aircraftFor, hasNamedNavy } from '/shared/data/militaries.js';
 
 const Stat = ({ label, value, pct, tone, hint }) => html`
@@ -93,7 +94,7 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
   return html`
     <div class="pane inspector">
       <div class="insp-head" style=${`--bloc:${state.blocs[c.bloc].color}`}>
-        <img class="insp-coat" key=${id} src=${`/client/img/coats/${id}.webp`} alt="" onError=${e => { e.target.style.display = 'none'; }} />
+        <img class="insp-coat" key=${coatUrl(id, state.settings?.era)} src=${coatUrl(id, state.settings?.era)} alt="" onError=${e => { e.target.style.display = 'none'; }} />
         <div class="grow">
           <div class="insp-name">${c.name}</div>
         </div>
