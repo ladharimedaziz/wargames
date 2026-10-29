@@ -15,6 +15,7 @@ import { planAI } from './ai.js';
 import { headlinesFrom } from './news.js';
 import { detectEndings } from './endings.js';
 import { isBlocExchange, planExchange, exchangeSummary } from './nuclear.js';
+import { launchSite } from '../data/launch-sites.js';
 import { snapshotStats } from './state.js';
 
 const PRIORITY = ['roe', 'overflight', 'war', 'alliance', 'ceasefire', 'peace', 'sanction', 'unsanction', 'trade', 'aid', 'arms', 'lift',
@@ -69,6 +70,7 @@ function nuclearExchange(state, o, ev, ctx) {
   for (const f of plan.sideB) if (!atWar(state, first, f) && first !== f) declareWar(state, first, f, ev, 'nuclear');
   state.global.exchange = { turn: state.meta.turn, first, hit, strikes: strikes.length + 1 };
   state.global.tension = 10;
+  state.global.winter = true; // the nuclear winter that follows kills everyone
   ev.push(...strikes);
   ev.push({ kind: 'exchange', first, hit, strikes: strikes.length + 1 });
   const N = id => state.countries[id]?.name || id;
@@ -840,8 +842,10 @@ function runOrders(state, list, ctx, ev) {
         T.casualties += cas; state.global.casualties += cas; state.global.nukesUsed++;
         state.global.closedAirspace[o.target] = { turn, at: ctx.now };
         if (!atWar(state, o.country, o.target)) declareWar(state, o.country, o.target, ev, 'nuclear');
-        (state.global.nukeLog ||= []).push({ owner: o.country, target: o.target, turn });
-        ev.push({ kind: 'nuke', owner: o.country, target: o.target, from: pt(state.countries[o.country]), to: pt(T), at: pt(T) });
+        const log = (state.global.nukeLog ||= []);
+        const site = launchSite(state, o.country, log.filter(x => x.owner === o.country).length);
+        log.push({ owner: o.country, target: o.target, turn });
+        ev.push({ kind: 'nuke', owner: o.country, target: o.target, from: pt(site), site: site.name, to: pt(T), at: pt(T) });
         if (state.settings.nuclearExchange !== false && isBlocExchange(state, o.country, o.target)) nuclearExchange(state, o, ev, ctx);
         if (state.global.nukeLog.length > 200) state.global.nukeLog.splice(0, state.global.nukeLog.length - 200);
         break;

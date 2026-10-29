@@ -69,7 +69,7 @@ export function Unthinkable({ state, now }) {
   const answering = [...new Set(tr.filter(s => s.answer).map(s => s.o))];
   const follow = [...new Set(tr.filter(s => s.i > 0 && !s.answer).map(s => s.o))];
   const total = ex.strikes || tr.length, nations = (ex.struckIds || []).length || struckNow.size;
-  const caption = t < ANSWER_AT ? `${N(ex.first)} fires on ${N(ex.hit)}.`
+  const caption = t < ANSWER_AT ? `${N(ex.first)} fires on ${N(ex.hit)}${tr[0]?.s ? `, from ${tr[0].s.replace(/^(Missile|Mobile)\b/, m => m.toLowerCase())}` : ''}.`
     : t < FOLLOW_AT + 0.4 ? (answering.length ? `Before it lands, ${list(answering)} ${answering.length === 1 ? 'fires back' : 'all fire back'}.` : 'One warhead. One flash.')
     : t < FOLLOW_AT + 3.4 ? (follow.length ? `Then ${list(follow)} ${follow.length === 1 ? 'fires everything it has' : 'fire everything they have'} left.` : 'Every arsenal is in the air.')
     : t < SMOKE_AT + 2.5 ? `${total} ${total === 1 ? 'warhead' : 'warheads'}. ${nations} ${nations === 1 ? 'nation' : 'nations'}. Under an hour.`
@@ -103,9 +103,10 @@ function Wire({ t, state, ex, N }) {
   const lines = [
     [0.2, 'FLASH // FLASH // FLASH', 'hot'],
     [1.0, `DTG ${date}`],
-    [1.7, `LAUNCH DETECTED: ${String(N(ex.first) || 'UNKNOWN').toUpperCase()}`],
-    [2.5, `IMPACT PREDICTED: ${String(N(ex.hit) || 'UNKNOWN').toUpperCase()}`],
-    [3.3, 'THIS IS NOT AN EXERCISE.', 'big'],
+    [1.5, `LAUNCH DETECTED: ${String(N(ex.first) || 'UNKNOWN').toUpperCase()}`],
+    ...(ex.tracks?.[0]?.s ? [[2.1, `ORIGIN: ${ex.tracks[0].s.toUpperCase()}`]] : []),
+    [ex.tracks?.[0]?.s ? 2.9 : 2.3, `IMPACT PREDICTED: ${String(N(ex.hit) || 'UNKNOWN').toUpperCase()}`],
+    [3.6, 'THIS IS NOT AN EXERCISE.', 'big'],
   ];
   return html`<div class="ci-wire nf-wire">
     <div class="ci-paper">
@@ -121,6 +122,7 @@ function Warning({ t, ex, N }) {
   return html`<div class="nf-warn">
     <div class="nf-w1">LAUNCH DETECTED</div>
     <div class="nf-w2">${N(ex.first) || 'Unknown'} <span>→</span> ${N(ex.hit) || 'Unknown'}</div>
+    ${ex.tracks?.[0]?.s && t > 0.8 && html`<div class="nf-w3">Origin: ${ex.tracks[0].s}</div>`}
     ${t > 1.6 && html`<div class="nf-w3">${ex.strikes > 1 ? `${ex.strikes} warheads expected · every arsenal on both sides` : 'One warhead in flight'}</div>`}
   </div>`;
 }
@@ -149,6 +151,10 @@ function Globe({ t, state, theme, tracks, lastLand }) {
     const struckAt = new Map();
     for (const s of tracks) if (!struckAt.has(s.t) || struckAt.get(s.t) > s.land) struckAt.set(s.t, s.land);
     const smokeOf = [...new Map(tracks.map(s => [s.t, s])).values()];
+    const winter = tracks.length > 1;
+    // Each launch site is named once, on the first warhead that leaves it (the busiest frames name only a few).
+    const labelled = new Map();
+    for (const s of tracks) if (s.s && !labelled.has(s.s) && labelled.size < 6) labelled.set(s.s, s.i);
     // A point on the sphere, lifted `alt` (fraction of the radius) above it, on screen. Null when behind the globe.
     const lift = (lonlat, alt) => {
       const r = geoRotation(proj.rotate())(lonlat);
@@ -204,6 +210,11 @@ function Globe({ t, state, theme, tracks, lastLand }) {
           }
         }
         ctx.beginPath(); path(atlas.borders); ctx.strokeStyle = P.border; ctx.lineWidth = 0.5; ctx.stroke();
+        // The winter: frost creeps over every country on Earth, struck or not.
+        if (winter) {
+          const fr = clamp01((tt - SMOKE_AT - 2) / 8);
+          if (fr) { ctx.beginPath(); for (const c of atlas.countries) path(c.feature); ctx.fillStyle = `rgba(196,212,228,${0.42 * fr})`; ctx.fill(); }
+        }
       }
       // Smoke: soot spreading out from every city hit, then the whole sky darkening.
       if (tt > SMOKE_AT - 2) {
@@ -217,7 +228,7 @@ function Globe({ t, state, theme, tracks, lastLand }) {
           }
         });
       }
-      if (dark) { ctx.beginPath(); path({ type: 'Sphere' }); ctx.fillStyle = `rgba(6,5,4,${0.62 * dark})`; ctx.fill(); }
+      if (dark) { ctx.beginPath(); path({ type: 'Sphere' }); ctx.fillStyle = `rgba(6,5,4,${(winter ? 0.5 : 0.62) * dark})`; ctx.fill(); }
       // Embers where warheads landed, glowing through the smoke.
       for (const s of tracks) {
         if (tt < s.land) continue;
@@ -252,6 +263,15 @@ function Globe({ t, state, theme, tracks, lastLand }) {
             const hg = ctx.createRadialGradient(hp[0], hp[1], 0, hp[0], hp[1], 10);
             hg.addColorStop(0, 'rgba(255,255,255,1)'); hg.addColorStop(0.4, 'rgba(255,200,120,0.8)'); hg.addColorStop(1, 'rgba(255,140,60,0)');
             ctx.fillStyle = hg; ctx.beginPath(); ctx.arc(hp[0], hp[1], 10, 0, TAU); ctx.fill();
+          }
+          if (s.s && labelled.get(s.s) === s.i && v < 0.7) {
+            const lp = lift(s.f, 0);
+            if (lp) {
+              ctx.font = `600 ${theme === 'cold' ? 11 : 12}px ${theme === 'cold' ? "'IBM Plex Mono', monospace" : "'IBM Plex Sans Condensed', sans-serif"}`;
+              ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; ctx.globalAlpha = Math.min(1, (0.7 - v) * 4);
+              ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillText(s.s.toUpperCase(), lp[0] + 9, lp[1] + 1);
+              ctx.fillStyle = theme === 'cold' ? '#ffe2b0' : '#cfe3ff'; ctx.fillText(s.s.toUpperCase(), lp[0] + 8, lp[1]); ctx.globalAlpha = 1;
+            }
           }
           if (v < 0.12) { const lp = lift(s.f, 0); if (lp) { ctx.strokeStyle = `rgba(255,220,170,${1 - v / 0.12})`; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(lp[0], lp[1], 3 + v * 120, 0, TAU); ctx.stroke(); } }
         }
@@ -321,8 +341,13 @@ function Midnight({ t, theme }) {
 
 function Title({ t, state, e, ex, cold }) {
   const a = t - TITLE_AT;
-  const temp = Math.round(14 - Math.min(1, Math.max(0, a - 6) / 12) * 23); // degrees C, falling to -9
+  const winter = (ex.strikes || 1) > 1;
+  const temp = Math.round(14 - Math.min(1, Math.max(0, a - 6) / 12) * (winter ? 34 : 4)); // degrees C, falling to -20 in a winter
   const struck = (ex.struckIds || []).length || (ex.struck || []).length;
+  // The dead: the blasts first, then the winter takes everyone else.
+  const blast = Math.max(1, ex.deadMillions || 1), world = Math.max(blast, ex.worldMillions || blast);
+  const w = winter ? easeOut(clamp01((a - 7) / 7)) : 0;
+  const dead = Math.round(blast + (world - blast) * w);
   return html`<div class="nf-title">
     <div class="nf-date">${fmt.date(state.meta.clock, 'en')}</div>
     <div class="nf-sign">☢</div>
@@ -333,9 +358,9 @@ function Title({ t, state, e, ex, cold }) {
       <div><b>${ex.strikes || 1}</b><span>${(ex.strikes || 1) === 1 ? 'warhead' : 'warheads'}</span></div>
       <div><b>${struck || 1}</b><span>${struck === 1 ? 'nation struck' : 'nations struck'}</span></div>
       <div><b>${temp > 0 ? '+' : ''}${temp}°C</b><span>average world temperature</span></div>
-      <div><b>${Math.max(1, ex.deadMillions || 1).toLocaleString('en-US')}M</b><span>estimated dead</span></div>
+      <div class=${cls(w >= 1 && 'nf-all')}><b>${w >= 1 ? 'Everyone' : `${dead.toLocaleString('en-US')}M`}</b><span>${w >= 1 ? `all ${world.toLocaleString('en-US')} million` : w > 0 ? 'dead, as the winter spreads' : 'dead in the blasts'}</span></div>
     </div>`}
-    ${a > 9 && html`<div class="nf-foot">${ex.strikes > 1 ? 'Smoke blots out the sun across the northern hemisphere. Harvests fail for years.' : 'The world has crossed a line it swore it never would.'}</div>`}
-    ${a > 12 && html`<div class="nf-last">${cold ? 'There is no winner. The reel ends here.' : 'There is no winner.'}</div>`}
+    ${a > 9 && html`<div class="nf-foot">${winter ? 'Smoke blots out the sun for years. The winter reaches every country on Earth, and the harvests never come back.' : 'The world has crossed a line it swore it never would.'}</div>`}
+    ${a > 14.5 && html`<div class="nf-last">${winter ? (cold ? 'No one survives the winter. The reel ends here.' : 'No one survives the winter. There is no winner.') : 'There is no winner.'}</div>`}
   </div>`;
 }

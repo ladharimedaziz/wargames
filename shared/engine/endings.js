@@ -1,6 +1,7 @@
 // Watches the world and suggests ending screens to the Stage Zeus. Nothing ends without a Zeus choosing to play it.
 import { ENDINGS, sameSide } from './core.js';
 import { isColdEra, endingsFor, detectColdEndings, coldEndingDetail } from './cold-endings.js';
+import { launchSite } from '../data/launch-sites.js';
 import { isBlocExchange, planExchange, exchangeSummary, likelyExchange } from './nuclear.js';
 
 export function detectEndings(state, ev) {
@@ -85,7 +86,7 @@ function nuclearDetail(state) {
   const log = state.global.nukeLog || [];
   if (state.global.exchange) {
     const { first, hit } = state.global.exchange;
-    const strikes = log.filter(s => !(s.owner === first && s.target === hit)).slice(-48).map(s => ({ ...s, from: state.countries[s.owner], to: state.countries[s.target] }));
+    const strikes = log.filter(s => !(s.owner === first && s.target === hit)).slice(-48).map((s, i) => ({ ...s, from: launchSite(state, s.owner, i + 1), to: state.countries[s.target] }));
     const answer = strikes.filter(s => !sameSide(state, s.owner, first)).length;
     return exchangeSummary(state, first, hit, strikes, [...new Set([hit, ...strikes.map(s => s.target)])], answer);
   }
@@ -95,7 +96,7 @@ function nuclearDetail(state) {
     const real = log.filter(s => state.countries[s.owner] && state.countries[s.target]).slice(-49);
     if (real.length) {
       const [one, ...rest] = real;
-      return exchangeSummary(state, one.owner, one.target, rest.map(s => ({ ...s, from: state.countries[s.owner], to: state.countries[s.target] })), [...new Set(real.map(s => s.target))]);
+      return exchangeSummary(state, one.owner, one.target, rest.map((s, i) => ({ ...s, from: launchSite(state, s.owner, i + 1), to: state.countries[s.target] })), [...new Set(real.map(s => s.target))]);
     }
   }
   const pick = camp || (() => { const l = likelyExchange(state); return l && { owner: l.first, target: l.hit }; })();
