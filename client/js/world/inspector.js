@@ -15,6 +15,7 @@ export function Inspector(props) {
   const { state, selected, selZone } = props;
   if (typeof selected === 'string' && selected.startsWith('bloc:') && state.blocs[selected.slice(5)]) return html`<${FactionCard} ...${props} bloc=${selected.slice(5)} />`;
   if (selected && isOOB(selected)) return html`<div class="pane inspector"><div class="empty">${OOB_ERROR}</div></div>`;
+  if (selected && state.countries[selected] && props.multi?.some(id => state.countries[id])) return html`<${MultiCard} ...${props} />`;
   if (selected && state.countries[selected]) return html`<${CountryCard} ...${props} />`;
   if (selZone && SEA_ZONES[selZone]) return html`<${ZoneCard} ...${props} />`;
   return html`<${WorldOverview} ...${props} />`;
@@ -48,6 +49,36 @@ function FactionCard({ conn, state, bloc, setSelected }) {
   </div>`;
 }
 
+// Several countries picked with shift+click: a side-by-side summary. Click a row to open that country alone.
+function MultiCard({ state, selected, multi, setMulti, setSelected }) {
+  const ids = [selected, ...multi].filter(id => state.countries[id]), cs = ids.map(id => state.countries[id]);
+  const inSel = new Set(ids);
+  const remove = id => (id === selected ? (setSelected(multi[0]), setMulti(multi.slice(1))) : setMulti(multi.filter(x => x !== id)));
+  const units = Object.values(state.units).filter(u => inSel.has(u.owner) && u.strength > 0).length;
+  const wars = state.wars.filter(w => inSel.has(w.a) || inSel.has(w.b));
+  const among = wars.filter(w => inSel.has(w.a) && inSel.has(w.b));
+  const pairs = ids.length <= 6 ? ids.flatMap((a, i) => ids.slice(i + 1).map(b => ({ a, b, r: relation(state, a, b) }))) : [];
+  const n = id => state.countries[id]?.name;
+  return html`<div class="pane inspector">
+    <div class="insp-head"><div class="grow"><div class="insp-name">${ids.length} countries</div><div class="dim small">Shift+click adds or removes one</div></div>
+      <button class="btn xs ghost" title="Clear the selection" onClick=${() => setSelected(null)}>✕</button></div>
+    <div class="stats" style="margin:8px 0">
+      <${Stat} label="Combined GDP" value=${fmt.money(cs.reduce((t, c) => t + c.gdp, 0))} />
+      <${Stat} label="Average support" value=${`${Math.round(cs.reduce((t, c) => t + c.support, 0) / cs.length)}%`} />
+      <${Stat} label="Forces" value=${units} hint="Units these countries have in the field" />
+      <${Stat} label="Nuclear powers" value=${cs.filter(c => c.nuclear.has).length} />
+    </div>
+    ${cs.map(c => html`<div class="crow" key=${c.id} onClick=${() => setSelected(c.id)} title="Open this country alone">
+      <i class="bloc-sw" style=${`background:${state.blocs[c.bloc].color}`}></i>
+      <div class="grow"><b>${c.name}</b>${c.delegate ? html` <span class="dim small">${c.delegate}</span>` : ''}<div class="dim small">${state.blocs[c.bloc].name} · ${fmt.money(c.gdp)} · ${Math.round(c.support)}% support</div></div>
+      ${wars.some(w => w.a === c.id || w.b === c.id) && html`<span class="chip red">war</span>`}
+      <button class="btn xs ghost" title="Take out of the selection" onClick=${e => { e.stopPropagation(); remove(c.id); }}>✕</button>
+    </div>`)}
+    ${among.length > 0 && html`<div class="sub-h">At war with each other</div>${among.map(w => html`<div class="row small"><span class="chip red">⚔</span>${n(w.a)} v ${n(w.b)}</div>`)}`}
+    ${pairs.length > 0 && html`<div class="sub-h">Relations</div>${pairs.map(({ a, b, r }) => html`<div class="row small between"><span>${n(a)} · ${n(b)}</span><b class=${r > 25 ? 'pos' : r < -25 ? 'neg' : 'dim'}>${r > 0 ? '+' : ''}${Math.round(r)}</b></div>`)}`}
+  </div>`;
+}
+
 function CountryCard({ conn, state, selected: id, setSelected, startOrder, kronos, setBrush }) {
   const c = state.countries[id];
   const [brief, setBrief] = useState(false);
@@ -62,7 +93,7 @@ function CountryCard({ conn, state, selected: id, setSelected, startOrder, krono
   return html`
     <div class="pane inspector">
       <div class="insp-head" style=${`--bloc:${state.blocs[c.bloc].color}`}>
-        <img class="insp-coat" src=${`/client/img/coats/${id}.webp`} alt="" onError=${e => { e.target.style.display = 'none'; }} />
+        <img class="insp-coat" key=${id} src=${`/client/img/coats/${id}.webp`} alt="" onError=${e => { e.target.style.display = 'none'; }} />
         <div class="grow">
           <div class="insp-name">${c.name}</div>
         </div>
