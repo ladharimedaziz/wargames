@@ -85,6 +85,7 @@ export function headlinesFrom(state, ev) {
         else push(e.lost ? 3 : 2, e.lost ? `${N(e.target)} downs ${N(e.owner)} attack helicopters` : `${N(e.owner)} attack helicopters hit ${N(e.target)} positions behind the front`,
           e.lost ? `${A(e.target)} تسقط مروحيات هجومية لـ${A(e.owner)}` : `مروحيات ${A(e.owner)} الهجومية تضرب مواقع ${A(e.target)} خلف الجبهة`); break;
       case 'civil_war': push(7, `BREAKING: Civil war erupts in ${N(e.country)} as ${N(e.rebels)} seize territory`, `عاجل: اندلاع حرب أهلية في ${A(e.country)} مع سيطرة ${A(e.rebels)} على أراضٍ`); break;
+      case 'clash': if (e.n >= 8) push(4, `${N(e.by)} drives ${N(e.from)} back inside ${N(e.country)}`, `${A(e.by)} تدفع ${A(e.from)} إلى الوراء داخل ${A(e.country)}`); break;
       case 'liberation': push(5, `${N(e.country)} breaks the ${N(e.from)} occupation`, `${A(e.country)} تكسر احتلال ${A(e.from)}`); break;
       case 'occupation': push(5, `${N(e.country)} under ${N(e.by)} occupation`, `${A(e.country)} تحت احتلال ${A(e.by)}`); break;
       case 'capitulation': push(5, `${N(e.country)} capitulates`, `${A(e.country)} تستسلم`); break;

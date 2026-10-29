@@ -10,7 +10,7 @@ import {
 } from './core.js';
 import { validateOrder, blockedFor, describeOrder, autoUnits } from './orders.js';
 import { tickEconomy } from './economy.js';
-import { CELL, hasGeo, cellsOf, cellCenter, advance, holdings, releaseCells, occupyCells, heldCenter, behindLines, dropPocket, nearestHeld } from './control.js';
+import { CELL, hasGeo, cellsOf, cellCenter, advance, holdings, contactsIn, homeOf, releaseCells, occupyCells, heldCenter, behindLines, dropPocket, nearestHeld } from './control.js';
 import { planAI } from './ai.js';
 import { headlinesFrom } from './news.js';
 import { detectEndings } from './endings.js';
@@ -277,7 +277,9 @@ function resolveInvasions(state, orders, ev) {
     for (const o of hostile) if (!atWar(state, o.country, target)) declareWar(state, o.country, target, ev, 'invasion');
     const attackers = hostile.flatMap(o => o.units.map(id => state.units[id]).filter(Boolean).map(u => ({ u, o })));
     if (!attackers.length) continue;
-    const defenders = unitsAt(state, 'country', target).filter(u => u.type === 'army' && (u.owner === target || sameSide(state, u.owner, target) || T.occupiedBy === u.owner) && !attackers.some(a => a.u.id === u.id));
+    // A rebel faction holds no country of its own: the fight is for its ground inside the country it rose in.
+    const host = T.rebelOf && hasGeo() ? state.countries[T.rebelOf] : null;
+    const defenders = [...unitsAt(state, 'country', target), ...(host ? unitsAt(state, 'country', host.id).filter(u => u.owner === target) : [])].filter(u => u.type === 'army' && (u.owner === target || sameSide(state, u.owner, target) || T.occupiedBy === u.owner) && !attackers.some(a => a.u.id === u.id));
     const lead = hostile[0].country;
     // A landing comes ashore from the sea zone the fleet holds; enemy warships there make it costly.
     const sea = hostile.find(o => o.amphibious && o.zone && SEA_ZONES[o.zone]);
@@ -315,6 +317,14 @@ function resolveInvasions(state, orders, ev) {
       const survivors = attackers.filter(({ u }) => state.units[u.id]);
       // The front moves forward a little each turn; the country falls once the attacker holds all of it.
       // The Zeus can overrule the engine for any front: advance, hold or fall back.
+      if (host) {
+        const engine = survivors.length ? clamp(10 + 30 * (ratio - 1), 8, 30) + (remainingDef < 15 ? 12 : 0) : 0;
+        pushBetween(state, host, lead, target, frontDelta(modeIn(host, lead), engine, 15), ev);
+        const cas = Math.round((A + D) * between(state, 0.6, 1.2));
+        host.casualties += cas; state.global.casualties += cas;
+        ev.push({ kind: 'battle', attacker: lead, defender: target, at: heldCenter(state, host.id, target) || at, result: 'won', occupied: false, front: true });
+        continue;
+      }
       const mine = T.front && (T.front.by === lead || sameSide(state, T.front.by, lead));
       if (!mine) T.front = { by: lead, pct: 0, prev: 0, from: origin, turn: state.meta.turn, mode: T.front?.mode || (state.countries[lead]?.a3 === 'USA' && state.settings.combinedArms !== false ? 'encircle' : 'auto') };
       else if (sea && T.front.pct < 5) T.front.from = origin;
@@ -329,7 +339,8 @@ function resolveInvasions(state, orders, ev) {
       for (const u of defenders) damageUnit(state, u, u.strength * clamp(0.2 * ratio, 0.03, 0.3), ev, 'held the line');
       // A failed offensive gives ground back. A first push that comes close still bites off a shallow strip
       // along the border, so the front shows up before the defender throws it back.
-      if (T.front && !T.occupiedBy && (T.front.by === lead || sameSide(state, T.front.by, lead))) {
+      if (host) pushBetween(state, host, lead, target, -clamp(6 / Math.max(ratio, 0.2), 6, 18), ev);
+      else if (T.front && !T.occupiedBy && (T.front.by === lead || sameSide(state, T.front.by, lead))) {
         moveFront(state, T, frontDelta(T.front.mode, -clamp(8 / Math.max(ratio, 0.2), 8, 25), 8), ev);
       } else if (!T.front && !T.occupiedBy && ratio >= 0.25 && attackers.some(({ u }) => state.units[u.id])) {
         T.front = { by: lead, pct: 0, prev: 0, from: origin, turn: state.meta.turn, mode: 'auto' };
@@ -578,12 +589,67 @@ function updateFronts(state, ev) {
   }
 }
 
+// The order a force follows inside a country: the leading front's mode, or 'auto' for anyone else.
+function modeIn(T, by) { return (T.front?.by === by && T.front.mode) || 'auto'; }
+
+// One side takes ground from another inside country T, measured like a front push. Y may be T itself; a
+// negative delta means Y takes ground back from X. Used where two outside forces (an invader and a civil war
+// faction, two factions, rival invaders) meet inside a country. Returns how many cells changed hands.
+export function pushBetween(state, T, X, Y, delta, ev) {
+  if (!hasGeo() || !delta || X === Y) return 0;
+  const [win, lose] = delta > 0 ? [X, Y] : [Y, X];
+  const total = cellsOf(T.id).length;
+  const n = Math.max(1, Math.round(Math.abs(delta) / 100 * Math.min(total, FRONT_CAP)));
+  const toward = (lose !== T.id && heldCenter(state, T.id, lose)) || pt(T);
+  const from = (win !== T.id && heldCenter(state, T.id, win)) || pt(state.countries[win]);
+  const took = advance(state, win, lose, n, { within: T.id, target: T.id, liberateOnly: win === T.id, from, toward });
+  if (took.length && win !== T.id && lose !== T.id) {
+    const [lon, lat] = cellCenter(took[took.length - 1]);
+    ev.push({ kind: 'clash', country: T.id, by: win, from: lose, n: took.length, at: { lat, lon } });
+  }
+  if (took.length) syncFront(state, T, ev);
+  return took.length;
+}
+
+// Forces holding ground in the same country that meet and are at war fight over the line every turn: the
+// stronger pushes, and the leading front's Zeus order (advance, hold, fall back) counts on every line it holds.
+function updateClashes(state, ev) {
+  if (!hasGeo()) return;
+  // Only countries where two or more outside forces hold ground.
+  const holders = {};
+  for (const [k, o] of Object.entries(state.control || {})) { const h = homeOf(Number(k)); (holders[h] ||= new Set()).add(o); }
+  for (const [id, set] of Object.entries(holders)) {
+    const T = state.countries[id]; if (!T || set.size < 2) continue;
+    for (const [a, b] of contactsIn(state, T.id)) {
+      if (!atWar(state, a, b) || sameSide(state, a, b)) continue;
+      const force = x => unitsOf(state, x, 'army').reduce((t, u) => t + u.strength * (u.loc.kind === 'country' && u.loc.id === T.id ? 1 : 0.25), 0);
+      const fa = force(a), fb = force(b);
+      const drive = (m, mine, theirs) => m === 'hold' || m === 'retreat' ? 0 : m === 'advance' || m === 'encircle' ? clamp(8 + 6 * (mine / Math.max(10, theirs) - 1), 6, 16) : mine > 1.5 * theirs ? clamp(3 + 2 * (mine / Math.max(10, theirs)), 4, 10) : 0;
+      const ma = modeIn(T, a), mb = modeIn(T, b);
+      let d = drive(ma, fa, fb) - drive(mb, fb, fa);
+      if (ma === 'retreat') d -= 8;
+      if (mb === 'retreat') d += 8;
+      if (Math.abs(d) >= 1) pushBetween(state, T, a, b, d, ev);
+    }
+  }
+}
+
 // A Zeus moves a front right now, outside the turn. Starts a front if `by` has none in this country yet.
-export function pushFrontNow(state, countryId, by, delta, ctx) {
+export function pushFrontNow(state, countryId, by, delta, ctx, vs = null) {
   const T = state.countries[countryId], B = state.countries[by];
   if (!T || !B || countryId === by) return 'Pick a country and who is attacking it.';
   if (!atWar(state, by, countryId) && !T.front) return `${B.name} is not at war with ${T.name}.`;
-  if (T.front && T.front.by !== by && !sameSide(state, T.front.by, by)) return `${state.countries[T.front.by].name} already holds the front in ${T.name}.`;
+  // Someone else leads the fighting here (rebels, another invader): push against the country's own ground,
+  // or against another force holding ground in it.
+  if (vs || (T.front && T.front.by !== by && !sameSide(state, T.front.by, by))) {
+    if (!hasGeo()) return `${state.countries[T.front?.by]?.name || 'Another side'} already holds the front in ${T.name}.`;
+    const Y = vs || countryId;
+    if (Y !== countryId && (!state.countries[Y] || !atWar(state, by, Y))) return `${B.name} is not at war with ${state.countries[Y]?.name || 'them'}.`;
+    const ev = [];
+    if (!pushBetween(state, T, by, Y, delta, ev)) return delta > 0 ? `${B.name} has no ground to take there.` : `${B.name} holds no ground there to lose.`;
+    publishInstant(state, ev, ctx);
+    return null;
+  }
   if (!T.front) {
     if (delta <= 0) return `${B.name} holds no ground in ${T.name}.`;
     T.front = { by, pct: 0, prev: 0, from: { lat: B.lat, lon: B.lon }, turn: state.meta.turn, mode: 'auto' };
@@ -891,6 +957,7 @@ export function resolveTurn(state, ctx) {
   for (const u of Object.values(state.units)) delete u.forcing;
   resolveInvasions(state, invasions, ev);
   updateFronts(state, ev);
+  updateClashes(state, ev);
   updateChokepoints(state, ev);
 
   // Capitulation: occupied, exhausted countries stop fighting.

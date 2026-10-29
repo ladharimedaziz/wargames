@@ -282,8 +282,12 @@ function Fronts({ conn, state, id, enemies, setSelected, setBrush }) {
   const mine = Object.values(state.countries).filter(o => o.front?.by === id);
   // Enemies this country is at war with but has no front in yet.
   const open = enemies.filter(e => state.countries[e].front?.by !== id && !state.countries[e].front);
-  // Enemies that could open a front inside this country.
-  const invaders = c.front ? [] : enemies;
+  // Enemies that could open a front inside this country (alongside whoever already leads the fighting here).
+  const invaders = enemies.filter(e => e !== c.front?.by);
+  // Forces fighting each other inside this country: an invader against a civil war faction, two factions.
+  const forces = [...new Set([c.front?.by, ...enemies].filter(Boolean))];
+  const clashes = forces.flatMap((a, i) => forces.slice(i + 1).filter(b => state.wars.some(w => (w.a === a && w.b === b) || (w.a === b && w.b === a))).map(b => [a, b]));
+  const vs = (by, other) => run(conn, { type: 'frontPush', country: id, by, vs: other, delta: 10 });
   if (!c.front && !mine.length && !open.length && !enemies.length) return null;
   const draw = owner => setBrush?.({ owner, mode: 'take', r: 9 });
   return html`<div class="sub-h">War fronts</div>
@@ -291,6 +295,11 @@ function Fronts({ conn, state, id, enemies, setSelected, setBrush }) {
     ${mine.map(o => html`<${FrontRow} conn=${conn} state=${state} c=${o} setSelected=${setSelected} named />`)}
     ${open.length > 0 && html`<div class="row wrap small" style="gap:6px;margin-top:4px"><span class="dim">Push into</span>${open.map(e => html`<button class="btn xs" title=${`Open a front: ${c.name} takes ground in ${state.countries[e].name} right now`} onClick=${() => run(conn, { type: 'frontPush', country: e, by: id, delta: 10 })}>${state.countries[e].name} +10%</button>`)}</div>`}
     ${invaders.length > 0 && html`<div class="row wrap small" style="gap:6px;margin-top:4px"><span class="dim">Advance here</span>${invaders.map(e => html`<button class="btn xs" title=${`Open a front: ${state.countries[e].name} takes ground in ${c.name} right now`} onClick=${() => run(conn, { type: 'frontPush', country: id, by: e, delta: 10 })}>${state.countries[e].name} +10%</button>`)}</div>`}
+    ${clashes.length > 0 && html`<div class="small dim" style="margin-top:6px">Fighting each other inside ${c.name}</div>${clashes.map(([a, b]) => html`<div class="row wrap small" style="gap:6px;margin-top:2px">
+      <span class="grow">${state.countries[a].name} vs ${state.countries[b].name}</span>
+      <button class="btn xs" title=${`${state.countries[a].name} takes ground from ${state.countries[b].name} in ${c.name} right now`} onClick=${() => vs(a, b)}>${state.countries[a].name} +10%</button>
+      <button class="btn xs" title=${`${state.countries[b].name} takes ground from ${state.countries[a].name} in ${c.name} right now`} onClick=${() => vs(b, a)}>${state.countries[b].name} +10%</button>
+    </div>`)}`}
     ${setBrush && enemies.length > 0 && html`<div class="row wrap small" style="gap:6px;margin-top:6px"><span class="dim">Draw on the map</span>
       <button class="btn xs gold" title=${`Paint ground ${c.name} takes`} onClick=${() => draw(id)}>✎ ${c.name}</button>
       ${enemies.slice(0, 4).map(e => html`<button class="btn xs" title=${`Paint ground ${state.countries[e].name} takes`} onClick=${() => draw(e)}>✎ ${state.countries[e].name}</button>`)}

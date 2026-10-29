@@ -118,8 +118,11 @@ const WORLD = {
     const c = C(s, a.country); if (!c) return err('Unknown country.');
     const by = a.by || c.front?.by;
     const delta = clamp(Number(a.delta) || 0, -100, 100); if (!delta) return err('Pick how far to move the front.');
-    const e = pushFrontNow(s, c.id, by, delta, ctx); if (e) return err(e);
-    log(s, ctx, `${C(s, by).name}'s front in ${c.name} moved ${delta > 0 ? 'forward' : 'back'} to ${Math.round(c.front?.pct ?? 0)}%`);
+    const vs = a.vs && a.vs !== c.id ? a.vs : null;
+    if (!C(s, by)) return err('Pick who is attacking.');
+    const e = pushFrontNow(s, c.id, by, delta, ctx, vs); if (e) return err(e);
+    if (vs) log(s, ctx, `In ${c.name}: ${C(s, delta > 0 ? by : vs).name} takes ground from ${C(s, delta > 0 ? vs : by).name}`);
+    else log(s, ctx, `${C(s, by).name}'s front in ${c.name} moved ${delta > 0 ? 'forward' : 'back'} to ${Math.round(c.front?.pct ?? 0)}%`);
     return ok({ broadcastAnim: true });
   } },
   setDelegate: { perm: 'zeus', run(s, a) { const c = C(s, a.country); if (!c) return err('Unknown country.'); c.delegate = String(a.delegate || '').slice(0, 60); return ok(); } },
@@ -710,6 +713,9 @@ const WORLD = {
     if (!foes.length) return err('That side is not fighting anyone.');
     const ev = [];
     for (const f of foes) { if (!atWar(s, X.id, f.id)) declareWar(s, X.id, f.id, ev, 'declared'); shiftRelation(s, X.id, S.id, 40); }
+    // Backing a side allies with it, so their fronts hold one line together instead of fighting each other.
+    s.wars = s.wars.filter(w => !((w.a === X.id && w.b === S.id) || (w.a === S.id && w.b === X.id)));
+    if (!s.treaties.some(t => t.type === 'alliance' && t.parties.includes(X.id) && t.parties.includes(S.id))) s.treaties.push({ type: 'alliance', parties: [X.id, S.id], turn: s.meta.turn });
     publishInstant(s, ev, ctx);
     log(s, ctx, `${X.name} backs ${S.name} in the civil war`);
     return ok({ broadcastAnim: true });
