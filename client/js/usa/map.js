@@ -1,11 +1,12 @@
 // The continental US map: states, cities, highways and the land beside the border drawn on a canvas. The stage follows the Zeus's view;
-// on the Zeus panel it can be dragged and zoomed (`interactive`).
+// on the Zeus panel it can be dragged and zoomed (`interactive`). Only the stage (`stage`) applies the force filter.
 import { feature, mesh } from 'topojson-client';
 import { geoAlbers, geoPath, geoCentroid } from 'd3-geo';
 import { html, useRef, useEffect, useMemo, cls } from '../lib.js';
 import { drawSil, getImage, sealUrl } from './art.js';
 import { USA_VIEW, USA_MAX_ZOOM, USA_UNIT_KINDS, LIGHT_PATTERNS, LIGHT_PATTERN_IDS, lightColors, getUnits, CROSSING_LIST, crossingState } from '/shared/engine/usa.js';
 import { sideColor, effSide, glidePos, typeOf } from '/shared/engine/usa-sim.js';
+import { forceShown } from '/shared/engine/core.js';
 import { detect, drawFx, drawTrails } from './fx.js';
 
 let loading = null;
@@ -156,7 +157,7 @@ function drawShip(ctx, S, u, p, proj, now, fill, glide, edge) {
   return busy;
 }
 
-export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder, onBox, selectedUnit = null, selectedUnits = null, selectedState = null, selectedCrossing = null, interactive = false, className = '', onMapClick = null }) {
+export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder, onBox, selectedUnit = null, selectedUnits = null, selectedState = null, selectedCrossing = null, interactive = false, stage = false, className = '', onMapClick = null }) {
   const cv = useRef(), ov = useRef(), st = useRef({ data: null, w: 0, h: 0, cur: { ...USA_VIEW }, want: { ...USA_VIEW }, hover: null, raf: 0, onView, onPick, usa });
   st.current.onView = onView; st.current.onPick = onPick; st.current.onPickUnit = onPickUnit; st.current.onPlace = onPlace; st.current.usa = usa; st.current.selUnit = selectedUnit; st.current.selSet = new Set(selectedUnits || (selectedUnit ? [selectedUnit] : [])); st.current.onOrder = onOrder; st.current.onBox = onBox;
   if (st.current.usaPrev !== usa) { st.current.usaPrev = usa; st.current.recvAt = performance.now(); } st.current.selState = selectedState; st.current.selX = selectedCrossing;
@@ -276,10 +277,12 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
   // Kept cheap on purpose: the label layout is reused until the view, the layers or a unit changes.
   const svcOf = u => u.svc || (u.kind === 'police' ? 'police' : null);
   const drawDots = (ctx, S, proj, k, now) => {
-    const L = S.usa.layers, LB = S.usa.lightbars || {}, pat = S.usa.lightPattern || 'mixed';
+    const L = S.usa.layers, LB = S.usa.lightbars || {}, pat = S.usa.lightPattern || 'mixed', forces = stage ? S.usa.forces : 'all';
+    // The stage can show only one kind of force; air bases count with the aircraft. The Zeus map always shows everything.
+    const shown = u => forceShown(forces, u.type === 'airbase' ? 'air' : typeOf(u).domain);
     const lo = proj.invert([-30, S.h + 30]), hi = proj.invert([S.w + 30, -30]);
     const [x0, x1] = [Math.min(lo[0], hi[0]) - 0.2, Math.max(lo[0], hi[0]) + 0.2], [y0, y1] = [Math.min(lo[1], hi[1]) - 0.2, Math.max(lo[1], hi[1]) + 0.2];
-    const layout = `${S.baseKey}|${Object.entries(L).join()}|${S.unitSig}|${[...S.selSet].join()}`;
+    const layout = `${S.baseKey}|${Object.entries(L).join()}|${forces}|${S.unitSig}|${[...S.selSet].join()}`;
     const moving = !!S.usa.sim?.running && Object.values(S.units || {}).some(u => u.mv), wantLabels = S.labelKey !== layout || moving, labels = [];
     let flashing = false;
     S.hits = [];
@@ -321,7 +324,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
     const parked = {}; for (const u of Object.values(S.units || {})) if (u.air === 'parked' && !u.destroyed && !u.hidden) parked[u.base] = (parked[u.base] || 0) + 1;
     for (const u of Object.values(S.units || {})) {
       const kd = USA_UNIT_KINDS[u.kind];
-      if (!kd || u.hidden || !L[kd.layer] || k < kd.dot || u.air === 'parked') continue;
+      if (!kd || u.hidden || !L[kd.layer] || k < kd.dot || u.air === 'parked' || !shown(u)) continue;
       const gp = u.mv && glide ? glidePos(u, S.units, glide) : null, lon = gp ? gp[0] : u.lon, lat = gp ? gp[1] : u.lat;
       if (u.mv && glide) anyMv = true;
       posOf.set(u.id, [lon, lat]);
@@ -434,7 +437,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
     return () => { dead = true; ro.disconnect(); cancelAnimationFrame(st.current.raf); clearTimeout(st.current.raf); clearTimeout(st.current.settle); };
   }, []);
   useEffect(() => { st.current.want = { ...USA_VIEW, ...view }; if (!st.current.data) return; redraw(); }, [view?.lon, view?.lat, view?.k]);
-  useEffect(redraw, [selectedUnit, selectedUnits, usa, usa.mods, usa.custom, Object.entries(usa.layers).join(), Object.entries(usa.lightbars || {}).join(), usa.lightPattern, JSON.stringify(usa.lightColors || {}), (usa.highlight || []).join(',')]);
+  useEffect(redraw, [selectedUnit, selectedUnits, usa, usa.forces, usa.mods, usa.custom, Object.entries(usa.layers).join(), Object.entries(usa.lightbars || {}).join(), usa.lightPattern, JSON.stringify(usa.lightColors || {}), (usa.highlight || []).join(',')]);
 
   // Pointer handling for the Zeus panel: drag to pan, wheel to zoom around the cursor, click to pick a state.
   useEffect(() => {

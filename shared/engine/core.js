@@ -15,6 +15,11 @@ export const UNIT_TYPES = {
   carrier:  { name: 'Carrier group', ar: 'مجموعة حاملة طائرات', icon: 'carrier', domain: 'sea', range: 1200, upkeep: 1.4, cost: 30 },
 };
 
+// What the fog of war lets through on top of who can see what: every force, or only the navy, ground or air forces.
+// Domains are the world map's land/sea/air and the US committee's ground/foot/sea/air.
+export const FORCE_FILTERS = { all: 'All forces', naval: 'Navy only', ground: 'Ground only', air: 'Air only' };
+export const forceShown = (filter, domain) => !filter || filter === 'all' || (filter === 'naval' ? domain === 'sea' : filter === 'air' ? domain === 'air' : filter === 'ground' ? domain === 'land' || domain === 'ground' || domain === 'foot' : true);
+
 export const TARGET_TYPES = ['military', 'industry', 'energy', 'infrastructure', 'capital'];
 export const ROE = ['defensive', 'firm', 'forward'];
 export const BLOCS = ['N', 'A', 'B', 'C'];

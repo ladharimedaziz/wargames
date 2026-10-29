@@ -4,6 +4,7 @@ import { TimerControls } from '../world/display-tab.js';
 import { DMDrawer, useUnread } from '../views/dm.js';
 import { Sandbox } from './sandbox.js';
 import { UnitCard, StateInspector, NationOverview, CrossingCard, GroupCard, SideOptions } from './inspector.js';
+import { FORCE_FILTERS } from '/shared/engine/core.js';
 import { effSide, typeOf, simClock, simSeconds, SIM_SPEEDS } from '/shared/engine/usa-sim.js';
 import { UsMap, loadUsa, viewFor, unitLabel } from './map.js';
 import { USA_VIEW, USA_UNIT_KINDS, UNIT_LAYERS, LIGHT_SERVICES, LIGHT_PALETTE, LIGHT_PATTERNS, lightColors, getUnits, SILS } from '/shared/engine/usa.js';
@@ -138,6 +139,9 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
           </div></div>`}
           ${tab === 'units' && html`<div class="card"><div class="card-h"><h3>Units</h3></div><div class="card-b col">
             ${Object.entries(UNIT_LAYERS).map(([k, l]) => html`<label class="row"><input type="checkbox" checked=${!!u.layers[k]} onChange=${() => act({ type: 'usaLayer', layer: k })} /> ${l}</label>`)}
+            <label class="field">Stage shows
+              <select class="input sm" value=${u.forces || 'all'} onChange=${e => act({ type: 'usaForces', value: e.target.value })}>${Object.entries(FORCE_FILTERS).map(([k, l]) => html`<option value=${k}>${l}</option>`)}</select></label>
+            <div class="dim small">Fog of war for the stage: navy only shows ships, ground only shows troops, police and officials, air only shows aircraft and air bases. Your map always shows everything.</div>
             <div class="dim small">Every unit is a dot with a badge above it. Click one to see it on the right.</div>
             <select class="input sm" value="" onChange=${e => e.target.value && pickUnit(e.target.value)}><option value="">Find a governor…</option>${Object.values(units).filter(x => x.kind === 'governor').sort((a, b) => a.owner.localeCompare(b.owner)).map(x => html`<option value=${x.id}>${x.owner} · ${x.person}${x.control === 'delegate' ? ' (delegate)' : ''}</option>`)}</select>
           </div></div>`}
