@@ -1001,14 +1001,8 @@ export class WorldMap {
     const tail = evs.some(e => e.kind === 'neo' || e.kind === 'act') ? 7.5 : evs.some(e => e.kind === 'naval' || e.kind === 'landing') ? 8.5 : 4;
     const hold = evs.some(e => e.kind === 'front') ? Math.max(tail, this.frontDelay - t + 5.4) : tail;
     this.sequenceEnd = performance.now() + (t + hold) * 1000;
-    // On the stage display, frame the action automatically unless the Zeus has set a focus.
-    const handsOn = this.localFocus || (this.userAt && performance.now() - this.userAt < 20000);
-    const box = this.actionBox(tiers);
-    if (this.opts.cinematic && box && !this.state?.display?.focus && !handsOn) {
-      this.camTarget = this.viewFor({ kind: 'box', box, pad: 0.8, maxK: 4 });
-      clearTimeout(this.camReturn);
-      this.camReturn = setTimeout(() => this.applyFocus(), (t + hold) * 1000);
-    }
+    // The stage camera never moves by itself to frame the action (removed at Dan's request): only the Zeus's focus or a
+    // hand on the stage moves it.
     return t + hold;
   }
 

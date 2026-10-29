@@ -129,7 +129,7 @@ export function UsaPanel({ conn, user, state, committee, logout, onBack }) {
             <div class="dim small">Drag to move, scroll to zoom, click a state for its card. This map is yours: the stage does not follow it.</div>
             <select class="input sm" value="" onChange=${e => e.target.value && jump(viewFor(data, e.target.value, 1600, 900))}><option value="">Zoom to a state…</option>${states.map(s => html`<option value=${s.id}>${s.name}</option>`)}</select>
             <div class="row wrap"><button class="btn sm" onClick=${() => jump({ ...USA_VIEW })}>Whole country</button><button class="btn sm gold" onClick=${() => send(view)}>Show this on stage</button></div>
-            <div class="row wrap"><button class="btn sm" onClick=${() => send({ ...USA_VIEW })}>Whole country on stage</button><button class=${cls('btn sm', u.stageAuto && 'on')} onClick=${() => act({ type: 'usaStageAuto' })}>${u.stageAuto ? 'Stage frames the action' : 'Frame the action'}</button></div>
+            <div class="row wrap"><button class="btn sm" onClick=${() => send({ ...USA_VIEW })}>Whole country on stage</button></div>
           </div></div>
           <${Lightbars} u=${u} states=${states} act=${act} />
           <div class="card"><div class="card-h"><h3>Mark states</h3></div><div class="card-b col">
