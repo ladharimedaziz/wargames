@@ -1,7 +1,7 @@
 // Animation for the US map: shells and bombs in flight and where they land, medevac and crowd-dispersal pulses, flames and smoke on a
 // hit unit, an expanding ring where an order was given, and dust or vapour trails behind moving units. It draws on the overlay each
 // frame. Flights are timed by the game clock (so every screen agrees) and impacts by the screen's own clock.
-import { glidePos } from '/shared/engine/usa-sim.js';
+import { glidePos, typeOf } from '/shared/engine/usa-sim.js';
 
 const KM_LAT = 110.57, KM_LON = lat => 111.32 * Math.cos(lat * Math.PI / 180);
 const rnd = (a, b) => { const x = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return x - Math.floor(x); }; // steady pseudo-random, so a flame does not jump about
@@ -104,6 +104,7 @@ export function drawTrails(ctx, S, proj, now, posOf) {
     if (t.length < 2) continue;
     busy = true;
     const air = u.air === 'flying' || (u.type && /f35|f22|f15|a10|bomber|c130|tanker|awacs|mq9|air_wing/.test(u.type));
+    if (!air && typeOf(u).domain === 'sea') { seaWake(ctx, t, proj, now); continue; }
     for (let i = 1; i < t.length; i++) {
       const a = proj([t[i - 1][0], t[i - 1][1]]), b = proj([t[i][0], t[i][1]]); if (!a || !b) continue;
       const age = Math.min(1, (now - t[i][2]) / 2200);
@@ -112,6 +113,25 @@ export function drawTrails(ctx, S, proj, now, posOf) {
     }
   }
   return busy;
+}
+// A ship's wake: two arms of white water that spread apart as they age, with foam down the middle.
+function seaWake(ctx, t, proj, now) {
+  const pts = t.map(([lon, lat, at]) => { const q = proj([lon, lat]); return q && [q[0], q[1], Math.min(1, (now - at) / 2200)]; }).filter(Boolean);
+  if (pts.length < 2) return;
+  for (const side of [-1, 1]) {
+    ctx.strokeStyle = 'rgba(225,240,255,.5)'; ctx.lineWidth = 1;
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i - 1], b = pts[i], dx = b[0] - a[0], dy = b[1] - a[1], d = Math.hypot(dx, dy) || 1, nx = -dy / d, ny = dx / d;
+      const sa = side * (2 + a[2] * 9), sb = side * (2 + b[2] * 9);
+      ctx.globalAlpha = 1 - a[2]; ctx.beginPath(); ctx.moveTo(a[0] + nx * sa, a[1] + ny * sa); ctx.lineTo(b[0] + nx * sb, b[1] + ny * sb); ctx.stroke();
+    }
+  }
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    ctx.globalAlpha = 1; ctx.strokeStyle = `rgba(240,248,255,${0.55 * (1 - b[2])})`; ctx.lineWidth = 3.5 * (1 - b[2]) + 0.6;
+    ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
 }
 // The game clock as a screen shows it: the server only sends a state when something changes, so between sends the clock is carried
 // on from the last one at the clock's speed.

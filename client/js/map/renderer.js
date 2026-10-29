@@ -19,6 +19,9 @@ import { ROAD_FX } from './roads.js';
 import { NAVAL_FX } from './naval.js';
 import { OOB_FX } from './oob.js';
 
+// Icons and sprites keep one on-screen size at every zoom, so nothing grows or shrinks as the camera moves.
+const ICON = 1.3;
+
 const TAU = Math.PI * 2;
 const withCamOn = (ctx, dpr, cam, fn) => { ctx.save(); ctx.setTransform(dpr * cam.k, 0, 0, dpr * cam.k, dpr * cam.x, dpr * cam.y); fn(); ctx.restore(); };
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -191,7 +194,7 @@ export class WorldMap {
     const night = this.night;
     ctx.strokeStyle = night ? 'rgba(130,170,255,0.20)' : 'rgba(150,195,255,0.32)'; ctx.lineWidth = 0.7 / k; ctx.stroke(this.admin1Path);
     if (k < 2.4) return;
-    ctx.font = `600 ${Math.min(11, 7.5 + k * 0.5) / k}px Rajdhani, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = `600 ${10 / k}px Rajdhani, sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     const fade = Math.min(1, (k - 2.4) / 1.2);
     for (const it of this.admin1) {
       if (!it.n) continue;
@@ -1146,7 +1149,7 @@ export class WorldMap {
   fx_heli(ctx, fx, u, now) {
     const e = fx.e, a = this.pt(e.from) || this.countryPoint(e.owner), b0 = this.pt(e.to) || this.countryPoint(e.target);
     if (!a || !b0) return;
-    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.4);
+    const sc = ICON;
     let dx = b0[0] - a[0], dy = b0[1] - a[1], len = Math.hypot(dx, dy);
     // The heading is fixed on the first frame (the camera only pans and zooms, so it never changes). Picking a
     // fresh random one each frame for a short hop is what made the helicopters spin as they closed in.
@@ -1262,7 +1265,7 @@ export class WorldMap {
     const m = this.mouse; if (!m) return;
     const dest = this.seaTarget(m[0], m[1]); if (!dest) return;
     const from = SEA_ZONES[f.zone], zroute = seaRoute(f.zone, dest.zone, new Set());
-    const reach = zroute && zroute.length - 1 <= 6, sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
+    const reach = zroute && zroute.length - 1 <= 6, sc = ICON;
     const ok = zroute && reach;
     const startPt = f.lat != null ? { lat: f.lat, lon: f.lon } : SEA_ZONES[f.zone];
     const legs = (zroute || [f.zone, dest.zone]).map(z => SEA_ZONES[z]);
@@ -1821,7 +1824,7 @@ export class WorldMap {
         ctx.strokeStyle = g; ctx.lineWidth = last ? 1.4 : 0.9; ctx.beginPath(); ctx.moveTo(qt[0], qt[1]); ctx.lineTo(q[0], q[1]); ctx.stroke();
       }
       const ang = qt ? Math.atan2(q[1] - qt[1], q[0] - qt[0]) : 0;
-      const sz = (last ? 4.2 : 2.8) * Math.min(1.6, 0.8 + this.cam.k * 0.15);
+      const sz = (last ? 4.2 : 2.8) * 1.1;
       ctx.save(); ctx.translate(q[0], q[1]); ctx.rotate(ang);
       ctx.fillStyle = `rgba(${col},${last ? 1 : 0.85})`;
       ctx.beginPath(); ctx.moveTo(sz * 1.4, 0); ctx.lineTo(-sz, sz * 0.9); ctx.lineTo(-sz * 0.5, 0); ctx.lineTo(-sz, -sz * 0.9); ctx.closePath(); ctx.fill();
@@ -1844,14 +1847,19 @@ export class WorldMap {
       if (hull && !sh.stuck) {
         // Zoomed in: a small hull pointing along the ship's heading, with a wake.
         const ahead = this.sea.position({ ...sh, t: Math.min(1, sh.t + 0.002) });
-        const q2 = this.p(ahead[0], ahead[1]); const ang = q2 ? Math.atan2(q2[1] - q[1], q2[0] - q[0]) : 0;
-        const L = (sh.kind === 'tanker' || sh.kind === 'bulk' ? 5 : 4.4) * Math.min(1.6, 0.7 + k * 0.1);
+        // The hull swings round onto each new leg of the lane instead of snapping to it.
+        const q2 = this.p(ahead[0], ahead[1]), want = q2 && Math.hypot(q2[0] - q[0], q2[1] - q[1]) < 60 ? Math.atan2(q2[1] - q[1], q2[0] - q[0]) : sh.hd ?? 0;
+        const d = Math.atan2(Math.sin(want - (sh.hd ?? want)), Math.cos(want - (sh.hd ?? want)));
+        const ang = sh.hd = (sh.hd ?? want) + d * Math.min(1, ((time - (sh.hdT ?? time)) || 0.016) * 3); sh.hdT = time;
+        const L = (sh.kind === 'tanker' || sh.kind === 'bulk' ? 5 : 4.4) * 1.1;
         ctx.save(); ctx.translate(q[0], q[1]); ctx.rotate(ang);
-        ctx.strokeStyle = 'rgba(220,240,255,0.25)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-L, 0); ctx.lineTo(-L * 3, -L * 0.5); ctx.moveTo(-L, 0); ctx.lineTo(-L * 3, L * 0.5); ctx.stroke();
+        const fl = 0.85 + 0.15 * Math.sin(time * 3 + pos[0]);
+        ctx.strokeStyle = 'rgba(220,240,255,0.28)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(-L, 0); ctx.lineTo(-L * 3.4 * fl, -L * 0.6); ctx.moveTo(-L, 0); ctx.lineTo(-L * 3.4 * fl, L * 0.6); ctx.stroke();
+        ctx.strokeStyle = 'rgba(235,245,255,0.3)'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(-L, 0); ctx.lineTo(-L * 2.4 * fl, 0); ctx.stroke();
         ctx.fillStyle = `rgba(${col},${a})`; ctx.beginPath(); ctx.moveTo(L, 0); ctx.lineTo(L * 0.4, -L * 0.38); ctx.lineTo(-L, -L * 0.38); ctx.lineTo(-L, L * 0.38); ctx.lineTo(L * 0.4, L * 0.38); ctx.closePath(); ctx.fill();
         ctx.restore();
       } else {
-        const r = (sh.kind === 'tanker' || sh.kind === 'bulk' ? 2 : 1.7) * Math.min(1.8, 0.8 + k * 0.18);
+        const r = (sh.kind === 'tanker' || sh.kind === 'bulk' ? 2 : 1.7) * 1.2;
         ctx.fillStyle = `rgba(${col},${a})`; ctx.beginPath(); ctx.arc(q[0], q[1], r, 0, TAU); ctx.fill();
       }
       if (sh.rerouted && !sh.stuck) { ctx.strokeStyle = 'rgba(217,164,65,0.4)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.arc(q[0], q[1], 4, 0, TAU); ctx.stroke(); }
@@ -1918,17 +1926,20 @@ export class WorldMap {
       if (g.loc.kind === 'sea') { const z = freeG ? { lon: g.loc.lon, lat: g.loc.lat } : SEA_ZONES[g.loc.id]; base = z && this.p(z.lon, z.lat); }
       else base = this.countryPoint(g.loc.id);
       if (!base) continue;
-      const ang = i * 2.1 + 0.6, rr = i ? (g.loc.kind === 'sea' ? (30 + i * 6) * Math.min(1.5, 0.85 + this.cam.k * 0.12) : 11 + i * 2) : 0;
+      const ang = i * 2.1 + 0.6, rr = i ? (g.loc.kind === 'sea' ? (30 + i * 6) * 1.1 : 11 + i * 2) : 0;
       const q = [base[0] + Math.cos(ang) * rr, base[1] + Math.sin(ang) * rr + (g.loc.kind === 'country' ? 12 : 0)];
       const owner = s.countries[g.owner];
       const color = this.colorOf(owner, '#c8d2e0');
       const sea = g.loc.kind === 'sea';
       const count = g.units.length;
-      const scale = Math.min(1.5, 0.85 + this.cam.k * 0.12);
+      const scale = 1.1;
       if (sea) {
         // A fleet whose sailing animation is pending or under way is drawn on its route, not already at the destination.
-        const mv = this.sailingPos(g, q);
-        if (mv) { ctx.save(); ctx.translate(mv[0], mv[1]); this.drawNavalGroup(ctx, g, time, color, scale); ctx.restore(); continue; }
+        // Either way the group turns smoothly onto its course and keeps facing it once it arrives.
+        const mv = this.sailingPos(g, q), seed = [...(g.owner + g.type)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 9973, 7);
+        const nav = this.helm(`${g.owner}:${g.type}:${g.loc.id}${g.loc.lat != null ? `@${g.loc.lat.toFixed(1)},${g.loc.lon.toFixed(1)}` : ''}`, mv ? mv[2] : null, !!mv && mv[3], seed);
+        if (mv) { ctx.save(); ctx.translate(mv[0], mv[1]); this.drawNavalGroup(ctx, g, time, color, scale, nav); ctx.restore(); continue; }
+        ctx.save(); ctx.translate(q[0], q[1]); this.drawNavalGroup(ctx, g, time, color, scale, nav); ctx.restore(); this.fleetHits.push({ x: q[0], y: q[1], r: (g.type === 'carrier' ? 22 : 17) * scale, g }); continue;
       }
       if (sea) { ctx.save(); ctx.translate(q[0], q[1]); this.drawNavalGroup(ctx, g, time, color, scale); ctx.restore(); this.fleetHits.push({ x: q[0], y: q[1], r: (g.type === 'carrier' ? 22 : 17) * scale, g }); continue; }
       ctx.save(); ctx.translate(q[0], q[1]); ctx.scale(scale, scale);
@@ -1941,7 +1952,8 @@ export class WorldMap {
     }
   }
 
-  // Where a sea group currently is while its move is still animating (null when it has arrived).
+  // Where a sea group currently is while its move is still animating, as [x, y, heading, under way] (null when it has
+  // arrived). The heading looks a little ahead along the route so the fleet starts its turn before each bend.
   sailingPos(g, dest) {
     const now = performance.now(), end = g.loc.lat != null ? { lat: g.loc.lat, lon: g.loc.lon } : SEA_ZONES[g.loc.id];
     if (!end) return null;
@@ -1950,9 +1962,11 @@ export class WorldMap {
       const last = fx.e.path[fx.e.path.length - 1];
       if (Math.abs(last.lat - end.lat) > 0.6 || Math.abs(last.lon - end.lon) > 0.6) continue;
       const route = (fx.route ||= this.seaWayVia(fx.e.path)), pts = this.screenRoute(route); if (pts.length < 2) return null;
-      const u = (now - fx.start) / (fx.dur * 1000);
-      const h = this.alongRoute(pts, u <= 0 ? 0 : ease(Math.min(1, u * 1.15)));
-      return [h[0] + (dest[0] - pts[pts.length - 1][0]) * Math.min(1, Math.max(0, u)), h[1] + (dest[1] - pts[pts.length - 1][1]) * Math.min(1, Math.max(0, u))];
+      const u = (now - fx.start) / (fx.dur * 1000), v = u <= 0 ? 0 : ease(Math.min(1, u * 1.15));
+      const h = this.alongRoute(pts, v), a = this.alongRoute(pts, Math.min(1, v + 0.04)), b = this.alongRoute(pts, Math.max(0, v - 0.01));
+      const dx = a[0] - b[0], dy = a[1] - b[1], jump = Math.hypot(dx, dy) > this.w * 0.5;
+      const heading = v < 1 && !jump && (dx || dy) ? Math.atan2(dy, dx) : null;
+      return [h[0] + (dest[0] - pts[pts.length - 1][0]) * Math.min(1, Math.max(0, u)), h[1] + (dest[1] - pts[pts.length - 1][1]) * Math.min(1, Math.max(0, u)), heading, u > 0 && v < 0.995];
     }
     return null;
   }
@@ -2146,7 +2160,7 @@ export class WorldMap {
   strikeBomber(ctx, fx, u, now) {
     const e = fx.e, a = this.pt(e.from) || this.countryPoint(e.owner), b = this.pt(e.to) || this.countryPoint(e.target);
     if (!a || !b) return;
-    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
+    const sc = ICON;
     let dx = b[0] - a[0], dy = b[1] - a[1]; const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
     const L = 46 * sc, nx = -dy, ny = dx;
     const run0 = [b[0] - dx * L / 2, b[1] - dy * L / 2], run1 = [b[0] + dx * L / 2, b[1] + dy * L / 2];
@@ -2217,7 +2231,7 @@ export class WorldMap {
   strikeJets(ctx, fx, u, now) {
     const e = fx.e, a = this.pt(e.from) || this.countryPoint(e.owner), b = this.pt(e.to) || this.countryPoint(e.target);
     if (!a || !b) return;
-    const sc = clamp(Math.sqrt(this.cam.k), 1, 2.2);
+    const sc = ICON;
     let dx = b[0] - a[0], dy = b[1] - a[1]; const len = Math.hypot(dx, dy) || 1; dx /= len; dy /= len;
     const nx = -dy, ny = dx;
     const stand = Math.min(len * 0.4, 38 * sc);
