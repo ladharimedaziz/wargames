@@ -230,15 +230,21 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
     S.raf = 0;
     if (!c || !S.data || !S.w) return;
     const dpr = window.devicePixelRatio || 1, ctx = c.getContext('2d', { alpha: false });
-    // Glide towards the wanted view on the stage; the Zeus panel jumps straight there.
-    const w = S.want, v = S.cur;
+    // Glide towards the wanted view on the stage (and on overview maps); the Zeus panel, and a drag or scroll on the stage
+    // itself, jump straight there. The glide is a critically damped spring on the centre and the log of the zoom: it starts
+    // gently, carries its speed into a new target instead of lurching, and settles without overshoot. (The stage map takes
+    // input too, and used to jump to every new framing because of that.)
+    const w = S.want, v = S.cur, now0 = performance.now(), dt = Math.min(0.1, (now0 - (S.glideAt || now0)) / 1000) || 1 / 60;
     let moving = false;
-    if (interactive) Object.assign(v, w);
+    if ((interactive && !stage) || now0 - (S.directAt || -1e9) < 300) { Object.assign(v, w); S.vel = null; }
     else {
-      const a = 0.18;
-      v.lon += (w.lon - v.lon) * a; v.lat += (w.lat - v.lat) * a; v.k += (w.k - v.k) * a;
-      if (Math.abs(w.lon - v.lon) + Math.abs(w.lat - v.lat) + Math.abs(w.k - v.k) < 1e-3 * Math.max(1, v.k)) Object.assign(v, w); else moving = true;
+      const om = 2.6, at = [v.lon, v.lat, Math.log(v.k)], to = [w.lon, w.lat, Math.log(w.k)], vel = S.vel ||= [0, 0, 0];
+      for (let i = 0; i < 3; i++) { vel[i] += (om * om * (to[i] - at[i]) - 2 * om * vel[i]) * dt; at[i] += vel[i] * dt; }
+      [v.lon, v.lat] = at; v.k = Math.exp(at[2]);
+      const off = Math.abs(w.lon - v.lon) + Math.abs(w.lat - v.lat) + Math.abs(Math.log(w.k / v.k)), speed = Math.abs(vel[0]) + Math.abs(vel[1]) + Math.abs(vel[2]);
+      if (off < 1e-3 / Math.max(1, v.k) && speed < 1e-2 / Math.max(1, v.k)) { Object.assign(v, w); S.vel = null; } else moving = true;
     }
+    S.glideAt = moving ? now0 : 0;
     if (!S.bp || S.bp.w !== S.w || S.bp.h !== S.h) S.bp = { w: S.w, h: S.h, p: baseProjection(S.data, S.w, S.h) };
     const proj = viewProjection(S.bp.p, v, S.w, S.h), k = v.k, L = S.usa.layers;
     const rest = [S.w, S.h, dpr, L.states, L.neighbors, L.cities, L.highways, L.labels, (S.usa.highlight || []).join(), S.hover, S.selState, Object.entries(S.usa.states || {}).map(([c, g]) => c + g.status).join()].join('|');
@@ -463,11 +469,14 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
     };
     const cur = () => st.current.want;
     const pos = e => { const r = c.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
-    const commit = v => { if (!v) return; Object.assign(st.current.want, v); redraw(); st.current.onView?.({ ...st.current.want }); };
+    const commit = v => { if (!v) return; Object.assign(st.current.want, v); st.current.directAt = performance.now(); redraw(); st.current.onView?.({ ...st.current.want }); };
     const geoAt = m => { const S = st.current; return viewProjection(baseProjection(S.data, S.w, S.h), cur(), S.w, S.h).invert(m); };
     let drag = null, moved = 0;
+    // Grabbing the stage mid-glide holds the map where it is on screen, not where the glide was heading.
+    const grab = () => { const S = st.current; if (stage && S.vel) { Object.assign(S.want, S.cur); S.vel = null; } };
     const down = e => {
       if (!st.current.data || e.button === 2) return;
+      grab();
       drag = { m: pos(e), g: geoAt(pos(e)), box: e.shiftKey && !st.current.hoverUnit }; moved = 0; c.setPointerCapture(e.pointerId);
     };
     // Right-click is the RTS order: on a unit it means attack or escort, anywhere else it means go there.
@@ -500,6 +509,7 @@ export function UsMap({ usa, view, onView, onPick, onPickUnit, onPlace, onOrder,
     const wheel = e => {
       e.preventDefault();
       if (!st.current.data) return;
+      grab();
       const m = pos(e), g = geoAt(m);
       const k = Math.max(1, Math.min(USA_MAX_ZOOM, cur().k * Math.exp(-e.deltaY * 0.0015)));
       if (g) commit(anchor(g, m, k));

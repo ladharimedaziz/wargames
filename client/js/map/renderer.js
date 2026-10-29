@@ -113,13 +113,20 @@ export class WorldMap {
   resize() {
     const r = this.el.getBoundingClientRect();
     if (!r.width || !r.height) return;
+    // A resize keeps the camera on the same spot of the globe (it used to jump back to the default framing, which on the stage
+    // threw away whatever was being shown whenever the window or the full screen changed).
+    const centre = v => this.projection.invert([(this.w / 2 - v.x) / v.k, (this.h / 2 - v.y) / v.k]);
+    const keep = this.w && this.projection ? { cam: centre(this.cam), target: centre(this.camTarget), k: this.cam.k, tk: this.camTarget.k } : null;
     this.w = r.width; this.h = r.height; this.dpr = Math.min(2, window.devicePixelRatio || 1);
     for (const c of [this.base, this.fx]) { c.width = Math.round(this.w * this.dpr); c.height = Math.round(this.h * this.dpr); }
     // Frame the inhabited world (Antarctica cropped) so the map fills the screen.
     this.projection = geoEqualEarth().rotate([-12, 0]).fitExtent([[10, 10], [this.w - 10, this.h - 10]], { type: 'MultiPoint', coordinates: [[-168, 0], [192, 0], [12, 83], [12, -57], [-160, 70], [180, 70], [-160, -50], [180, -50]] });
     this.buildPaths();
     this.dirty = true;
-    this.applyFocus(true);
+    const place = (ll, k) => { const q = ll && this.projection(ll); return q ? this.clampView({ k, x: this.w / 2 - q[0] * k, y: this.h / 2 - q[1] * k }) : null; };
+    const cam = keep && place(keep.cam, keep.k), target = keep && place(keep.target, keep.tk);
+    if (cam && target) { this.cam = cam; this.camTarget = target; this.camVel = null; }
+    else this.applyFocus(true);
   }
 
   buildPaths() {
@@ -584,7 +591,7 @@ export class WorldMap {
     // The stage display follows the Zeus's focus, unless someone has clicked a country on the display itself.
     const f = this.opts.interactive ? this.userFocus : (this.localFocus || this.state?.display?.focus || null);
     this.camTarget = this.viewFor(f);
-    if (instant) this.cam = { ...this.camTarget };
+    if (instant) { this.cam = { ...this.camTarget }; this.camVel = null; }
   }
   flyTo(focus) { this.userFocus = focus; this.camTarget = this.viewFor(focus); }
   // The country the camera is centred on, if any: its cities are all shown.
@@ -613,7 +620,7 @@ export class WorldMap {
       const r = fx.getBoundingClientRect(), mx = e.clientX - r.left, my = e.clientY - r.top;
       const t = this.camTarget, k = clamp(t.k * Math.exp(-e.deltaY * 0.0016), 1, MAX_K);
       this.camTarget = this.clampView({ k, x: mx - (mx - t.x) * (k / t.k), y: my - (my - t.y) * (k / t.k) });
-      this.userAt = performance.now();
+      this.userAt = this.directAt = performance.now();
       // Scrolling all the way out on the stage lets go of the clicked country.
       if (this.opts.stageControl && k <= 1.05 && this.localFocus) { this.localFocus = null; this.coatOff = false; }
     }, { passive: false });
@@ -639,7 +646,7 @@ export class WorldMap {
         this.camTarget = this.clampView({ k: this.camTarget.k, x: drag.cx + dx, y: drag.cy + dy });
         this.cam = { ...this.cam, x: this.camTarget.x, y: this.camTarget.y, k: this.cam.k };
         if (!this.dragging && this.hover) { this.hover = null; this.opts.onHover?.(null); }
-        this.dragging = true; this.dirty = true; this.userAt = performance.now();
+        this.dragging = true; this.dirty = true; this.userAt = this.directAt = performance.now(); this.camVel = null;
         return;
       }
       if (!this.opts.interactive) return;
@@ -1409,12 +1416,13 @@ export class WorldMap {
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     if (!this.w || !this.atlas) return;
-    // Camera easing
-    const c = this.cam, tg = this.camTarget, rate = this.opts.cinematic ? 2.2 : 9;
-    const f = 1 - Math.exp(-rate * dt);
+    // Camera easing. The stage glides on a spring (it starts gently, keeps its speed when the target changes mid-flight and
+    // settles without overshoot); the Zeus map, and a scroll or drag on the stage, follow the hand closely.
+    const c = this.cam, tg = this.camTarget;
     const dk = tg.k - c.k, dx = tg.x - c.x, dy = tg.y - c.y;
-    this.moving = this.dragging || Math.abs(dk) > 0.002 || Math.abs(dx) > 0.4 || Math.abs(dy) > 0.4;
-    if (this.moving) { c.k += dk * f; c.x += dx * f; c.y += dy * f; this.dirty = true; }
+    this.moving = this.dragging || Math.abs(dk) > 0.002 || Math.abs(dx) > 0.4 || Math.abs(dy) > 0.4 || !!this.camVel;
+    if (this.moving && this.opts.cinematic && !this.dragging && now - (this.directAt || -1e9) > 400) { this.glide(dt); this.dirty = true; }
+    else if (this.moving) { const f = 1 - Math.exp(-9 * dt); c.k += dk * f; c.x += dx * f; c.y += dy * f; this.camVel = null; this.dirty = true; }
     else if (this.wasMoving) this.dirty = true; // final redraw at full resolution
     this.wasMoving = this.moving;
     if (this.dirty) this.drawBase();
@@ -1424,6 +1432,19 @@ export class WorldMap {
       if (this.layers.naval !== false) this.sea.tick(dt);
     }
     this.drawFx(now, dt);
+  }
+
+  // A critically damped spring on the point at the centre of the screen and on the log of the zoom, so a zoom keeps its centre
+  // on a straight line instead of swooping, and zooming in and out feel equally fast.
+  glide(dt) {
+    const c = this.cam, tg = this.camTarget, w = this.w, h = this.h, om = 2.6;
+    const at = [(w / 2 - c.x) / c.k, (h / 2 - c.y) / c.k, Math.log(c.k)], to = [(w / 2 - tg.x) / tg.k, (h / 2 - tg.y) / tg.k, Math.log(tg.k)];
+    const v = this.camVel ||= [0, 0, 0];
+    for (let i = 0; i < 3; i++) { v[i] += (om * om * (to[i] - at[i]) - 2 * om * v[i]) * dt; at[i] += v[i] * dt; }
+    const k = Math.exp(at[2]), next = this.clampView({ k, x: w / 2 - at[0] * k, y: h / 2 - at[1] * k });
+    const still = Math.abs(v[0]) * next.k + Math.abs(v[1]) * next.k < 4 && Math.abs(v[2]) < 0.004;
+    if (still && Math.abs(next.k - tg.k) < 0.002 && Math.abs(next.x - tg.x) < 0.4 && Math.abs(next.y - tg.y) < 0.4) { this.cam = { ...tg }; this.camVel = null; }
+    else this.cam = next;
   }
 
   // The ocean stays still: the animated wave texture, glint and breathing coastline were removed at Dan's request.
