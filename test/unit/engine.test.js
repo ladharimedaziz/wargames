@@ -1038,3 +1038,61 @@ test('the fog of war can show only navy, ground or air forces', async () => {
   assert.ok(y({ type: 'usaForces', value: 'air' }).ok); assert.equal(u.usa.forces, 'air');
   assert.equal(y({ type: 'usaForces', value: 'nope' }).ok, false);
 });
+
+test('an invader\'s front meets a civil war front: they fight over the line, or ally', () => {
+  const { s, zeus, kronos } = world();
+  const SY = '760', TR = '792', R = SY + 'r';
+  assert.ok(zeus({ type: 'civilWar', country: SY, share: 40, name: 'Free Army' }).ok);
+  assert.equal(s.countries[SY].front.by, R);
+  kronos({ type: 'forceWar', a: TR, b: SY });
+  // The rebels lead the fighting, but Turkey can still open its own front in Syria.
+  assert.ok(zeus({ type: 'frontPush', country: SY, by: TR, delta: 25 }).ok);
+  const held = o => Object.values(s.control).filter(x => x === o).length;
+  const tr0 = held(TR), r0 = held(R);
+  assert.ok(tr0 > 0, 'Turkey holds ground in Syria');
+  // At war with the rebels too: the Zeus moves the line between them.
+  kronos({ type: 'forceWar', a: TR, b: R });
+  assert.ok(zeus({ type: 'frontPush', country: SY, by: TR, vs: R, delta: 10 }).ok);
+  assert.ok(held(TR) > tr0 && held(R) < r0, 'Turkey takes rebel ground');
+  assert.ok(zeus({ type: 'frontPush', country: SY, by: R, vs: TR, delta: 10 }).ok);
+  // Turkey can invade the rebels directly: the battle is fought for their ground inside Syria.
+  const army = Object.values(s.units).find(u => u.owner === TR && u.type === 'army');
+  const before = held(R);
+  army.strength = 100;
+  for (const u of Object.values(s.units)) if (u.owner === R) u.strength = 1;
+  s.orders.push({ id: 'inv1', type: 'invade', country: TR, target: R, units: [army.id], turn: s.meta.turn, status: 'queued' });
+  assert.ok(zeus({ type: 'resolveTurn' }).ok);
+  assert.ok(held(R) < before, 'the invasion of the rebels takes their ground');
+  // Backing the rebels makes Turkey their ally: no more fighting between them.
+  kronos({ type: 'forcePeace', a: TR, b: R });
+  kronos({ type: 'forceWar', a: SY, b: TR });
+  assert.ok(zeus({ type: 'civilAssist', country: TR, side: R }).ok);
+  assert.ok(!atWar(s, TR, R));
+  const rebelCells = Object.keys(s.control).filter(k => s.control[k] === R);
+  assert.equal(zeus({ type: 'frontPush', country: SY, by: TR, vs: R, delta: 10 }).ok, false);
+  assert.ok(zeus({ type: 'resolveTurn' }).ok);
+  assert.ok(rebelCells.every(k => s.control[k] !== TR), 'allies do not take each other\'s ground');
+});
+
+test('a lone front behaves as before: no other force in the country, no fighting between forces', () => {
+  const { s, kronos } = world();
+  kronos({ type: 'forceWar', a: RU, b: UA });
+  kronos({ type: 'setFront', country: UA, by: RU, pct: 20 });
+  assert.ok(kronos({ type: 'frontPush', country: UA, by: RU, delta: 5 }).ok);
+  assert.equal(s.countries[UA].front.by, RU);
+});
+
+test('forces at war that meet inside a country fight over the line every turn', () => {
+  const { s, zeus, kronos } = world();
+  const SY = '760', TR = '792', R = SY + 'r';
+  assert.ok(zeus({ type: 'civilWar', country: SY, share: 40, name: 'Free Army' }).ok);
+  kronos({ type: 'forceWar', a: TR, b: SY });
+  kronos({ type: 'forceWar', a: TR, b: R });
+  assert.ok(zeus({ type: 'frontPush', country: SY, by: TR, vs: R, delta: 15 }).ok);
+  for (const u of Object.values(s.units)) if (u.owner === TR && u.type === 'army') { u.loc = { kind: 'country', id: SY }; u.strength = 100; }
+  for (const u of Object.values(s.units)) if (u.owner === R) u.strength = 5;
+  s.countries[SY].control = 'inactive'; s.countries[R].control = 'inactive'; s.countries[TR].control = 'inactive';
+  const before = Object.values(s.control).filter(x => x === R).length;
+  assert.ok(zeus({ type: 'resolveTurn' }).ok);
+  assert.ok(Object.values(s.control).filter(x => x === R).length < before);
+});

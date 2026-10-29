@@ -58,10 +58,11 @@ function noise(i, j, seed, scale) {
 //   liberateOnly  only take back X's own land
 //   from          where to land if X touches nothing of Y's yet (a beachhead, a border crossing, a drop zone)
 //   toward        a point the push leans toward (usually the enemy capital)
+//   within        only take cells that belong to this country (two outside forces fighting inside it)
 // Returns the cells that changed hands, in the order they fell.
 export function advance(state, X, Y, n, opts = {}) {
   if (!G || n <= 0) return [];
-  const { target = null, liberateOnly = false, from = null, toward = null, encircle = null } = opts;
+  const { target = null, liberateOnly = false, from = null, toward = null, encircle = null, within = null } = opts;
   // Encirclement (the American doctrine): drive along the highways to a ring around the capital, close the ring,
   // then squeeze. `encircle` is the capital; the ring sits about a sixth of the country out.
   let ring = null;
@@ -76,15 +77,17 @@ export function advance(state, X, Y, n, opts = {}) {
   const ctl = k => controller(state, k);
   // Ground X can push from: its own, or an ally's that is not in the fight.
   const fr = new Map();
-  // Rebels only grow from ground they hold themselves, never across a friendly border.
+  // Rebels only grow from ground they hold themselves, never across a friendly border; but ground an ally has
+  // taken inside a country (a backer's front meeting theirs) counts as their side of the line.
   const rebels = !!state.countries[X]?.rebelOf;
-  const friendly = o => { if (o === X) return true; if (rebels || !o || o === Y || !state.countries[o]) return false; if (!fr.has(o)) fr.set(o, sameSide(state, o, X)); return fr.get(o); };
+  const ally = o => { if (!fr.has(o)) fr.set(o, sameSide(state, o, X)); return fr.get(o); };
+  const friendlyAt = m => { const o = ctl(m); if (o === X) return true; if (!o || o === Y || !state.countries[o]) return false; return (!rebels || G.homeOf(m) !== o) && ally(o); };
   const seed = (Number(String(X).replace(/\D/g, '')) || 7) * 0.13 + (Number(String(Y).replace(/\D/g, '')) || 3) * 0.29 + (state.meta?.turn || 1) * 0.71;
-  const eligible = k => ctl(k) === Y && (!liberateOnly || G.homeOf(k) === X);
+  const eligible = k => ctl(k) === Y && (!liberateOnly || G.homeOf(k) === X) && (!within || G.homeOf(k) === within);
   const tw = toward ? [Math.floor((toward.lon + 180) / CELL), Math.floor((90 - toward.lat) / CELL)] : null;
   const score = k => {
     const [i, j] = cellIJ(k);
-    let xn = 0; for (const m of neighbors(k, true)) if (friendly(ctl(m))) xn++;
+    let xn = 0; for (const m of neighbors(k, true)) if (friendlyAt(m)) xn++;
     if (!xn) return -Infinity;
     let s = xn * 0.9 + noise(i, j, seed, 4.5 * CELL_K) * 3.2 + noise(i, j, seed + 9, 1.6 * CELL_K) * 0.8;
     const home = G.homeOf(k);
@@ -105,7 +108,7 @@ export function advance(state, X, Y, n, opts = {}) {
   for (const [k, o] of Object.entries(state.control || {})) if (o === Y) yCells.add(Number(k));
   for (const k of yCells) {
     if (!eligible(k)) continue;
-    if (neighbors(k, false).some(m => friendly(ctl(m)))) pool.set(k, score(k));
+    if (neighbors(k, false).some(friendlyAt)) pool.set(k, score(k));
   }
   const taken = [];
   // Nowhere to grow from: land at `from`, or wherever Y's ground is closest to it.
@@ -129,7 +132,7 @@ export function advance(state, X, Y, n, opts = {}) {
     setController(state, bestK, X); taken.push(bestK);
     for (const m of neighbors(bestK, true)) {
       if (pool.has(m)) pool.set(m, score(m));
-      else if (eligible(m) && neighbors(m, false).some(q => friendly(ctl(q)))) pool.set(m, score(m));
+      else if (eligible(m) && neighbors(m, false).some(friendlyAt)) pool.set(m, score(m));
     }
   }
   return taken;
@@ -161,6 +164,23 @@ export function holdings(state, countryId) {
   const held = {};
   for (const [k, o] of Object.entries(state.control || {})) if (G.homeOf(Number(k)) === countryId) held[o] = (held[o] || 0) + 1;
   return { total, held };
+}
+
+// Pairs of outside forces holding ground in a country whose ground touches there (an invader's front meeting a
+// civil war faction's, two factions, rival invaders): [[a, b, cells along the line], ...], longest line first.
+export function contactsIn(state, countryId) {
+  if (!G || !state.control) return [];
+  const mine = [];
+  for (const [k, o] of Object.entries(state.control)) if (o !== countryId && G.homeOf(Number(k)) === countryId) mine.push([Number(k), o]);
+  if (mine.length < 2 || new Set(mine.map(m => m[1])).size < 2) return [];
+  const line = new Map();
+  for (const [k, o] of mine) for (const m of neighbors(k, false)) {
+    const p = state.control[m];
+    if (p == null || p === o || p === countryId || G.homeOf(m) !== countryId) continue;
+    const key = o < p ? `${o}|${p}` : `${p}|${o}`;
+    line.set(key, (line.get(key) || 0) + 1);
+  }
+  return [...line].sort((x, y) => y[1] - x[1]).map(([key, n]) => [...key.split('|'), Math.ceil(n / 2)]);
 }
 
 // Drops every cell `owner` holds inside `countryId` (peace returning territory, a front collapsing).
