@@ -1137,3 +1137,18 @@ test('only NATO against the Warsaw Pact starts the nuclear exchange; other strik
   off.z({ type: 'resolveTurn' });
   assert.ok(!off.s.global.exchange && off.s.review.some(r => r.kind === 'ending' && r.ending === 'nuclear'));
 });
+
+test('in an exchange every nuclear power on the side hit answers first, before the first side fires again', () => {
+  const cold = geo.coldIndex();
+  const info = { ids: cold.atlasCountryIds(), name: cold.atlasName, anchor: cold.anchorOf, neighbors: cold.neighborsOf };
+  for (const [a, b, answerers] of [[RU, US, [US, '826', FR]], [US, RU, [RU]]]) {
+    const s = createWorldState({ id: 'cw', name: 'Cold', seed: 4 }, info);
+    applyScenario(s, 'cold85', info);
+    s.global.tension = 10;
+    applyAction(s, { type: 'queueOrder', order: { country: a, type: 'nuke', target: b } }, { role: 'stage', user: 'x', now: 1, geo });
+    applyAction(s, { type: 'resolveTurn' }, { role: 'stage', user: 'x', now: 2, geo });
+    const ex = s.display.ending.exchange, answer = ex.tracks.slice(1, 1 + ex.answer);
+    assert.deepEqual([...new Set(answer.map(t => t.o))].sort(), [...answerers].sort(), 'every nuclear power of the other camp fires back at once');
+    assert.ok(ex.tracks.slice(1 + ex.answer).every(t => !answerers.includes(t.o)));
+  }
+});

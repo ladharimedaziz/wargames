@@ -996,7 +996,9 @@ export class WorldMap {
     for (const e of evs.filter(e => e.kind === 'occupation')) { add({ type: 'occupy', e, dur: 3.5 }, t + 1); }
     for (const e of evs.filter(e => e.kind === 'force')) { add({ type: 'force', e, dur: 6 }, t - 0.6); const z = SEA_ZONES[e.zone]; mark(3, z && { lat: z.lat, lon: z.lon }); }
     for (const e of evs.filter(e => e.kind === 'chokepoint')) { add({ type: 'choke', e, dur: 4.5 }, t); const z = SEA_ZONES[e.zone]; mark(2, z && { lat: z.lat, lon: z.lon }); }
-    for (const e of evs.filter(e => e.kind === 'nuke')) { add({ type: 'nuke', e, dur: e.salvo ? 9 : 11 }, t + 1.2); mark(0, e.at, e.from); t += e.salvo ? 0.2 : 4.6; } // keep in step with EXCHANGE_LEAD_S in shared/engine/resolve.js
+    // In an exchange the other side answers the moment the first missile is up, so the salvos follow it at once.
+    const exchange = evs.some(e => e.kind === 'nuke' && e.salvo);
+    for (const e of evs.filter(e => e.kind === 'nuke')) { add({ type: 'nuke', e, dur: e.salvo ? 9 : 11 }, t + 1.2); mark(0, e.at, e.from); t += e.salvo ? 0.1 : exchange ? 0.8 : 4.6; } // keep in step with EXCHANGE_LEAD_S in shared/engine/resolve.js
     // Hold the shot until any front has finished sweeping across its country.
     const tail = evs.some(e => e.kind === 'neo' || e.kind === 'act') ? 7.5 : evs.some(e => e.kind === 'naval' || e.kind === 'landing') ? 8.5 : 4;
     const hold = evs.some(e => e.kind === 'front') ? Math.max(tail, this.frontDelay - t + 5.4) : tail;
