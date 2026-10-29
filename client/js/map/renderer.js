@@ -101,6 +101,8 @@ export class WorldMap {
     const loop = now => {
       if (this.destroyed) return;
       // One bad frame must never stop the map: keep the loop alive and report the error once per message.
+      // A stage map hidden behind a full-screen scene (the nuclear ending) stops drawing until it is shown again.
+      if (this.paused) { this.raf = requestAnimationFrame(loop); this.last = now; return; }
       try { this.frame(now); } catch (e) { if (this.lastErr !== e.message) { this.lastErr = e.message; console.error('map frame', e); } }
       this.raf = requestAnimationFrame(loop);
     };
@@ -997,8 +999,13 @@ export class WorldMap {
     for (const e of evs.filter(e => e.kind === 'force')) { add({ type: 'force', e, dur: 6 }, t - 0.6); const z = SEA_ZONES[e.zone]; mark(3, z && { lat: z.lat, lon: z.lon }); }
     for (const e of evs.filter(e => e.kind === 'chokepoint')) { add({ type: 'choke', e, dur: 4.5 }, t); const z = SEA_ZONES[e.zone]; mark(2, z && { lat: z.lat, lon: z.lon }); }
     // In an exchange every arsenal launches the moment the first missile is detected, so the salvos all go up at once.
+    // An exchange jumps the queue (the missiles are the whole story), and the stage display holds the map until every
+    // salvo is up (`exchangeClock`), then the ending film picks the missiles up where they are.
     const exchange = evs.some(e => e.kind === 'nuke' && e.salvo);
-    for (const e of evs.filter(e => e.kind === 'nuke')) { add({ type: 'nuke', e, dur: e.salvo ? 9 : 11 }, t + 1.2); mark(0, e.at, e.from); t += e.salvo ? 0.02 : exchange ? 0.8 : 4.6; } // keep in step with EXCHANGE_LEAD_S in shared/engine/resolve.js
+    let tn = exchange ? 0.3 : t;
+    if (exchange) { const nukes = evs.filter(e => e.kind === 'nuke').length, now = performance.now(); this.exchangeClock = { zero: now + tn * 1000, cut: now + (tn + 1.2 + 0.8 + nukes * 0.02 + 1.4) * 1000 }; }
+    for (const e of evs.filter(e => e.kind === 'nuke')) { add({ type: 'nuke', e, dur: e.salvo ? 9 : 11 }, tn + 1.2); mark(0, e.at, e.from); tn += e.salvo ? 0.02 : exchange ? 0.8 : 4.6; } // timing mirrored in client/js/display/unthinkable.js
+    if (!exchange) t = tn;
     // Hold the shot until any front has finished sweeping across its country.
     const tail = evs.some(e => e.kind === 'neo' || e.kind === 'act') ? 7.5 : evs.some(e => e.kind === 'naval' || e.kind === 'landing') ? 8.5 : 4;
     const hold = evs.some(e => e.kind === 'front') ? Math.max(tail, this.frontDelay - t + 5.4) : tail;
@@ -2555,9 +2562,14 @@ export class WorldMap {
       // Launch bloom at the silo.
       const lb = clamp(v * 4, 0, 1);
       ctx.strokeStyle = `rgba(255,200,120,${1 - lb})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(a[0], a[1], 4 + lb * 18, 0, TAU); ctx.stroke();
-      // Contrail.
+      // Contrail. A salvo in a full exchange (up to 140 at once) draws it as one stroke to keep the frame rate up.
       ctx.lineCap = 'round';
-      for (let i = 1; i <= head; i++) {
+      if (e.salvo) {
+        ctx.strokeStyle = 'rgba(255,190,120,0.75)'; ctx.lineWidth = 1.6; ctx.beginPath();
+        let on = false;
+        for (let i = Math.max(0, head - 24); i <= head; i += 2) { const p1 = at(i); if (!p1) { on = false; continue; } on ? ctx.lineTo(p1[0], p1[1]) : ctx.moveTo(p1[0], p1[1]); on = true; }
+        ctx.stroke();
+      } else for (let i = 1; i <= head; i++) {
         const p0 = at(i - 1), p1 = at(i); if (!p0 || !p1 || Math.abs(p1[0] - p0[0]) > this.w / 3) continue;
         const age = (head - i) / 60;
         ctx.strokeStyle = `rgba(255,${190 - age * 120},${120 - age * 80},${Math.max(0, 0.9 - age * 1.4)})`; ctx.lineWidth = 3.2 - age * 2; ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke();
@@ -2569,14 +2581,14 @@ export class WorldMap {
         ctx.fillStyle = g; ctx.beginPath(); ctx.arc(h[0], h[1], v > 0.3 ? 8 : 14, 0, TAU); ctx.fill();
       }
       // Stage separation: two small flashes as spent boosters fall away.
-      for (const sep of [0.12, 0.26]) {
+      for (const sep of e.salvo ? [] : [0.12, 0.26]) {
         const w = (v - sep) / 0.08; if (w <= 0 || w >= 1) continue;
         const sp = at(Math.round(easeInOut(sep) * 60)); if (!sp) continue;
         ctx.strokeStyle = `rgba(255,230,180,${1 - w})`; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(sp[0], sp[1], 3 + w * 9, 0, TAU); ctx.stroke();
         ctx.fillStyle = `rgba(200,200,210,${1 - w})`; ctx.beginPath(); ctx.arc(sp[0] + w * 3, sp[1] + w * 14, 1.5, 0, TAU); ctx.fill();
       }
       // Terminal phase: the bus releases decoys alongside the warhead, and air defences fire at them.
-      if (v > 0.72 && h) {
+      if (v > 0.72 && h && !e.salvo) {
         const w = (v - 0.72) / 0.28;
         if (!fx.decoys) fx.decoys = Array.from({ length: 4 }, (_, i) => ({ dx: (i - 1.5) * 9 + (Math.random() - 0.5) * 6, dy: (Math.random() - 0.5) * 10, kill: 0.35 + i * 0.15 }));
         for (const d of fx.decoys) {
@@ -2596,7 +2608,8 @@ export class WorldMap {
         const warn = this.opts.lang === 'ar' ? 'صاروخ باليستي قادم' : 'BALLISTIC MISSILE INBOUND';
         ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(warn, b[0] + 1, b[1] - 33); ctx.fillStyle = '#ff6a72'; ctx.fillText(warn, b[0], b[1] - 34);
       }
-      // Incoming warning at the target.
+      // Incoming warning at the target (once per target in an exchange).
+      if (e.salvo && !e.label) return;
       const pulse = (u * T * 1.6) % 1;
       ctx.strokeStyle = `rgba(255,60,70,${0.9 - pulse * 0.8})`; ctx.lineWidth = 1.8;
       ctx.beginPath(); ctx.arc(b[0], b[1], 10 + pulse * 22, 0, TAU); ctx.stroke();
@@ -2606,10 +2619,16 @@ export class WorldMap {
       return;
     }
     const v = (u - FLIGHT) / (1 - FLIGHT);
-    if (!fx.flashed) { fx.flashed = true; this.flash = { start: performance.now(), dur: 3.5, alpha: 0.8 }; this.opts.onNukeImpact?.(); }
+    // In an exchange only the first landing on each target lights the screen, and dimly: a hundred full flashes wash the map out.
+    if (!fx.flashed) {
+      fx.flashed = true;
+      if (!e.salvo) this.flash = { start: performance.now(), dur: 3.5, alpha: 0.8 };
+      else if (e.label && !this.flash) this.flash = { start: performance.now(), dur: 1.6, alpha: 0.18 };
+      this.opts.onNukeImpact?.();
+    }
     const span = Math.min(this.w, this.h);
     // Expanding light.
-    const r = ease(v) * span * 0.22;
+    const r = ease(v) * span * (e.salvo ? 0.07 : 0.22);
     const g = ctx.createRadialGradient(b[0], b[1], 0, b[0], b[1], r + 1);
     g.addColorStop(0, `rgba(255,255,240,${0.6 * (1 - v)})`); g.addColorStop(0.55, `rgba(255,215,150,${0.28 * (1 - v)})`); g.addColorStop(1, 'rgba(255,200,120,0)');
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b[0], b[1], r + 1, 0, TAU); ctx.fill();

@@ -79,12 +79,13 @@ function WorldStage({ conn, state, lang }) {
   const introDone = now - state.display.introAt > (isColdIntro(state) ? COLD_INTRO_MS : 15500);
   const revealDone = now - state.display.revealAt > 10500;
   // A nuclear exchange keeps the map up until every country has fired, then the ending cuts in.
-  const endingHeld = scene === 'ending' && now < state.display.endingAt;
+  const clock = window.__map?.exchangeClock;
+  const endingHeld = scene === 'ending' && (now < state.display.endingAt || (state.display.ending?.type === 'nuclear' && clock && performance.now() < clock.cut));
   const effective = scene === 'intro' && introDone ? 'map' : scene === 'reveal' && revealDone ? 'map' : endingHeld ? 'map' : scene;
   const mapVisible = ['map', 'web', 'polls', 'vote', 'treaty', 'intro', 'reveal', 'report'].includes(effective);
   return html`
     <div class=${cls('map-layer', mapVisible ? 'show' : 'hide', ['polls', 'vote', 'treaty', 'report'].includes(effective) && 'blur')}>
-      <${StageMap} state=${state} lang=${lang} relations=${effective === 'web'} />
+      <${StageMap} state=${state} lang=${lang} relations=${effective === 'web'} paused=${!mapVisible} />
     </div>
     ${['map', 'web'].includes(effective) && html`<${Hud} conn=${conn} state=${state} lang=${lang} web=${effective === 'web'} />`}
     ${effective === 'disguise' && html`<${Disguise} state=${state} now=${now} />`}
@@ -99,7 +100,7 @@ function WorldStage({ conn, state, lang }) {
     <${Sounds} state=${state} />`;
 }
 
-function StageMap({ state, lang, relations }) {
+function StageMap({ state, lang, relations, paused }) {
   const ref = useRef(), map = useRef();
   const stRef = useRef(state); stRef.current = state;
   useEffect(() => {
@@ -111,6 +112,12 @@ function StageMap({ state, lang, relations }) {
   useEffect(() => { map.current?.setState(state); }, [state]);
   useEffect(() => { map.current?.setLayers({ ...state.settings.layers, relations: relations || state.settings.layers.relations }); }, [state.settings.layers, relations]);
   useEffect(() => { map.current?.setLang(lang); }, [lang]);
+  // Stop drawing once the map has faded out behind a full-screen scene, so the scene gets the whole machine.
+  useEffect(() => {
+    if (!paused) { if (map.current) map.current.paused = false; return; }
+    const id = setTimeout(() => { if (map.current) map.current.paused = true; }, 1300);
+    return () => clearTimeout(id);
+  }, [paused]);
   return html`<div class="stage-map" ref=${ref}></div>`;
 }
 

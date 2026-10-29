@@ -1,10 +1,12 @@
 /* The nuclear ending film (client/js/display/unthinkable.js). Cold War committees reuse the intro's reel (.ci). */
 .nuke-film { position: absolute; inset: 0; z-index: 40; overflow: hidden; background: #020407; color: #e8eef6; font-family: var(--font-hud, 'IBM Plex Sans Condensed', sans-serif); }
 .nuke-film.nf-cold { background: #0a0704; color: #f3e6c8; font-family: 'IBM Plex Mono', ui-monospace, monospace; }
-.nf-globe { position: absolute; inset: 0; width: 100%; height: 100%; animation: ci-fade-in 1.4s ease; transition: opacity 1.6s, filter 1.6s; }
-.nf-cold .nf-globe { filter: sepia(.25) contrast(1.05); }
-.nf-globe.dim { opacity: .45; filter: blur(1px) saturate(.6); }
-.nf-cold .nf-globe.dim { filter: sepia(.4) blur(1px) saturate(.6); }
+.nf-globe { position: absolute; inset: 0; width: 100%; height: 100%; transition: opacity 1.6s, filter 1.6s; }
+/* The film dissolves in over the stage map, whose flat projection its first frame repeats. */
+.nuke-film { animation: nf-in .9s ease both; }
+@keyframes nf-in { from { opacity: 0; } }
+.nf-globe.dim { opacity: .45; filter: saturate(.6); }
+.nf-cold .nf-globe.dim { filter: saturate(.6); }
 
 /* Opening: wire (cold) or launch warning (modern) */
 .nf-wire { z-index: 3; background: radial-gradient(circle, #3a1810, #0c0604 70%); }
@@ -56,3 +58,18 @@
 
 /* Modern feed: a faint scanline over everything */
 .nf-scan { position: absolute; inset: 0; z-index: 9; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 1px, transparent 1px 4px); }
+
+/* The flash, typed across the top while the map bends into the globe */
+.nf-ticker { position: absolute; top: 11%; left: 50%; transform: translateX(-50%) rotate(-.4deg); z-index: 6; width: min(86vw, 1300px); padding: .7em 1.2em .8em; animation: nf-drop .5s cubic-bezier(.2,.8,.2,1); transition: opacity .8s, transform .8s; }
+.nf-ticker.out { opacity: 0; transform: translateX(-50%) translateY(-20px); }
+@keyframes nf-drop { from { opacity: 0; transform: translateX(-50%) translateY(-30px); } }
+.nf-ticker.paper { background: linear-gradient(180deg, #e9dcbc, #d8c89f); color: #1d160c; box-shadow: 0 20px 60px rgba(0,0,0,.6); font: 500 1.15em/1.6 'IBM Plex Mono', monospace; }
+.nf-ticker.hud { background: rgba(40,4,8,.82); border: 1px solid rgba(255,80,80,.6); color: #ffd9d9; font: 600 1.1em/1.6 'IBM Plex Sans Condensed', sans-serif; letter-spacing: .08em; box-shadow: 0 0 40px rgba(255,40,40,.25); }
+.nf-ticker-head { display: flex; justify-content: space-between; align-items: center; font-size: .72em; letter-spacing: .3em; font-weight: 600; border-bottom: 2px solid currentColor; padding-bottom: .25em; margin-bottom: .35em; }
+.nf-ticker-head b { color: #b0261a; border: 3px solid #b0261a; padding: 0 .4em; letter-spacing: .15em; animation: ci-stamp .3s cubic-bezier(.3,1.6,.5,1), nf-pulse .6s steps(2) .3s infinite; }
+.nf-ticker.hud .nf-ticker-head b { color: #ff4d4d; border-color: #ff4d4d; }
+.nf-tline { white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.nf-ticker.paper .nf-tline:first-of-type { color: #8e1e12; font-weight: 600; }
+
+/* The reel's grain without a blend mode: the same look over a busy canvas at a fraction of the cost. */
+.nuke-film .ci-grain { mix-blend-mode: normal; opacity: .07; }
