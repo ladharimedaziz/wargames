@@ -78,7 +78,9 @@ function WorldStage({ conn, state, lang }) {
   const now = useNow(conn, 200);
   const introDone = now - state.display.introAt > (isColdIntro(state) ? COLD_INTRO_MS : 15500);
   const revealDone = now - state.display.revealAt > 10500;
-  const effective = scene === 'intro' && introDone ? 'map' : scene === 'reveal' && revealDone ? 'map' : scene;
+  // A nuclear exchange keeps the map up until every country has fired, then the ending cuts in.
+  const endingHeld = scene === 'ending' && now < state.display.endingAt;
+  const effective = scene === 'intro' && introDone ? 'map' : scene === 'reveal' && revealDone ? 'map' : endingHeld ? 'map' : scene;
   const mapVisible = ['map', 'web', 'polls', 'vote', 'treaty', 'intro', 'reveal', 'report'].includes(effective);
   return html`
     <div class=${cls('map-layer', mapVisible ? 'show' : 'hide', ['polls', 'vote', 'treaty', 'report'].includes(effective) && 'blur')}>

@@ -154,10 +154,10 @@ export { ALLIANCE_NAMES };
 export const ALIASES = {
   us: '840', usa: '840', america: '840', 'united states': '840', american: '840', states: '840',
   uk: '826', britain: '826', 'great britain': '826', england: '826', british: '826',
-  russia: '643', russian: '643', rf: '643', china: '156', chinese: '156', prc: '156',
+  russia: '643', russian: '643', rf: '643', ussr: '643', 'soviet union': '643', soviet: '643', soviets: '643', cccp: '643', china: '156', chinese: '156', prc: '156',
   saudi: '682', ksa: '682', 'saudi arabia': '682', uae: '784', emirates: '784', iran: '364', iranian: '364',
   'north korea': '408', dprk: '408', nk: '408', 'south korea': '410', rok: '410', korea: '410',
-  france: '250', french: '250', germany: '276', german: '276', 'east germany': '278', ddr: '278', 'west germany': '276', japan: '392', japanese: '392', india: '356', indian: '356',
+  france: '250', french: '250', germany: '276', german: '276', 'east germany': '278', ddr: '278', gdr: '278', 'west germany': '276', frg: '276', brd: '276', japan: '392', japanese: '392', india: '356', indian: '356',
   turkey: '792', turkiye: '792', israel: '376', egypt: '818', pakistan: '586', taiwan: '158', ukraine: '804',
   poland: '616', italy: '380', spain: '724', canada: '124', australia: '036', brazil: '076', mexico: '484',
   qatar: '634', kuwait: '414', oman: '512', bahrain: '048', yemen: '887', iraq: '368', syria: '760', jordan: '400',

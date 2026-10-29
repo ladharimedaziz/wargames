@@ -1096,3 +1096,44 @@ test('forces at war that meet inside a country fight over the line every turn', 
   assert.ok(zeus({ type: 'resolveTurn' }).ok);
   assert.ok(Object.values(s.control).filter(x => x === R).length < before);
 });
+
+test('only NATO against the Warsaw Pact starts the nuclear exchange; other strikes are single detonations', () => {
+  const cold = geo.coldIndex();
+  const info = { ids: cold.atlasCountryIds(), name: cold.atlasName, anchor: cold.anchorOf, neighbors: cold.neighborsOf };
+  const fresh = () => {
+    const s = createWorldState({ id: 'cw', name: 'Cold', seed: 4 }, info);
+    applyScenario(s, 'cold85', info);
+    s.global.tension = 10;
+    let now = 5_000_000;
+    return { s, z: a => applyAction(s, a, { role: 'stage', user: 't-stage', now: (now += 1000), geo }) };
+  };
+  // "ussr" is the Soviet Union, not the United States.
+  const { s, z } = fresh();
+  const p = parseCommand(s, 'ussr nuke usa', 'stage');
+  assert.ok(p.ok && p.order.country === RU && p.order.target === US, JSON.stringify(p.order));
+  for (const a of p.actions) assert.ok(z(a).ok);
+  assert.ok(z({ type: 'resolveTurn' }).ok);
+  const ex = s.display.ending?.exchange;
+  assert.equal(s.display.scene, 'ending'); assert.equal(s.meta.phase, 'ended');
+  assert.ok(ex.strikes > 5 && ex.tracks.length === Math.min(49, ex.strikes) && ex.firingIds.includes(US) && ex.firingIds.includes(RU));
+  assert.ok(s.display.endingAt > s.lastResolution.at + 5000, 'the stage keeps the map up while every country fires');
+  // China (non-aligned in 1985) on the Soviet Union, and the US on Cuba (no bomb): one detonation, no ending.
+  for (const [a, b] of [['156', RU], [US, '192']]) {
+    const w = fresh();
+    assert.ok(w.z({ type: 'queueOrder', order: { country: a, type: 'nuke', target: b } }).ok);
+    assert.ok(w.z({ type: 'resolveTurn' }).ok);
+    assert.notEqual(w.s.display.scene, 'ending');
+    assert.ok(!w.s.global.exchange && w.s.global.nukesUsed === 1 && w.s.countries[b].casualties > 0);
+    assert.ok(!w.s.review.some(r => r.kind === 'ending' && r.ending === 'nuclear'), 'no Unthinkable offered for a single strike');
+    // Played by hand, the ending shows the strike that really happened.
+    assert.ok(w.z({ type: 'playEnding', ending: 'nuclear' }).ok);
+    assert.equal(w.s.display.ending.exchange.strikes, 1);
+    assert.equal(w.s.display.ending.exchange.tracks[0].o, a);
+  }
+  // With the full exchange switched off, a camp-on-camp strike is offered as the ending instead.
+  const off = fresh();
+  off.s.settings.nuclearExchange = false;
+  off.z({ type: 'queueOrder', order: { country: US, type: 'nuke', target: RU } });
+  off.z({ type: 'resolveTurn' });
+  assert.ok(!off.s.global.exchange && off.s.review.some(r => r.kind === 'ending' && r.ending === 'nuclear'));
+});
