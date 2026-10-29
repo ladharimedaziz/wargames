@@ -1152,3 +1152,19 @@ test('in an exchange every nuclear power on the side hit answers first, before t
     assert.ok(ex.tracks.slice(1 + ex.answer).every(t => !answerers.includes(t.o)));
   }
 });
+
+test('warheads fly from real launch sites, and the winter after an exchange counts everyone', () => {
+  const cold = geo.coldIndex();
+  const info = { ids: cold.atlasCountryIds(), name: cold.atlasName, anchor: cold.anchorOf, neighbors: cold.neighborsOf };
+  const s = createWorldState({ id: 'cw', name: 'Cold', seed: 4 }, info);
+  applyScenario(s, 'cold85', info);
+  s.global.tension = 10;
+  applyAction(s, { type: 'queueOrder', order: { country: RU, type: 'nuke', target: US } }, { role: 'stage', user: 'x', now: 1, geo });
+  applyAction(s, { type: 'resolveTurn' }, { role: 'stage', user: 'x', now: 2, geo });
+  const ex = s.display.ending.exchange;
+  assert.ok(ex.tracks.every(t => t.s), 'every track names its launch site');
+  const moscow = [s.countries[RU].lon, s.countries[RU].lat];
+  assert.ok(ex.tracks.filter(t => t.o === RU).every(t => t.f[0] !== +moscow[0].toFixed(2)), 'Soviet missiles do not leave from Moscow');
+  assert.ok(ex.tracks.some(t => t.o === '826' && t.f[1] === 60 && t.f[0] === -12), 'British warheads come from a submarine at sea');
+  assert.ok(s.global.winter && ex.worldMillions > ex.deadMillions);
+});
