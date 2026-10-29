@@ -198,7 +198,7 @@ const WORLD = {
     if (s.meta.resolving) return err('A turn is already resolving.');
     const t0 = Date.now();
     const ev = resolveTurn(s, { now: ctx.now, countryAt: ctx.geo?.countryAt });
-    s.meta.phase = 'running';
+    if (s.meta.phase !== 'ended') s.meta.phase = 'running'; // a nuclear exchange during the turn ends the simulation
     trimReview(s);
     log(s, ctx, `Resolved turn ${s.meta.turn - 1} in ${Date.now() - t0} ms: ${ev.length} events`);
     return ok({ events: ev.length, broadcastAnim: true });
@@ -273,7 +273,7 @@ const WORLD = {
     if (a.scene === 'intro') s.display.introAt = ctx.now;
     if (a.scene === 'reveal') s.display.revealAt = ctx.now;
     if (a.scene === 'report') s.display.reportAt = ctx.now;
-    if (a.scene === 'map' && s.meta.phase === 'setup') s.meta.phase = 'running';
+    if (a.scene === 'map' && ['setup', 'ended'].includes(s.meta.phase)) s.meta.phase = 'running';
     return ok();
   } },
   setDisguise: { perm: 'zeus', run(s, a) {
@@ -301,7 +301,7 @@ const WORLD = {
     const E = endingsFor(s);
     if (!E[a.ending]) return err('Unknown ending.');
     const det = endingDetail(s, a.ending);
-    s.display.ending = { type: a.ending, title: String(a.title || det.title || E[a.ending].title).slice(0, 80), line: String(a.line || det.line || E[a.ending].line).slice(0, 400), scene: det.scene, bloc: det.bloc, facts: det.facts };
+    s.display.ending = { type: a.ending, title: String(a.title || det.title || E[a.ending].title).slice(0, 80), line: String(a.line || det.line || E[a.ending].line).slice(0, 400), scene: det.scene, bloc: det.bloc, facts: det.facts, ...(det.exchange ? { exchange: det.exchange } : {}) };
     s.display.endingAt = ctx.now; s.display.scene = 'ending'; s.meta.phase = 'ended';
     log(s, ctx, `Ending played: ${s.display.ending.title}`);
     return ok();

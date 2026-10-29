@@ -1,0 +1,57 @@
+/* The nuclear ending film (client/js/display/unthinkable.js). Cold War committees reuse the intro's reel (.ci). */
+.nuke-film { position: absolute; inset: 0; z-index: 40; overflow: hidden; background: #020407; color: #e8eef6; font-family: var(--font-hud, 'IBM Plex Sans Condensed', sans-serif); }
+.nuke-film.nf-cold { background: #0a0704; color: #f3e6c8; font-family: 'IBM Plex Mono', ui-monospace, monospace; }
+.nf-globe { position: absolute; inset: 0; width: 100%; height: 100%; animation: ci-fade-in 1.4s ease; transition: opacity 1.6s, filter 1.6s; }
+.nf-cold .nf-globe { filter: sepia(.25) contrast(1.05); }
+.nf-globe.dim { opacity: .45; filter: blur(1px) saturate(.6); }
+.nf-cold .nf-globe.dim { filter: sepia(.4) blur(1px) saturate(.6); }
+
+/* Opening: wire (cold) or launch warning (modern) */
+.nf-wire { z-index: 3; background: radial-gradient(circle, #3a1810, #0c0604 70%); }
+.nf-wire .ci-stamp { top: 12%; right: 10%; animation: ci-stamp .3s cubic-bezier(.3,1.6,.5,1), nf-pulse .6s steps(2) .3s infinite; }
+@keyframes nf-pulse { 50% { opacity: .55; } }
+.nf-warn { position: absolute; inset: 0; z-index: 3; display: grid; place-content: center; text-align: center; gap: .7em; background: radial-gradient(circle, #3a0408, #070103 70%); }
+.nf-w1 { font: 700 5em/1 var(--font-hud, sans-serif); letter-spacing: .2em; color: #ff4d4d; text-shadow: 0 0 30px rgba(255,60,60,.8); animation: ut-blink .7s steps(2) infinite; }
+.nf-w2 { font: 600 2.4em/1.1 var(--font-hud, sans-serif); letter-spacing: .08em; text-transform: uppercase; } .nf-w2 span { color: #ff6a72; margin: 0 .3em; }
+.nf-w3 { font: 600 1.1em/1 var(--font, sans-serif); letter-spacing: .25em; opacity: .7; text-transform: uppercase; animation: ci-fade-in .6s ease; }
+@keyframes ut-blink { 50% { opacity: .35; } }
+
+/* Globe HUD */
+.nf-hud { position: absolute; left: 4.5%; top: 50%; transform: translateY(-50%); z-index: 4; display: grid; gap: 1.1em; animation: ci-fade-in 1s ease; max-width: 26vw; }
+.nf-count b { display: block; font: 700 3.4em/1 'IBM Plex Sans Condensed', sans-serif; color: #ffb64d; text-shadow: 0 0 18px rgba(255,140,60,.5); font-variant-numeric: tabular-nums; }
+.nf-modern .nf-count b { color: #ff6a5a; }
+.nf-count span { letter-spacing: .25em; text-transform: uppercase; font-size: .85em; opacity: .75; }
+.nf-firing { display: grid; gap: .35em; margin-top: .4em; }
+.nf-fire { display: flex; align-items: center; gap: .6em; font-size: 1.05em; letter-spacing: .06em; text-transform: uppercase; animation: ci-leg-in .6s cubic-bezier(.2,.8,.2,1); }
+.nf-fire i { width: .9em; height: .9em; background: var(--c); box-shadow: 0 0 12px var(--c); flex: none; }
+.nf-caption { position: absolute; left: 0; right: 0; bottom: 13%; z-index: 8; text-align: center; font: 500 1.9em/1.3 'Newsreader', Georgia, serif; font-style: italic; text-shadow: 0 2px 12px #000; animation: ci-fade-in .9s ease; padding: 0 8vw; }
+.nf-modern .nf-caption { font: 600 1.6em/1.3 var(--font-hud, sans-serif); font-style: normal; letter-spacing: .14em; text-transform: uppercase; }
+
+/* Midnight */
+.nf-clock { z-index: 4; background: radial-gradient(circle, rgba(10,7,4,.55), rgba(0,0,0,.9) 75%); }
+.nf-clock.struck .ci-clock-svg .face { fill: #2a0d08; stroke: #ff6a4d; }
+.nf-clock.struck .ci-clock-big { color: #ff6a4d; }
+.nf-white { position: absolute; inset: 0; background: #fffaf0; pointer-events: none; }
+.nf-modern .ci-clock-kicker, .nf-modern .ci-clock-sub { font-family: var(--font, sans-serif); }
+.nf-modern .ci-clock-svg .face { fill: #070d16; stroke: #cfe3ff; }
+.nf-modern .ci-clock-svg .hand.min { stroke: #ff6a5a; filter: drop-shadow(0 0 6px #ff6a5a); }
+.nf-modern .ci-clock-big { color: #ff6a5a; }
+
+/* Title */
+.nf-title { position: absolute; inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 0 6vw; background: radial-gradient(circle at 50% 45%, rgba(0,0,0,.35), rgba(0,0,0,.85) 70%); }
+.nf-date { letter-spacing: .5em; text-transform: uppercase; color: #c9b48a; font-size: 1.2em; animation: ci-fade-in 1s ease; }
+.nf-modern .nf-date { color: #8fb4dc; }
+.nf-sign { font-size: 3.6em; line-height: 1.1; margin-top: .3em; color: #e8c547; animation: ci-fade-in 2s ease; }
+.nf-name { margin: .1em 0 .2em; font: 800 6em/1 'IBM Plex Sans Condensed', sans-serif; letter-spacing: .12em; text-transform: uppercase; color: #f3e6c8; text-shadow: 0 0 40px rgba(255,120,60,.35); animation: ci-slam 1.3s cubic-bezier(.2,.9,.2,1); }
+.nf-modern .nf-name { color: #f1f5fb; text-shadow: 0 0 40px rgba(255,80,60,.35); }
+.nf-rule { width: 0; height: 3px; background: linear-gradient(90deg, #6a9ccf, #f3e6c8 50%, #d9503f); animation: ci-rule 1.4s .5s cubic-bezier(.2,.8,.2,1) forwards; }
+.nf-line { max-width: 34em; margin: 1em auto 0; font: 500 1.6em/1.45 'Newsreader', Georgia, serif; font-style: italic; color: #ffb64d; animation: ci-fade-in 1.2s ease; }
+.nf-modern .nf-line { color: rgba(232,238,246,.85); font-style: normal; }
+.nf-facts { display: flex; justify-content: center; flex-wrap: wrap; gap: 3em; margin-top: 1.6em; animation: ci-fade-in 1.4s ease; }
+.nf-facts b { display: block; font: 700 2.1em/1 'IBM Plex Sans Condensed', sans-serif; font-variant-numeric: tabular-nums; }
+.nf-facts span { font-size: .8em; letter-spacing: .14em; text-transform: uppercase; opacity: .65; }
+.nf-foot { margin-top: 1.4em; font: 400 1.15em/1.5 'Newsreader', Georgia, serif; opacity: .7; animation: ci-fade-in 1.4s ease; }
+.nf-last { margin-top: .9em; font: 700 1.3em/1 'IBM Plex Sans Condensed', sans-serif; letter-spacing: .4em; text-transform: uppercase; animation: ci-fade-in 2s ease; }
+
+/* Modern feed: a faint scanline over everything */
+.nf-scan { position: absolute; inset: 0; z-index: 9; pointer-events: none; background: repeating-linear-gradient(0deg, rgba(255,255,255,.025) 0 1px, transparent 1px 4px); }

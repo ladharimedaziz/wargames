@@ -1,18 +1,22 @@
 // Watches the world and suggests ending screens to the Stage Zeus. Nothing ends without a Zeus choosing to play it.
 import { ENDINGS } from './core.js';
 import { isColdEra, endingsFor, detectColdEndings, coldEndingDetail } from './cold-endings.js';
+import { isBlocExchange, planExchange, exchangeSummary, likelyExchange } from './nuclear.js';
 
 export function detectEndings(state, ev) {
   const g = state.global, out = [];
   const E = endingsFor(state);
   const add = (type, why) => out.push({ type, en: `Ending available: ${E[type].title}. ${why}`, ar: `نهاية متاحة: ${E[type].ar}` });
+  // The Unthinkable is only offered when one camp's nuclear power hits the other's and the full exchange is switched
+  // off (when it is on, the exchange plays the ending by itself). Any other nuclear strike is a single detonation.
+  const campStrike = !ev.some(e => e.kind === 'exchange') && ev.some(e => e.kind === 'nuke' && !e.salvo && isBlocExchange(state, e.owner, e.target));
   if (isColdEra(state)) {
-    if (ev.some(e => e.kind === 'nuke')) add('nuclear', 'A nuclear weapon was used.');
+    if (campStrike) add('nuclear', 'One camp’s nuclear power has struck the other’s.');
     detectColdEndings(state, ev, add);
     return out;
   }
   const hadWar = state.history.some(h => h.wars > 0) || ev.some(e => e.kind === 'war');
-  if (ev.some(e => e.kind === 'nuke')) add('nuclear', 'A nuclear weapon was used.');
+  if (campStrike) add('nuclear', 'One camp’s nuclear power has struck the other’s.');
   if (hadWar && state.wars.length === 0 && ev.some(e => e.kind === 'peace')) add('peace', 'Every war has ended in a peace treaty.');
   else if (hadWar && state.wars.length === 0 && ev.some(e => e.kind === 'ceasefire')) add('ceasefire', 'All fighting has stopped under ceasefires.');
   if (g.gdpIndex < 0.6) add('collapse', `World output is down ${Math.round((1 - g.gdpIndex) * 100)}%.`);
@@ -43,6 +47,7 @@ export function endingDetail(state, type) {
   const facts = [{ k: weeks, v: weeks === 1 ? 'week' : 'weeks' }];
   const d = { facts };
   if (type.startsWith('cw_')) return coldEndingDetail(state, type, d);
+  if (type === 'nuclear') { d.exchange = nuclearDetail(state); return d; }
   if (type === 'victory') {
     const gdp = b => all.filter(c => c.bloc === b).reduce((s, c) => s + c.base.gdp, 0);
     const lost = ['A', 'B', 'C'].find(b => { const m = all.filter(c => c.bloc === b && c.major && c.base.gdp > 300); return m.length && m.every(c => c.capitulated || c.occupiedBy || c.stability < 5); });
@@ -72,4 +77,28 @@ export function endingDetail(state, type) {
     facts.push({ k: state.treaties.length, v: 'treaties' });
   }
   return d;
+}
+
+// The warheads the nuclear ending shows when a Zeus plays it by hand: the strikes that really happened, or, if the
+// exchange never came, the one each camp's arsenals would have fired.
+function nuclearDetail(state) {
+  const log = state.global.nukeLog || [];
+  if (state.global.exchange) {
+    const { first, hit } = state.global.exchange;
+    const strikes = log.filter(s => !(s.owner === first && s.target === hit)).slice(-48).map(s => ({ ...s, from: state.countries[s.owner], to: state.countries[s.target] }));
+    return exchangeSummary(state, first, hit, strikes, [...new Set([hit, ...strikes.map(s => s.target)])]);
+  }
+  const camp = log.find(s => isBlocExchange(state, s.owner, s.target));
+  if (!camp && log.length) {
+    // Single detonations only: show those.
+    const real = log.filter(s => state.countries[s.owner] && state.countries[s.target]).slice(-49);
+    if (real.length) {
+      const [one, ...rest] = real;
+      return exchangeSummary(state, one.owner, one.target, rest.map(s => ({ ...s, from: state.countries[s.owner], to: state.countries[s.target] })), [...new Set(real.map(s => s.target))]);
+    }
+  }
+  const pick = camp || (() => { const l = likelyExchange(state); return l && { owner: l.first, target: l.hit }; })();
+  if (!pick || !state.countries[pick.owner] || !state.countries[pick.target]) return null;
+  const plan = planExchange(state, pick.owner, pick.target);
+  return exchangeSummary(state, pick.owner, pick.target, plan ? plan.strikes : [], plan ? plan.struck : [pick.target]);
 }
