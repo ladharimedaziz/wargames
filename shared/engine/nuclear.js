@@ -35,14 +35,15 @@ export function planExchange(state, first, hit) {
       }
     }
   };
-  salvo(sideB, A); // the answer first
-  salvo(A, sideB);
+  salvo(sideB, A); // the answer: every nuclear power on the side that was hit fires the moment the first missile launches
+  const answer = Math.min(strikes.length, 48);
+  salvo(A, sideB); // then the first side fires everything else it has
   strikes.splice(48);
-  return { first, hit, sideA: A.map(c => c.id), sideB: sideB.map(c => c.id), strikes, struck: [...struck] };
+  return { first, hit, sideA: A.map(c => c.id), sideB: sideB.map(c => c.id), strikes, struck: [...struck], answer };
 }
 
 // The film's data: every warhead with its track, and the countries that fired and were hit, by id and by name.
-export function exchangeSummary(state, first, hit, strikes, struck) {
+export function exchangeSummary(state, first, hit, strikes, struck, answer = 0) {
   const C = state.countries, N = id => C[id]?.name || id;
   const all = [{ owner: first, target: hit, from: pt(C[first]), to: pt(C[hit]) }, ...strikes];
   const firing = [...new Set(all.map(s => s.owner))];
@@ -50,7 +51,7 @@ export function exchangeSummary(state, first, hit, strikes, struck) {
   const hits = id => Math.max(1, all.filter(s => s.target === id).length);
   const dead = struck.reduce((s, id) => s + (C[id]?.base?.pop || 0) * Math.min(0.4, 0.08 * hits(id)), 0);
   return {
-    first, hit, strikes: all.length,
+    first, hit, strikes: all.length, answer: Math.min(answer, all.length - 1),
     tracks: all.slice(0, 49).map(s => ({ o: s.owner, t: s.target, f: [+s.from.lon.toFixed(2), +s.from.lat.toFixed(2)], to: [+s.to.lon.toFixed(2), +s.to.lat.toFixed(2)] })),
     firingIds: firing, struckIds: [...struck],
     firing: firing.map(N), struck: struck.map(N), deadMillions: Math.round(dead),

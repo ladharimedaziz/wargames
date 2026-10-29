@@ -75,14 +75,14 @@ function nuclearExchange(state, o, ev, ctx) {
   state.display.ending = {
     type: 'nuclear', title: 'The Unthinkable', ar: '',
     line: `${N(first)} used a nuclear weapon on ${N(hit)}. The answer came within minutes, from every arsenal on both sides.`,
-    exchange: exchangeSummary(state, first, hit, strikes, struck),
+    exchange: exchangeSummary(state, first, hit, strikes, struck, plan.answer),
   };
-  // The stage keeps the map up while every country fires (the map launches the first warhead, then one salvo every
-  // 0.2 s), and the ending cuts in once the last missile is in the air.
-  state.display.endingAt = ctx.now + Math.round((EXCHANGE_LEAD_S + strikes.length * 0.2) * 1000);
+  // The stage keeps the map up while every country fires (the other side answers 0.8 s after the first launch, then
+  // one salvo every 0.1 s), and the ending cuts in once the last missile is in the air.
+  state.display.endingAt = ctx.now + Math.round((EXCHANGE_LEAD_S + strikes.length * 0.1) * 1000);
   state.display.scene = 'ending'; state.meta.phase = 'ended';
 }
-export const EXCHANGE_LEAD_S = 9;
+export const EXCHANGE_LEAD_S = 7;
 
 function interceptPower(state, cid, attackerOwner) {
   const c = state.countries[cid];

@@ -17,7 +17,7 @@ const hash = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x
 const TAU = Math.PI * 2, RAD = Math.PI / 180;
 
 // Seconds into the film.
-const GLOBE_AT = 4.6, FIRST_AT = 5.6, ANSWER_AT = 8.2, SALVO_SPAN = 5.5, SMOKE_AT = 13.5, CLOCK_AT = 22, TITLE_AT = 27.5;
+const GLOBE_AT = 4.6, FIRST_AT = 5.6, ANSWER_AT = 6.2, FOLLOW_AT = 8.6, SALVO_SPAN = 4.5, SMOKE_AT = 13.5, CLOCK_AT = 22, TITLE_AT = 27.5;
 export const UNTHINKABLE_MS = 48000;
 
 const THEMES = {
@@ -37,13 +37,15 @@ function useFilmClock(startS) {
   return t;
 }
 
-// When each warhead launches and lands. The first strike flies alone, the answer follows, then every arsenal.
-export function schedule(tracks) {
+// When each warhead launches and lands. The other side answers the moment the first missile is up: every one of its
+// nuclear powers fires within a second. Then the first side fires everything else it has.
+export function schedule(tracks, answer) {
+  const n = answer ?? tracks.length - 1, rest = tracks.length - 1 - n;
   return tracks.map((tr, i) => {
     const km = geoDistance(tr.f, tr.to) * 6371;
-    const launch = i === 0 ? FIRST_AT : ANSWER_AT + ((i - 1) / Math.max(1, tracks.length - 1)) * SALVO_SPAN;
-    const flight = 2.4 + Math.min(1.6, km / 7000);
-    return { ...tr, launch, land: launch + flight, i, interp: geoInterpolate(tr.f, tr.to), loft: 0.05 + Math.min(0.22, km / 40000) };
+    const launch = i === 0 ? FIRST_AT : i <= n ? ANSWER_AT + ((i - 1) / Math.max(1, n)) * 1.1 : FOLLOW_AT + ((i - 1 - n) / Math.max(1, rest)) * SALVO_SPAN;
+    const flight = 2.6 + Math.min(1.8, km / 6500);
+    return { ...tr, launch, land: launch + flight, i, answer: i > 0 && i <= n, interp: geoInterpolate(tr.f, tr.to), loft: 0.05 + Math.min(0.22, km / 40000) };
   });
 }
 
@@ -53,7 +55,7 @@ export function Unthinkable({ state, now }) {
   const theme = cold ? 'cold' : 'modern';
   const t = useFilmClock(Math.max(0, (now - state.display.endingAt) / 1000));
   const tracks = useRef(null);
-  if (!tracks.current) tracks.current = schedule((ex.tracks || []).filter(tr => tr.f && tr.to));
+  if (!tracks.current) tracks.current = schedule((ex.tracks || []).filter(tr => tr.f && tr.to), ex.answer);
   const tr = tracks.current;
   const lastLand = tr.length ? Math.max(...tr.map(s => s.land)) : FIRST_AT + 3;
   const N = id => state.countries[id]?.name || id;
@@ -63,10 +65,14 @@ export function Unthinkable({ state, now }) {
   const firingNow = [...new Set(tr.filter(s => t >= s.launch).map(s => s.o))];
   const scene = t < GLOBE_AT ? 'wire' : t < CLOCK_AT ? 'globe' : t < TITLE_AT ? 'clock' : 'title';
 
-  const caption = t < ANSWER_AT ? `${N(ex.first)} fires first, on ${N(ex.hit)}.`
-    : t < ANSWER_AT + 2.6 ? (tr.length > 1 ? `${N(ex.hit)} answers with everything it has.` : `One warhead. One flash.`)
-    : t < ANSWER_AT + 5 ? (firingNow.length > 2 ? 'Then every arsenal on both sides.' : 'And the answer keeps coming.')
-    : t < SMOKE_AT + 2.5 ? `${ex.strikes || tr.length} ${(ex.strikes || tr.length) === 1 ? 'warhead' : 'warheads'}. ${(ex.struckIds || []).length || struckNow.size} ${((ex.struckIds || []).length || struckNow.size) === 1 ? 'nation' : 'nations'}. Under an hour.`
+  const list = ids => ids.length > 1 ? `${ids.slice(0, -1).map(N).join(', ')} and ${N(ids[ids.length - 1])}` : N(ids[0]);
+  const answering = [...new Set(tr.filter(s => s.answer).map(s => s.o))];
+  const follow = [...new Set(tr.filter(s => s.i > 0 && !s.answer).map(s => s.o))];
+  const total = ex.strikes || tr.length, nations = (ex.struckIds || []).length || struckNow.size;
+  const caption = t < ANSWER_AT ? `${N(ex.first)} fires on ${N(ex.hit)}.`
+    : t < FOLLOW_AT + 0.4 ? (answering.length ? `Before it lands, ${list(answering)} ${answering.length === 1 ? 'fires back' : 'all fire back'}.` : 'One warhead. One flash.')
+    : t < FOLLOW_AT + 3.4 ? (follow.length ? `Then ${list(follow)} ${follow.length === 1 ? 'fires everything it has' : 'fire everything they have'} left.` : 'Every arsenal is in the air.')
+    : t < SMOKE_AT + 2.5 ? `${total} ${total === 1 ? 'warhead' : 'warheads'}. ${nations} ${nations === 1 ? 'nation' : 'nations'}. Under an hour.`
     : 'Then the smoke rises, and keeps rising.';
 
   return html`<div class=${cls('nuke-film', `nf-${theme}`, cold && 'ci')}>
