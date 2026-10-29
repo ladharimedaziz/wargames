@@ -37,7 +37,7 @@ export function UsaDisplay({ state }) {
   if (state.display.scene === 'blank') return html`<div class="standby"><div class="sb-sub">${u.subtitle}</div><div class="sb-name">${u.title}</div></div>`;
   const view = local || (u.stageAuto ? auto || { ...USA_VIEW } : u.view);
   return html`<div class="us-stage">
-    <${UsMap} usa=${u} view=${view} interactive=${true} onView=${setLocal} />
+    <${UsMap} usa=${u} view=${view} interactive=${true} stage=${true} onView=${setLocal} />
     <div class="us-head"><div class="us-title">${u.title}</div><div class="us-sub">${u.subtitle}</div></div>
     ${u.sim?.t > 0 && html`<div class="us-clock">${simClock(clock)}</div>`}
     ${u.note && html`<div class="us-note">${u.note}</div>`}

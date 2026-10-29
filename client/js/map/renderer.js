@@ -6,7 +6,7 @@ import { SEA_ZONES } from '/shared/data/places.js';
 import { CITIES } from '/shared/data/cities.js';
 import { AIRCRAFT } from '/shared/data/militaries.js';
 import { stateSplit } from '/shared/data/german-split.js';
-import { relation, fullWarTheaters, theaterOf, THEATERS, isOOB, OUT_OF_BOUNDS, sameSide } from '/shared/engine/core.js';
+import { forceShown, UNIT_TYPES, relation, fullWarTheaters, theaterOf, THEATERS, isOOB, OUT_OF_BOUNDS, sameSide } from '/shared/engine/core.js';
 import { distanceKm, seaRoute, zonesTouching } from '/shared/geo.js';
 import { loadAtlas, makeCountryAt, makeLandAt, pairBorder } from './atlas.js';
 import { contours as d3contours } from 'd3-contour';
@@ -956,8 +956,10 @@ export class WorldMap {
     for (const e of evs.filter(e => e.kind === 'peace')) { add({ type: 'peace', e, dur: 3.6 }, d0); const a = this.state?.countries?.[e.a], b = this.state?.countries?.[e.b]; mark(2, a && { lat: a.lat, lon: a.lon }, b && { lat: b.lat, lon: b.lon }); }
     for (const e of evs.filter(e => e.kind === 'tension')) add({ type: 'tension', e, dur: 4.5 }, 0);
     for (const e of evs.filter(e => e.kind === 'war')) { add({ type: 'war', a: e.a, b: e.b, dur: 2.4 }, 0); }
-    for (const e of evs.filter(e => e.kind === 'move')) { add({ type: 'move', e, dur: 2.6 }, t); mark(6, e.from, e.to); }
-    for (const e of evs.filter(e => e.kind === 'fleet')) { add({ type: 'fleet', e, dur: 6 }, t); mark(6, ...e.path); }
+    // Troop and fleet movements follow the same force filter as the markers.
+    const forces = this.state?.settings?.forces;
+    for (const e of evs.filter(e => e.kind === 'move' && forceShown(forces, 'land'))) { add({ type: 'move', e, dur: 2.6 }, t); mark(6, e.from, e.to); }
+    for (const e of evs.filter(e => e.kind === 'fleet' && forceShown(forces, 'sea'))) { add({ type: 'fleet', e, dur: 6 }, t); mark(6, ...e.path); }
     for (const e of evs.filter(e => e.kind === 'siege')) { add({ type: 'siege', e, dur: 4.2 }, t + 2.4); const T = this.state?.countries?.[e.target]; mark(1, T && { lat: T.lat, lon: T.lon }); }
     t += 0.6;
     strikes.slice(0, 80).forEach((e, i) => { add({ type: e.kind, e, dur: e.kind === 'scrubbed' ? 3 : e.unitType === 'missile' ? 2.4 : e.unitType === 'bomber' ? 5.2 : 3.8 }, t + i * 0.12); mark(3, e.from, e.to); });
@@ -1911,6 +1913,7 @@ export class WorldMap {
 
   visibleTo(u) {
     const s = this.state, fog = s.settings?.fog || 'public';
+    if (!forceShown(s.settings?.forces, UNIT_TYPES[u.type]?.domain)) return false;
     if (fog === 'all') return true;
     if (fog === 'public') {
       // Deployed forces only: armies and wings abroad, and warships that are away from home, blockading, or at war.

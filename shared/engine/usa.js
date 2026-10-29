@@ -1,5 +1,5 @@
 // The continental US committee. Step one is the map: a layered view of the lower 48 that the Zeus steers and the stage shows.
-import { clamp } from './core.js';
+import { clamp, FORCE_FILTERS } from './core.js';
 import { SCENARIOS } from '../data/usa-scenarios.js';
 import { STATES, FEDERAL, STATE_INFO } from '../data/usa-units.js';
 import { CROSSINGS } from '../data/usa-border.js';
@@ -137,7 +137,7 @@ export function migrateUsa(s) {
   u.mods ||= {}; u.custom ||= {}; u.states ||= {}; u.border ||= { CAN: 'open', MEX: 'open' }; u.crossings ||= {};
   u.sim ||= { running: false, speed: 60, t: 0, at: 0 }; u.hostile ||= []; u.events ||= []; u.fx ||= [];
   for (const c of Object.values(u.custom)) { c.type ||= 'militia_sq'; c.side ||= 'mil'; c.roe ||= 'defend'; c.home ||= [c.lon, c.lat]; }
-  getGov(u); u.stageAuto ??= true;
+  getGov(u); u.stageAuto ??= true; u.forces ||= 'all';
   u.lightbars ||= { police: false, fire: false, ambulance: false }; u.lightPattern ||= 'mixed'; u.lightColors ||= {};
   return s;
 }
@@ -153,6 +153,7 @@ export function createUsaFields(s) {
     layers: { ...DEFAULT_LAYERS },
     mods: {}, custom: {}, states: {}, border: { CAN: 'open', MEX: 'open' }, crossings: {}, sim: { running: false, speed: 60, t: 0, at: 0 }, hostile: [], events: [], fx: [],
     lightbars: { police: false, fire: false, ambulance: false }, lightPattern: 'mixed', lightColors: {},
+    forces: 'all', // which forces the stage shows: all, naval, ground or air (the Zeus map always shows everything)
     stageAuto: true, // the stage frames the action by itself until the Zeus shows a view on it
     highlight: [], // state postal codes marked on the stage
     note: '',
@@ -447,6 +448,12 @@ export const usaActions = {
   } },
   // The stage frames the fighting and incidents by itself, or holds the view the Zeus last showed on it.
   usaStageAuto: { perm: 'zeus', run(s, a) { migrateUsa(s); s.usa.stageAuto = a.on === undefined ? !s.usa.stageAuto : !!a.on; return ok(); } },
+  usaForces: { perm: 'zeus', run(s, a) {
+    migrateUsa(s);
+    if (!(a.value in FORCE_FILTERS)) return err('Unknown force filter.');
+    s.usa.forces = a.value;
+    return ok();
+  } },
   usaLayer: { perm: 'zeus', run(s, a) {
     migrateUsa(s);
     if (!USA_LAYERS.includes(a.layer)) return err('Unknown layer.');

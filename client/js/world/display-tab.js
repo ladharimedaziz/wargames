@@ -1,6 +1,7 @@
 // Stage controls: what the projected/streamed display shows, the timer, language and endings.
 import { html, useState, useEffect, run, toast, fmt, useNow, timerRemaining, cls } from '../lib.js';
 import { endingsFor } from '/shared/engine/cold-endings.js';
+import { FORCE_FILTERS } from '/shared/engine/core.js';
 import { CountrySelect, ZoneSelect } from './tabs.js';
 
 const SCENES = [
@@ -103,6 +104,11 @@ export function DisplayTab({ conn, state, committee }) {
           <option value="all">Everything visible</option>
           <optgroup label="Seen through the eyes of…">${Object.values(state.countries).filter(c => c.control === 'player').map(c => html`<option value=${c.id}>${c.name}</option>`)}</optgroup>
         </select></label>
+      <label class="field" style="margin-top:8px">Forces shown
+        <select class="input" value=${st.forces || 'all'} onChange=${e => run(conn, { type: 'setSetting', key: 'forces', value: e.target.value })}>
+          ${Object.entries(FORCE_FILTERS).map(([k, l]) => html`<option value=${k}>${l}</option>`)}
+        </select></label>
+      <p class="pane-hint">On top of the fog of war. Navy only shows fleets and carrier groups; ground only shows armies, missile and air defence batteries; air only shows fighter and bomber wings.</p>
 
       <div class="sub-h">Sound</div>
       <div class="row wrap">
