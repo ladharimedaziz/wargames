@@ -13,6 +13,7 @@ import { CourtDisplay } from './court.js';
 import { Unthinkable } from './unthinkable.js';
 import { EndingFilm, hasEndingFilm } from './endings-fx.js';
 import { stateSplit } from '/shared/data/german-split.js';
+import { ColdWarIntro, COLD_INTRO_MS, isColdIntro } from './cold-intro.js';
 
 const committee = new URLSearchParams(location.search).get('c');
 
@@ -74,7 +75,7 @@ function Stage({ conn }) {
 function WorldStage({ conn, state, lang }) {
   const scene = state.display.scene;
   const now = useNow(conn, 200);
-  const introDone = now - state.display.introAt > 15500;
+  const introDone = now - state.display.introAt > (isColdIntro(state) ? COLD_INTRO_MS : 15500);
   const revealDone = now - state.display.revealAt > 10500;
   const effective = scene === 'intro' && introDone ? 'map' : scene === 'reveal' && revealDone ? 'map' : scene;
   const mapVisible = ['map', 'web', 'polls', 'vote', 'treaty', 'intro', 'reveal', 'report'].includes(effective);
@@ -85,7 +86,7 @@ function WorldStage({ conn, state, lang }) {
     ${['map', 'web'].includes(effective) && html`<${Hud} conn=${conn} state=${state} lang=${lang} web=${effective === 'web'} />`}
     ${effective === 'disguise' && html`<${Disguise} state=${state} now=${now} />`}
     ${effective === 'reveal' && html`<${Reveal} state=${state} lang=${lang} elapsed=${now - state.display.revealAt} />`}
-    ${effective === 'intro' && html`<${Intro} state=${state} lang=${lang} elapsed=${now - state.display.introAt} />`}
+    ${effective === 'intro' && (isColdIntro(state) ? html`<${ColdWarIntro} state=${state} elapsed=${now - state.display.introAt} />` : html`<${Intro} state=${state} lang=${lang} elapsed=${now - state.display.introAt} />`)}
     ${effective === 'polls' && html`<${Polls} state=${state} lang=${lang} />`}
     ${effective === 'vote' && html`<${VoteBoard} state=${state} lang=${lang} />`}
     ${effective === 'treaty' && html`<${TreatyCard} state=${state} lang=${lang} />`}
