@@ -1291,34 +1291,53 @@ export class WorldMap {
 
   // --- coat of arms ---
   // The focused country (and any picked with shift+click) shows its coat of arms beside it, on whichever side has
-  // room, fading in with a short slide. On unless the Zeus turns it off.
+  // room, fading in with a short slide. When the country is let go, the coat slides back behind the country's edge
+  // and fades. On unless the Zeus turns it off.
   drawCoat(ctx, time) {
-    const on = this.state?.display?.arms !== false;
+    const on = this.state?.display?.arms !== false, now = performance.now();
     const ids = new Set(on ? [...this.multi] : []);
     const f = on && !this.coatOff ? this.focusedCountry() : null; if (f) ids.add(f);
-    this.coatAts ||= new Map(); this.coatImgs ||= new Map();
-    for (const id of [...this.coatAts.keys()]) if (!ids.has(id)) this.coatAts.delete(id);
+    this.coatAts ||= new Map(); this.coatImgs ||= new Map(); this.coatOuts ||= new Map();
+    const riseOf = id => ease(clamp((now - this.coatAts.get(id)) / 900, 0, 1));
+    for (const id of [...this.coatAts.keys()]) if (!ids.has(id)) { this.coatOuts.set(id, { at: now, from: riseOf(id) }); this.coatAts.delete(id); }
     for (const id of ids) {
       if (isOOB(id) || !this.state.countries[id]) continue;
       if (Object.values(this.state.countries).some(r => r.rebelOf === id)) continue; // the land is split between factions
-      if (!this.coatAts.has(id)) this.coatAts.set(id, performance.now());
+      if (!this.coatAts.has(id)) {
+        // Picked again while sliding away: carry on from where it was.
+        const out = this.coatOuts.get(id), back = out ? out.from * (1 - ease(clamp((now - out.at) / 600, 0, 1))) : 0;
+        this.coatOuts.delete(id); this.coatAts.set(id, now - back * 900);
+      }
       let img = this.coatImgs.get(id);
-      if (!img) { img = new Image(); img.onload = () => { this.coatAts.set(id, performance.now()); this.dirty = true; }; img.src = `/client/img/coats/${id}.webp`; this.coatImgs.set(id, img); }
-      if (!img.complete || !img.naturalWidth) continue;
-      const b = this.bounds.get(id); if (!b) continue;
-      const k = this.cam.k, x0 = b[0][0] * k + this.cam.x, y0 = b[0][1] * k + this.cam.y, x1 = b[1][0] * k + this.cam.x, y1 = b[1][1] * k + this.cam.y;
-      const bw = x1 - x0, bh = y1 - y0; if (bw < 8 || bh < 8) continue;
-      const t = (performance.now() - this.coatAts.get(id)) / 1000, rise = ease(clamp(t / 0.9, 0, 1));
-      const aspect = img.naturalWidth / img.naturalHeight;
-      const H = clamp(Math.min(bh * 0.55, bw * 0.55 / aspect), 38, 96), W = H * aspect, gap = 10;
-      const right = x1 + gap + W < this.w - 8 || x0 - gap - W < 8, cy = clamp((y0 + y1) / 2, H / 2 + 8, this.h - H / 2 - 8);
-      const cx = (right ? x1 + gap + W / 2 : x0 - gap - W / 2) + (right ? -1 : 1) * (1 - rise) * 14;
-      ctx.save(); ctx.globalAlpha = (this.night ? 0.95 : 0.9) * rise;
-      ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 10;
-      ctx.drawImage(img, cx - W / 2, cy - H / 2, W, H);
-      ctx.restore();
+      if (!img) { img = new Image(); img.onload = () => { this.coatAts.has(id) && this.coatAts.set(id, performance.now()); this.dirty = true; }; img.src = `/client/img/coats/${id}.webp`; this.coatImgs.set(id, img); }
+      const t = (now - this.coatAts.get(id)) / 1000;
+      this.paintCoat(ctx, id, img, riseOf(id), 14);
       if (t < 1) this.dirty = true;
     }
+    for (const [id, out] of [...this.coatOuts]) {
+      const t = (now - out.at) / 600;
+      if (t >= 1 || !this.coatImgs.get(id)) { this.coatOuts.delete(id); continue; }
+      this.paintCoat(ctx, id, this.coatImgs.get(id), out.from * (1 - ease(t)), null);
+      this.dirty = true;
+    }
+  }
+  // One coat at a given rise (0 hidden, 1 shown). It slides by `slide` px, or all the way behind the country's edge.
+  paintCoat(ctx, id, img, rise, slide) {
+    if (!img.complete || !img.naturalWidth || rise <= 0.01) return;
+    const b = this.bounds.get(id); if (!b) return;
+    const k = this.cam.k, x0 = b[0][0] * k + this.cam.x, y0 = b[0][1] * k + this.cam.y, x1 = b[1][0] * k + this.cam.x, y1 = b[1][1] * k + this.cam.y;
+    const bw = x1 - x0, bh = y1 - y0; if (bw < 8 || bh < 8) return;
+    const aspect = img.naturalWidth / img.naturalHeight;
+    const H = clamp(Math.min(bh * 0.55, bw * 0.55 / aspect), 38, 96), W = H * aspect, gap = 10;
+    const right = x1 + gap + W < this.w - 8 || x0 - gap - W < 8, cy = clamp((y0 + y1) / 2, H / 2 + 8, this.h - H / 2 - 8);
+    const cx = (right ? x1 + gap + W / 2 : x0 - gap - W / 2) + (right ? -1 : 1) * (1 - rise) * (slide ?? gap + W);
+    ctx.save();
+    // Clip at the country's edge, so the coat tucks in behind it rather than sliding over the land.
+    ctx.beginPath(); if (right) ctx.rect(x1, 0, this.w - x1, this.h); else ctx.rect(0, 0, x0, this.h); ctx.clip();
+    ctx.globalAlpha = (this.night ? 0.95 : 0.9) * rise;
+    ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 10;
+    ctx.drawImage(img, cx - W / 2, cy - H / 2, W, H);
+    ctx.restore();
   }
 
   // --- painting ground by hand (Zeus panel) ---
