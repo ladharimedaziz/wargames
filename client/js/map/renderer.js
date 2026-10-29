@@ -996,9 +996,9 @@ export class WorldMap {
     for (const e of evs.filter(e => e.kind === 'occupation')) { add({ type: 'occupy', e, dur: 3.5 }, t + 1); }
     for (const e of evs.filter(e => e.kind === 'force')) { add({ type: 'force', e, dur: 6 }, t - 0.6); const z = SEA_ZONES[e.zone]; mark(3, z && { lat: z.lat, lon: z.lon }); }
     for (const e of evs.filter(e => e.kind === 'chokepoint')) { add({ type: 'choke', e, dur: 4.5 }, t); const z = SEA_ZONES[e.zone]; mark(2, z && { lat: z.lat, lon: z.lon }); }
-    // In an exchange the other side answers the moment the first missile is up, so the salvos follow it at once.
+    // In an exchange every arsenal launches the moment the first missile is detected, so the salvos all go up at once.
     const exchange = evs.some(e => e.kind === 'nuke' && e.salvo);
-    for (const e of evs.filter(e => e.kind === 'nuke')) { add({ type: 'nuke', e, dur: e.salvo ? 9 : 11 }, t + 1.2); mark(0, e.at, e.from); t += e.salvo ? 0.1 : exchange ? 0.8 : 4.6; } // keep in step with EXCHANGE_LEAD_S in shared/engine/resolve.js
+    for (const e of evs.filter(e => e.kind === 'nuke')) { add({ type: 'nuke', e, dur: e.salvo ? 9 : 11 }, t + 1.2); mark(0, e.at, e.from); t += e.salvo ? 0.02 : exchange ? 0.8 : 4.6; } // keep in step with EXCHANGE_LEAD_S in shared/engine/resolve.js
     // Hold the shot until any front has finished sweeping across its country.
     const tail = evs.some(e => e.kind === 'neo' || e.kind === 'act') ? 7.5 : evs.some(e => e.kind === 'naval' || e.kind === 'landing') ? 8.5 : 4;
     const hold = evs.some(e => e.kind === 'front') ? Math.max(tail, this.frontDelay - t + 5.4) : tail;
@@ -2591,7 +2591,7 @@ export class WorldMap {
         }
       }
       // Incoming warning text.
-      if (Math.floor(u * T * 3) % 2 === 0) {
+      if ((!e.salvo || e.label) && Math.floor(u * T * 3) % 2 === 0) { // one warning per target in an exchange
         ctx.font = '700 11px Rajdhani, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         const warn = this.opts.lang === 'ar' ? 'صاروخ باليستي قادم' : 'BALLISTIC MISSILE INBOUND';
         ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillText(warn, b[0] + 1, b[1] - 33); ctx.fillStyle = '#ff6a72'; ctx.fillText(warn, b[0], b[1] - 34);

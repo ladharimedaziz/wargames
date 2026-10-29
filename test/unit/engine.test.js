@@ -1115,7 +1115,7 @@ test('only NATO against the Warsaw Pact starts the nuclear exchange; other strik
   assert.ok(z({ type: 'resolveTurn' }).ok);
   const ex = s.display.ending?.exchange;
   assert.equal(s.display.scene, 'ending'); assert.equal(s.meta.phase, 'ended');
-  assert.ok(ex.strikes > 5 && ex.tracks.length === Math.min(49, ex.strikes) && ex.firingIds.includes(US) && ex.firingIds.includes(RU));
+  assert.ok(ex.strikes > 60000 && ex.tracks.length === ex.drawn && ex.firingIds.includes(US) && ex.firingIds.includes(RU), 'both superpowers fire their whole 1985 arsenals');
   assert.ok(s.display.endingAt > s.lastResolution.at + 5000, 'the stage keeps the map up while every country fires');
   // China (non-aligned in 1985) on the Soviet Union, and the US on Cuba (no bomb): one detonation, no ending.
   for (const [a, b] of [['156', RU], [US, '192']]) {
@@ -1138,18 +1138,21 @@ test('only NATO against the Warsaw Pact starts the nuclear exchange; other strik
   assert.ok(!off.s.global.exchange && off.s.review.some(r => r.kind === 'ending' && r.ending === 'nuclear'));
 });
 
-test('in an exchange every nuclear power on the side hit answers first, before the first side fires again', () => {
+test('launch on warning: one warhead from either camp and every nuclear power of both camps fires everything', () => {
   const cold = geo.coldIndex();
   const info = { ids: cold.atlasCountryIds(), name: cold.atlasName, anchor: cold.anchorOf, neighbors: cold.neighborsOf };
-  for (const [a, b, answerers] of [[RU, US, [US, '826', FR]], [US, RU, [RU]]]) {
+  for (const [a, b] of [[RU, US], [FR, RU]]) {
     const s = createWorldState({ id: 'cw', name: 'Cold', seed: 4 }, info);
     applyScenario(s, 'cold85', info);
     s.global.tension = 10;
     applyAction(s, { type: 'queueOrder', order: { country: a, type: 'nuke', target: b } }, { role: 'stage', user: 'x', now: 1, geo });
     applyAction(s, { type: 'resolveTurn' }, { role: 'stage', user: 'x', now: 2, geo });
-    const ex = s.display.ending.exchange, answer = ex.tracks.slice(1, 1 + ex.answer);
-    assert.deepEqual([...new Set(answer.map(t => t.o))].sort(), [...answerers].sort(), 'every nuclear power of the other camp fires back at once');
-    assert.ok(ex.tracks.slice(1 + ex.answer).every(t => !answerers.includes(t.o)));
+    const ex = s.display.ending.exchange;
+    assert.deepEqual([...new Set(ex.firingIds)].sort(), [US, RU, '826', FR].sort(), 'every NATO and Pact nuclear power fires');
+    assert.equal(ex.strikes, 23000 + 39000 + 400 + 360, 'whole arsenals, not a token salvo');
+    const camps = Object.values(s.countries).filter(c => ['A', 'B'].includes(c.bloc) && c.control !== 'inactive' && !c.capitulated && !c.rebelOf);
+    assert.ok(camps.every(c => ex.struckIds.includes(c.id)), 'every country of both camps is hit');
+    assert.ok(!ex.struckIds.includes('156'), 'non-aligned China is not a target');
   }
 });
 

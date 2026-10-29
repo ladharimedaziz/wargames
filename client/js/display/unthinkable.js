@@ -17,7 +17,7 @@ const hash = n => { const x = Math.sin(n * 127.1 + 311.7) * 43758.5453; return x
 const TAU = Math.PI * 2, RAD = Math.PI / 180;
 
 // Seconds into the film.
-const GLOBE_AT = 4.6, FIRST_AT = 5.6, ANSWER_AT = 6.2, FOLLOW_AT = 8.6, SALVO_SPAN = 4.5, SMOKE_AT = 13.5, CLOCK_AT = 22, TITLE_AT = 27.5;
+const GLOBE_AT = 4.6, FIRST_AT = 5.6, ANSWER_AT = 6.2, SALVO_SPAN = 2.2, SMOKE_AT = 13.5, CLOCK_AT = 22, TITLE_AT = 27.5;
 export const UNTHINKABLE_MS = 48000;
 
 const THEMES = {
@@ -37,15 +37,14 @@ function useFilmClock(startS) {
   return t;
 }
 
-// When each warhead launches and lands. The other side answers the moment the first missile is up: every one of its
-// nuclear powers fires within a second. Then the first side fires everything else it has.
-export function schedule(tracks, answer) {
-  const n = answer ?? tracks.length - 1, rest = tracks.length - 1 - n;
+// When each warhead launches and lands. Launch on warning: the moment the first missile is detected, every arsenal on
+// both sides goes up within a couple of seconds.
+export function schedule(tracks) {
   return tracks.map((tr, i) => {
     const km = geoDistance(tr.f, tr.to) * 6371;
-    const launch = i === 0 ? FIRST_AT : i <= n ? ANSWER_AT + ((i - 1) / Math.max(1, n)) * 1.1 : FOLLOW_AT + ((i - 1 - n) / Math.max(1, rest)) * SALVO_SPAN;
+    const launch = i === 0 ? FIRST_AT : ANSWER_AT + hash(i * 13.7) * SALVO_SPAN;
     const flight = 2.6 + Math.min(1.8, km / 6500);
-    return { ...tr, launch, land: launch + flight, i, answer: i > 0 && i <= n, interp: geoInterpolate(tr.f, tr.to), loft: 0.05 + Math.min(0.22, km / 40000) };
+    return { ...tr, launch, land: launch + flight, i, interp: geoInterpolate(tr.f, tr.to), loft: 0.05 + Math.min(0.22, km / 40000) };
   });
 }
 
@@ -55,31 +54,30 @@ export function Unthinkable({ state, now }) {
   const theme = cold ? 'cold' : 'modern';
   const t = useFilmClock(Math.max(0, (now - state.display.endingAt) / 1000));
   const tracks = useRef(null);
-  if (!tracks.current) tracks.current = schedule((ex.tracks || []).filter(tr => tr.f && tr.to), ex.answer);
+  if (!tracks.current) tracks.current = schedule((ex.tracks || []).filter(tr => tr.f && tr.to));
   const tr = tracks.current;
   const lastLand = tr.length ? Math.max(...tr.map(s => s.land)) : FIRST_AT + 3;
   const N = id => state.countries[id]?.name || id;
-  const inFlight = tr.filter(s => t >= s.launch && t < s.land).length;
+  // Only some warheads are drawn; the counter shows the whole arsenal going up.
+  const total = Math.max(ex.strikes || tr.length, tr.length), per = tr.length > 1 ? (total - 1) / (tr.length - 1) : 1;
+  const up = tr.filter(s => t >= s.launch).length, launched = up ? Math.round(1 + (up - 1) * per) : 0;
   const landed = tr.filter(s => t >= s.land);
   const struckNow = new Set(landed.map(s => s.t));
   const firingNow = [...new Set(tr.filter(s => t >= s.launch).map(s => s.o))];
   const scene = t < GLOBE_AT ? 'wire' : t < CLOCK_AT ? 'globe' : t < TITLE_AT ? 'clock' : 'title';
 
-  const list = ids => ids.length > 1 ? `${ids.slice(0, -1).map(N).join(', ')} and ${N(ids[ids.length - 1])}` : N(ids[0]);
-  const answering = [...new Set(tr.filter(s => s.answer).map(s => s.o))];
-  const follow = [...new Set(tr.filter(s => s.i > 0 && !s.answer).map(s => s.o))];
-  const total = ex.strikes || tr.length, nations = (ex.struckIds || []).length || struckNow.size;
+  const nations = (ex.struckIds || []).length || struckNow.size;
   const caption = t < ANSWER_AT ? `${N(ex.first)} fires on ${N(ex.hit)}${tr[0]?.s ? `, from ${tr[0].s.replace(/^(Missile|Mobile)\b/, m => m.toLowerCase())}` : ''}.`
-    : t < FOLLOW_AT + 0.4 ? (answering.length ? `Before it lands, ${list(answering)} ${answering.length === 1 ? 'fires back' : 'all fire back'}.` : 'One warhead. One flash.')
-    : t < FOLLOW_AT + 3.4 ? (follow.length ? `Then ${list(follow)} ${follow.length === 1 ? 'fires everything it has' : 'fire everything they have'} left.` : 'Every arsenal is in the air.')
-    : t < SMOKE_AT + 2.5 ? `${total} ${total === 1 ? 'warhead' : 'warheads'}. ${nations} ${nations === 1 ? 'nation' : 'nations'}. Under an hour.`
+    : t < ANSWER_AT + 2.6 ? (tr.length > 1 ? 'Detected. Every nuclear power on both sides launches everything it has.' : 'One warhead. One flash.')
+    : t < ANSWER_AT + 5.6 ? (tr.length > 1 ? 'Every silo. Every submarine. Every bomber.' : 'The world holds its breath.')
+    : t < SMOKE_AT + 2.5 ? `${total.toLocaleString('en-US')} ${total === 1 ? 'warhead' : 'warheads'}. ${nations} ${nations === 1 ? 'nation' : 'nations'}. Under an hour.`
     : 'Then the smoke rises, and keeps rising.';
 
   return html`<div class=${cls('nuke-film', `nf-${theme}`, cold && 'ci')}>
     ${scene === 'wire' && (cold ? html`<${Wire} t=${t} state=${state} ex=${ex} N=${N} />` : html`<${Warning} t=${t} ex=${ex} N=${N} />`)}
     ${t >= GLOBE_AT - 0.4 && html`<${Globe} t=${t} state=${state} theme=${theme} tracks=${tr} lastLand=${lastLand} />`}
     ${scene === 'globe' && html`<div class="nf-hud">
-      <div class="nf-count"><b>${inFlight}</b><span>${inFlight === 1 ? 'warhead in flight' : 'warheads in flight'}</span></div>
+      <div class="nf-count"><b>${launched.toLocaleString('en-US')}</b><span>${launched === 1 ? 'warhead launched' : 'warheads launched'}</span></div>
       <div class="nf-count"><b>${struckNow.size}</b><span>${struckNow.size === 1 ? 'nation struck' : 'nations struck'}</span></div>
       <div class="nf-firing">${firingNow.map(id => html`<div key=${id} class="nf-fire" style=${{ '--c': THEMES[theme][state.countries[id]?.bloc] || THEMES[theme].N }}><i></i>${N(id)}</div>`)}</div>
     </div>`}
@@ -106,7 +104,8 @@ function Wire({ t, state, ex, N }) {
     [1.5, `LAUNCH DETECTED: ${String(N(ex.first) || 'UNKNOWN').toUpperCase()}`],
     ...(ex.tracks?.[0]?.s ? [[2.1, `ORIGIN: ${ex.tracks[0].s.toUpperCase()}`]] : []),
     [ex.tracks?.[0]?.s ? 2.9 : 2.3, `IMPACT PREDICTED: ${String(N(ex.hit) || 'UNKNOWN').toUpperCase()}`],
-    [3.6, 'THIS IS NOT AN EXERCISE.', 'big'],
+    ...(ex.strikes > 1 ? [[3.3, 'ALL FORCES: LAUNCH ON WARNING']] : []),
+    [3.9, 'THIS IS NOT AN EXERCISE.', 'big'],
   ];
   return html`<div class="ci-wire nf-wire">
     <div class="ci-paper">
@@ -135,7 +134,7 @@ function Globe({ t, state, theme, tracks, lastLand }) {
   useEffect(() => {
     const canvas = ref.current, ctx = canvas.getContext('2d');
     const P = THEMES[theme];
-    let raf, atlas, w, h, dpr;
+    let raf, atlas, w, h, dpr, rot;
     const proj = geoOrthographic().clipAngle(90).precision(0.6);
     const path = geoPath(proj, ctx);
     const grat = geoGraticule10();
@@ -157,7 +156,7 @@ function Globe({ t, state, theme, tracks, lastLand }) {
     for (const s of tracks) if (s.s && !labelled.has(s.s) && labelled.size < 6) labelled.set(s.s, s.i);
     // A point on the sphere, lifted `alt` (fraction of the radius) above it, on screen. Null when behind the globe.
     const lift = (lonlat, alt) => {
-      const r = geoRotation(proj.rotate())(lonlat);
+      const r = rot(lonlat);
       const l = r[0] * RAD, p = r[1] * RAD, x = Math.cos(p) * Math.sin(l), y = Math.sin(p), z = Math.cos(p) * Math.cos(l);
       const k = proj.scale() * (1 + alt), [tx, ty] = proj.translate();
       const behind = z < 0 && (1 + alt) * (1 + alt) * (x * x + y * y) < 1;
@@ -176,6 +175,7 @@ function Globe({ t, state, theme, tracks, lastLand }) {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
       const R = proj.scale(), [ox, oy] = proj.translate();
+      rot = geoRotation(proj.rotate());
       // Night falls on the world as the smoke spreads.
       const dark = clamp01((tt - SMOKE_AT) / 9);
       // Atmosphere halo, dimming into the smoke.
@@ -355,7 +355,7 @@ function Title({ t, state, e, ex, cold }) {
     <div class="nf-rule"></div>
     ${a > 1.6 && html`<p class="nf-line">${e.line}</p>`}
     ${a > 5 && html`<div class="nf-facts">
-      <div><b>${ex.strikes || 1}</b><span>${(ex.strikes || 1) === 1 ? 'warhead' : 'warheads'}</span></div>
+      <div><b>${(ex.strikes || 1).toLocaleString('en-US')}</b><span>${(ex.strikes || 1) === 1 ? 'warhead' : 'warheads'}</span></div>
       <div><b>${struck || 1}</b><span>${struck === 1 ? 'nation struck' : 'nations struck'}</span></div>
       <div><b>${temp > 0 ? '+' : ''}${temp}°C</b><span>average world temperature</span></div>
       <div class=${cls(w >= 1 && 'nf-all')}><b>${w >= 1 ? 'Everyone' : `${dead.toLocaleString('en-US')}M`}</b><span>${w >= 1 ? `all ${world.toLocaleString('en-US')} million` : w > 0 ? 'dead, as the winter spreads' : 'dead in the blasts'}</span></div>
