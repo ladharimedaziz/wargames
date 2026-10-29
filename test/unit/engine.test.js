@@ -1019,3 +1019,22 @@ test('a cold war committee has its own endings, detected from what happens in 19
   const modern = createWorldState({ id: 'm', name: 'Modern', seed: 4 }, gi);
   assert.ok(endingsFor(modern).peace && !endingsFor(modern).cw_wall, 'other committees keep their endings');
 });
+
+test('the fog of war can show only navy, ground or air forces', async () => {
+  const { forceShown } = await import('../../shared/engine/core.js');
+  const s = createWorldState({ id: 'f', name: 'F', seed: 3 }, gi);
+  const z = a => applyAction(s, a, { role: 'stage', user: 'x', now: 1, geo });
+  assert.equal(s.settings.forces, 'all');
+  for (const v of ['naval', 'ground', 'air', 'all']) { assert.ok(z({ type: 'setSetting', key: 'forces', value: v }).ok); assert.equal(s.settings.forces, v); }
+  z({ type: 'setSetting', key: 'forces', value: 'bogus' }); assert.equal(s.settings.forces, 'all');
+  assert.ok(forceShown('naval', 'sea') && !forceShown('naval', 'land') && !forceShown('naval', 'air'));
+  assert.ok(forceShown('ground', 'land') && forceShown('ground', 'foot') && forceShown('ground', 'ground') && !forceShown('ground', 'sea') && !forceShown('ground', 'air'));
+  assert.ok(forceShown('air', 'air') && !forceShown('air', 'sea') && !forceShown('air', 'land'));
+  assert.ok(forceShown('all', 'sea') && forceShown(undefined, 'air'));
+  const { createUsaState } = await import('../../shared/engine/state.js');
+  const u = createUsaState({ id: 'u', name: 'US', seed: 4 });
+  const y = a => applyAction(u, a, { role: 'stage', user: 'x', now: 5_000_000, geo });
+  assert.equal(u.usa.forces, 'all');
+  assert.ok(y({ type: 'usaForces', value: 'air' }).ok); assert.equal(u.usa.forces, 'air');
+  assert.equal(y({ type: 'usaForces', value: 'nope' }).ok, false);
+});
