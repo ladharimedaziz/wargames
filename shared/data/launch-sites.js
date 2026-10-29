@@ -45,3 +45,14 @@ export function launchSite(state, id, n = 0) {
   if (!list.length) { const c = state.countries[id]; return { name: c?.name || id, lat: c?.lat, lon: c?.lon, kind: 'capital' }; }
   return list[n % list.length];
 }
+
+// Warheads each nuclear power holds (approximate public estimates): 1985 for the Cold War committee, today otherwise.
+// In an exchange every one of them is launched.
+export const ARSENALS = {
+  cold: { '840': 23000, '643': 39000, '826': 400, '250': 360, '156': 240 },
+  modern: { '840': 3700, '643': 4300, '156': 600, '250': 290, '826': 225, '356': 170, '586': 170, '408': 50 },
+};
+export function arsenalOf(state, id, missiles = 0) {
+  const era = state.settings?.era === 'cold85' ? 'cold' : 'modern';
+  return ARSENALS[era][id] || Math.max(20, Math.min(200, missiles * 20));
+}

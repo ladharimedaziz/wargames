@@ -65,23 +65,23 @@ function nuclearExchange(state, o, ev, ctx) {
     const cas = Math.round(T.base.pop * 15);
     T.casualties += cas; state.global.casualties += cas;
   }
-  state.global.nukesUsed += strikes.length;
+  state.global.nukesUsed += plan.total - 1;
   (state.global.nukeLog ||= []).push(...strikes.map(s => ({ owner: s.owner, target: s.target, turn: state.meta.turn })));
   for (const f of plan.sideB) if (!atWar(state, first, f) && first !== f) declareWar(state, first, f, ev, 'nuclear');
-  state.global.exchange = { turn: state.meta.turn, first, hit, strikes: strikes.length + 1 };
+  state.global.exchange = { turn: state.meta.turn, first, hit, strikes: plan.total };
   state.global.tension = 10;
   state.global.winter = true; // the nuclear winter that follows kills everyone
   ev.push(...strikes);
-  ev.push({ kind: 'exchange', first, hit, strikes: strikes.length + 1 });
+  ev.push({ kind: 'exchange', first, hit, strikes: plan.total });
   const N = id => state.countries[id]?.name || id;
   state.display.ending = {
     type: 'nuclear', title: 'The Unthinkable', ar: '',
-    line: `${N(first)} used a nuclear weapon on ${N(hit)}. The answer came within minutes, from every arsenal on both sides.`,
-    exchange: exchangeSummary(state, first, hit, strikes, struck, plan.answer),
+    line: `${N(first)} used a nuclear weapon on ${N(hit)}. It was detected at once, and within minutes every nuclear weapon on both sides was in the air.`,
+    exchange: exchangeSummary(state, first, hit, strikes, struck, plan.answer, plan.total),
   };
-  // The stage keeps the map up while every country fires (the other side answers 0.8 s after the first launch, then
-  // one salvo every 0.1 s), and the ending cuts in once the last missile is in the air.
-  state.display.endingAt = ctx.now + Math.round((EXCHANGE_LEAD_S + strikes.length * 0.1) * 1000);
+  // The stage keeps the map up while every arsenal launches (0.8 s after the first missile, all within about three
+  // seconds), and the ending cuts in once they are all in the air.
+  state.display.endingAt = ctx.now + Math.round((EXCHANGE_LEAD_S + strikes.length * 0.02) * 1000);
   state.display.scene = 'ending'; state.meta.phase = 'ended';
 }
 export const EXCHANGE_LEAD_S = 7;

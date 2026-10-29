@@ -88,7 +88,7 @@ function nuclearDetail(state) {
     const { first, hit } = state.global.exchange;
     const strikes = log.filter(s => !(s.owner === first && s.target === hit)).slice(-48).map((s, i) => ({ ...s, from: launchSite(state, s.owner, i + 1), to: state.countries[s.target] }));
     const answer = strikes.filter(s => !sameSide(state, s.owner, first)).length;
-    return exchangeSummary(state, first, hit, strikes, [...new Set([hit, ...strikes.map(s => s.target)])], answer);
+    return exchangeSummary(state, first, hit, strikes, [...new Set([hit, ...strikes.map(s => s.target)])], answer, state.global.exchange.strikes);
   }
   const camp = log.find(s => isBlocExchange(state, s.owner, s.target));
   if (!camp && log.length) {
@@ -102,5 +102,5 @@ function nuclearDetail(state) {
   const pick = camp || (() => { const l = likelyExchange(state); return l && { owner: l.first, target: l.hit }; })();
   if (!pick || !state.countries[pick.owner] || !state.countries[pick.target]) return null;
   const plan = planExchange(state, pick.owner, pick.target);
-  return exchangeSummary(state, pick.owner, pick.target, plan ? plan.strikes : [], plan ? plan.struck : [pick.target], plan ? plan.answer : 0);
+  return exchangeSummary(state, pick.owner, pick.target, plan ? plan.strikes : [], plan ? plan.struck : [pick.target], plan ? plan.answer : 0, plan ? plan.total : 0);
 }
